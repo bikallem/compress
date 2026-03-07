@@ -1,0 +1,28 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/lzw"
+
+// Values
+pub fn compress(Bytes, BitOrder, Int) -> Bytes raise LzwError
+
+pub fn decompress(Bytes, BitOrder, Int) -> Bytes raise LzwError
+
+// Errors
+pub suberror LzwError {
+  InvalidLitWidth(Int)
+  InvalidCode(String)
+  UnexpectedEOF
+}
+pub impl Show for LzwError
+
+// Types and methods
+pub(all) enum BitOrder {
+  LSB
+  MSB
+}
+pub impl Eq for BitOrder
+pub impl Show for BitOrder
+
+// Type aliases
+
+// Traits
+
