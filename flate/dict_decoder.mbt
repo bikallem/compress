@@ -71,12 +71,8 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     // Non-overlapping, no wrap: bulk copy
     blit_bytes(hist, dst_base, hist, src_pos, max_copy)
   } else if dist == 1 {
-    // RLE: fill with single byte (very common)
-    // Safety: src_pos valid (checked above), i in [dst_base, dst_base+max_copy) < hist_len
-    let fill_byte = hist.unsafe_get(src_pos)
-    for i in dst_base..<(dst_base + max_copy) {
-      hist.unsafe_set(i, fill_byte)
-    }
+    // RLE: fill with single byte using vectorized memset
+    fill_bytes(hist, dst_base, hist.unsafe_get(src_pos).to_int(), max_copy)
   } else if src_pos < dst_base && src_pos + max_copy <= hist_len {
     // Overlapping forward copy, no wrap — copy in dist-sized chunks
     let mut dst_pos = dst_base

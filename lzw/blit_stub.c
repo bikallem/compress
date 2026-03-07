@@ -11,3 +11,21 @@ MOONBIT_FFI_EXPORT void bikallem_compress_lzw_blit_bytes(
     memmove(dst + dst_off, src + src_off, (size_t)len);
   }
 }
+
+// Fill a byte array region with a single byte value (vectorized memset).
+MOONBIT_FFI_EXPORT void bikallem_compress_lzw_fill_bytes(
+    moonbit_bytes_t dst, int32_t dst_off,
+    int32_t val, int32_t len) {
+  if (len > 0) {
+    memset(dst + dst_off, val, (size_t)len);
+  }
+}
+
+// Allocate a FixedArray[Byte] without zeroing.
+// Uses moonbit_make_bytes_raw which skips memset.
+MOONBIT_EXPORT moonbit_bytes_t moonbit_make_bytes_raw(int32_t len);
+
+MOONBIT_FFI_EXPORT moonbit_bytes_t bikallem_compress_lzw_make_bytes_uninit(
+    int32_t len) {
+  return moonbit_make_bytes_raw(len);
+}

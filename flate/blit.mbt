@@ -9,3 +9,18 @@ extern "c" fn blit_bytes(
   src_offset : Int,
   length : Int,
 ) -> Unit = "bikallem_compress_flate_blit_bytes"
+
+///|
+/// Fill a byte array region with a single byte value (vectorized memset).
+#borrow(dst)
+extern "c" fn fill_bytes(
+  dst : FixedArray[Byte],
+  dst_offset : Int,
+  value : Int,
+  length : Int,
+) -> Unit = "bikallem_compress_flate_fill_bytes"
+
+///|
+/// Allocate a FixedArray[Byte] without zeroing memory.
+/// The caller MUST fully initialize the buffer before reading from it.
+extern "c" fn make_uninit(len : Int) -> FixedArray[Byte] = "bikallem_compress_flate_make_bytes_uninit"

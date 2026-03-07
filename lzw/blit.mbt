@@ -9,3 +9,8 @@ extern "c" fn blit_bytes(
   src_offset : Int,
   length : Int,
 ) -> Unit = "bikallem_compress_lzw_blit_bytes"
+
+///|
+/// Allocate a FixedArray[Byte] without zeroing memory.
+/// The caller MUST fully initialize the buffer before reading from it.
+extern "c" fn make_uninit(len : Int) -> FixedArray[Byte] = "bikallem_compress_lzw_make_bytes_uninit"

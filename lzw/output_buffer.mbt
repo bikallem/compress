@@ -12,7 +12,7 @@ fn OutputBuffer::new(size_hint : Int) -> OutputBuffer {
   let chunk_size = if size_hint > 32768 { size_hint } else { 32768 }
   {
     chunks: [],
-    current: FixedArray::make(chunk_size, b'\x00'),
+    current: make_uninit(chunk_size),
     pos: 0,
     total: 0,
   }
@@ -21,7 +21,7 @@ fn OutputBuffer::new(size_hint : Int) -> OutputBuffer {
 ///|
 fn OutputBuffer::new_chunk(self : OutputBuffer) -> Unit {
   self.chunks.push(self.current)
-  self.current = FixedArray::make(self.current.length(), b'\x00')
+  self.current = make_uninit(self.current.length())
   self.pos = 0
 }
 
@@ -69,11 +69,11 @@ fn OutputBuffer::to_bytes(self : OutputBuffer) -> Bytes {
     if self.pos == self.current.length() {
       return self.current.unsafe_reinterpret_as_bytes()
     }
-    let result = FixedArray::make(self.pos, b'\x00')
+    let result = make_uninit(self.pos)
     blit_bytes(result, 0, self.current, 0, self.pos)
     return result.unsafe_reinterpret_as_bytes()
   }
-  let result = FixedArray::make(self.total, b'\x00')
+  let result = make_uninit(self.total)
   let mut offset = 0
   for chunk in self.chunks {
     let chunk_len = chunk.length()
