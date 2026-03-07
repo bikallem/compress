@@ -1,27 +1,28 @@
 ///|
-/// Fast output buffer for decompression, replacing @buffer.Buffer.
+/// Fast chunked output buffer for decompression.
 priv struct OutputBuffer {
-  mut data : FixedArray[Byte]
-  mut len : Int
+  chunks : Array[FixedArray[Byte]]
+  mut current : FixedArray[Byte]
+  mut pos : Int
+  mut total : Int
 }
 
 ///|
 fn OutputBuffer::new(size_hint : Int) -> OutputBuffer {
+  let chunk_size = if size_hint > 32768 { size_hint } else { 32768 }
   {
-    data: FixedArray::make(if size_hint > 0 { size_hint } else { 4096 }, b'\x00'),
-    len: 0,
+    chunks: [],
+    current: FixedArray::make(chunk_size, b'\x00'),
+    pos: 0,
+    total: 0,
   }
 }
 
 ///|
-fn OutputBuffer::grow(self : OutputBuffer, required : Int) -> Unit {
-  let mut new_cap = self.data.length()
-  while new_cap < required {
-    new_cap = new_cap * 2
-  }
-  let new_data = FixedArray::make(new_cap, b'\x00')
-  FixedArray::unsafe_blit(new_data, 0, self.data, 0, self.len)
-  self.data = new_data
+fn OutputBuffer::new_chunk(self : OutputBuffer) -> Unit {
+  self.chunks.push(self.current)
+  self.current = FixedArray::make(self.current.length(), b'\x00')
+  self.pos = 0
 }
 
 ///|
@@ -31,20 +32,56 @@ fn OutputBuffer::write_fixed(
   start : Int,
   len : Int,
 ) -> Unit {
-  let required = self.len + len
-  if required > self.data.length() {
-    self.grow(required)
+  let avail = self.current.length() - self.pos
+  if len <= avail {
+    blit_bytes(self.current, self.pos, src, start, len)
+    self.pos += len
+    self.total += len
+  } else {
+    let mut remaining = len
+    let mut src_pos = start
+    if avail > 0 {
+      blit_bytes(self.current, self.pos, src, src_pos, avail)
+      self.pos += avail
+      self.total += avail
+      remaining -= avail
+      src_pos += avail
+    }
+    while remaining > 0 {
+      self.new_chunk()
+      let n = if remaining < self.current.length() {
+        remaining
+      } else {
+        self.current.length()
+      }
+      blit_bytes(self.current, 0, src, src_pos, n)
+      self.pos = n
+      self.total += n
+      remaining -= n
+      src_pos += n
+    }
   }
-  FixedArray::unsafe_blit(self.data, self.len, src, start, len)
-  self.len += len
 }
 
 ///|
 fn OutputBuffer::to_bytes(self : OutputBuffer) -> Bytes {
-  if self.len == self.data.length() {
-    return self.data.unsafe_reinterpret_as_bytes()
+  if self.chunks.length() == 0 {
+    if self.pos == self.current.length() {
+      return self.current.unsafe_reinterpret_as_bytes()
+    }
+    let result = FixedArray::make(self.pos, b'\x00')
+    blit_bytes(result, 0, self.current, 0, self.pos)
+    return result.unsafe_reinterpret_as_bytes()
   }
-  let result = FixedArray::make(self.len, b'\x00')
-  FixedArray::unsafe_blit(result, 0, self.data, 0, self.len)
+  let result = FixedArray::make(self.total, b'\x00')
+  let mut offset = 0
+  for chunk in self.chunks {
+    let chunk_len = chunk.length()
+    blit_bytes(result, offset, chunk, 0, chunk_len)
+    offset += chunk_len
+  }
+  if self.pos > 0 {
+    blit_bytes(result, offset, self.current, 0, self.pos)
+  }
   result.unsafe_reinterpret_as_bytes()
 }

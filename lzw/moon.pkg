@@ -6,3 +6,7 @@ import {
 import {
   "bikallem/compress/stream",
 } for "test"
+
+options(
+  "native-stub": ["blit_stub.c"],
+)

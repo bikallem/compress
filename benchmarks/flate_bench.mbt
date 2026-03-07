@@ -80,3 +80,30 @@ test "bench flate decompress zeros_10kb" (b : @bench.T) {
     b.keep(try! @flate.decompress(compressed))
   })
 }
+
+///|
+test "bench flate decompress text_100kb" (b : @bench.T) {
+  let data = gen_text(102400)
+  let compressed = @flate.compress(data)
+  b.bench(name="flate_decompress_100kb", fn() {
+    b.keep(try! @flate.decompress(compressed))
+  })
+}
+
+///|
+test "bench flate decompress text_1mb" (b : @bench.T) {
+  let data = gen_text(1048576)
+  let compressed = @flate.compress(data)
+  b.bench(name="flate_decompress_1mb", fn() {
+    b.keep(try! @flate.decompress(compressed))
+  })
+}
+
+///|
+test "bench flate decompress text_10mb" (b : @bench.T) {
+  let data = gen_text(10485760)
+  let compressed = @flate.compress(data)
+  b.bench(name="flate_decompress_10mb", fn() {
+    b.keep(try! @flate.decompress(compressed))
+  })
+}

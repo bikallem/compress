@@ -69,7 +69,7 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
   let hist = self.hist
   if src_pos + max_copy <= hist_len && src_pos + max_copy <= dst_base {
     // Non-overlapping, no wrap: bulk copy
-    FixedArray::unsafe_blit(hist, dst_base, hist, src_pos, max_copy)
+    blit_bytes(hist, dst_base, hist, src_pos, max_copy)
   } else if dist == 1 {
     // RLE: fill with single byte (very common)
     // Safety: src_pos valid (checked above), i in [dst_base, dst_base+max_copy) < hist_len
@@ -82,11 +82,11 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     let mut dst_pos = dst_base
     let dst_end = dst_base + max_copy
     while dst_pos + dist <= dst_end {
-      FixedArray::unsafe_blit(hist, dst_pos, hist, dst_pos - dist, dist)
+      blit_bytes(hist, dst_pos, hist, dst_pos - dist, dist)
       dst_pos += dist
     }
     if dst_pos < dst_end {
-      FixedArray::unsafe_blit(
+      blit_bytes(
         hist,
         dst_pos,
         hist,

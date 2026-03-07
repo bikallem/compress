@@ -221,6 +221,54 @@ func BenchmarkFlateDecompressZeros_10kb(b *testing.B) {
 	}
 }
 
+func BenchmarkFlateDecompress_100kb(b *testing.B) {
+	data := genText(102400)
+	var cbuf bytes.Buffer
+	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := flate.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+		r.Close()
+	}
+}
+
+func BenchmarkFlateDecompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	var cbuf bytes.Buffer
+	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := flate.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+		r.Close()
+	}
+}
+
+func BenchmarkFlateDecompress_10mb(b *testing.B) {
+	data := genText(10485760)
+	var cbuf bytes.Buffer
+	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := flate.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+		r.Close()
+	}
+}
+
 // --- gzip ---
 
 func BenchmarkGzipCompressDefault_1kb(b *testing.B) {
