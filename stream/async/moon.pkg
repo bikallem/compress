@@ -1,0 +1,15 @@
+import {
+  "bikallem/compress/stream",
+  "moonbitlang/async/io",
+  "moonbitlang/core/buffer",
+}
+
+import {
+  "bikallem/compress/stream",
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
+} for "test"
+
+options(
+  targets: { "adapters.mbt": [ "native" ], "adapters_test.mbt": [ "native" ] },
+)

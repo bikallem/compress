@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "bikallem/compress/flate"
 
+import {
+  "bikallem/compress/stream",
+}
+
 // Values
 pub fn compress(Bytes, level? : CompressionLevel) -> Bytes raise CompressError
 
@@ -29,6 +33,19 @@ pub(all) enum CompressionLevel {
 }
 pub impl Eq for CompressionLevel
 pub impl Show for CompressionLevel
+
+pub struct DeflateWriter {
+  // private fields
+}
+pub fn DeflateWriter::new(&@stream.Writer, level? : CompressionLevel, dict? : Bytes, slice_length? : Int) -> Self
+pub impl @stream.Writer for DeflateWriter
+
+pub struct InflateReader {
+  // private fields
+}
+pub fn InflateReader::new(&@stream.Reader, dict? : Bytes, slice_length? : Int) -> Self
+pub fn InflateReader::remaining(Self) -> Bytes
+pub impl @stream.Reader for InflateReader
 
 // Type aliases
 

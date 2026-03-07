@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "bikallem/compress/examples/lzw_async"
+package "bikallem/compress/stream/async"
 
 // Values
 
