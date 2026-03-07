@@ -1,0 +1,76 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/stream"
+
+// Values
+pub fn pipe(&Reader, &Writer) -> Unit raise StreamError
+
+pub fn read_all(&Reader) -> Bytes raise StreamError
+
+// Errors
+pub(all) suberror StreamError {
+  UnexpectedEod
+  Format(String)
+  Io(String)
+}
+pub impl Show for StreamError
+
+// Types and methods
+type AppendReader
+pub fn AppendReader::new(&Reader, &Reader) -> Self
+pub impl Reader for AppendReader
+
+type BufferWriter
+pub fn BufferWriter::new(size_hint? : Int) -> Self
+pub fn BufferWriter::to_bytes(Self) -> Bytes
+pub impl Writer for BufferWriter
+
+type Buffered
+pub fn Buffered::new(&Reader) -> Self
+pub fn Buffered::push_back(Self, BytesView) -> Unit
+pub impl Reader for Buffered
+
+type CountedReader
+pub fn CountedReader::new(&Reader) -> Self
+pub fn CountedReader::position(Self) -> Int
+pub impl Reader for CountedReader
+
+type CountedWriter
+pub fn CountedWriter::new(&Writer) -> Self
+pub fn CountedWriter::position(Self) -> Int
+pub impl Writer for CountedWriter
+
+type FnReader
+pub fn FnReader::new(slice_length? : Int, (FixedArray[Byte]) -> Int raise StreamError) -> Self
+pub impl Reader for FnReader
+
+type FnWriter
+pub fn FnWriter::new((BytesView) -> Unit raise StreamError) -> Self
+pub impl Writer for FnWriter
+
+type LimitReader
+pub fn LimitReader::new(&Reader, Int) -> Self
+pub impl Reader for LimitReader
+
+type SliceReader
+pub fn SliceReader::new(Bytes, slice_length? : Int) -> Self
+pub impl Reader for SliceReader
+
+type TapReader
+pub fn TapReader::new(&Reader, (BytesView) -> Unit) -> Self
+pub impl Reader for TapReader
+
+type TapWriter
+pub fn TapWriter::new(&Writer, (BytesView) -> Unit) -> Self
+pub impl Writer for TapWriter
+
+// Type aliases
+
+// Traits
+pub(open) trait Reader {
+  read(Self) -> BytesView raise StreamError
+}
+
+pub(open) trait Writer {
+  write(Self, BytesView) -> Unit raise StreamError
+}
+
