@@ -12,6 +12,8 @@
 {"issue_id":"compress-claude-55v","label":"performance"}
 {"issue_id":"compress-claude-6xa","label":"flate"}
 {"issue_id":"compress-claude-6xa","label":"performance"}
+{"issue_id":"compress-claude-908","label":"flate"}
+{"issue_id":"compress-claude-908","label":"performance"}
 {"issue_id":"compress-claude-96p","label":"bzip2"}
 {"issue_id":"compress-claude-96p","label":"feature"}
 {"issue_id":"compress-claude-a8g","label":"flate"}
@@ -37,5 +39,9 @@
 {"issue_id":"compress-claude-taf","label":"performance"}
 {"issue_id":"compress-claude-v2e","label":"flate"}
 {"issue_id":"compress-claude-v2e","label":"performance"}
+{"issue_id":"compress-claude-v3e","label":"quality"}
+{"issue_id":"compress-claude-v3e","label":"refactor"}
+{"issue_id":"compress-claude-w6h","label":"flate"}
+{"issue_id":"compress-claude-w6h","label":"performance"}
 {"issue_id":"compress-claude-y5b","label":"benchmarks"}
 {"issue_id":"compress-claude-y5b","label":"performance"}
