@@ -114,31 +114,8 @@ jobs:
       - name: Install dependencies
         run: moon install
 
-      - name: Build native
-        run: moon build --target native
-
-      - name: Run memcheck (direct)
-        run: moon run tools/memcheck --target native
-
-      - name: Run valgrind massif
-        run: |
-          valgrind --tool=massif --massif-out-file=massif.out \
-            ./_build/native/debug/build/tools/memcheck/memcheck.exe
-          # Extract peak heap and assert under 1MB threshold
-          PEAK=$(grep "mem_heap_B" massif.out | sort -t= -k2 -n | tail -1 | cut -d= -f2)
-          echo "Peak heap: ${PEAK} bytes"
-          if [ "$PEAK" -gt 1048576 ]; then
-            echo "FAIL: peak heap ${PEAK} exceeds 1MB threshold"
-            exit 1
-          fi
-          echo "PASS: peak heap ${PEAK} bytes is under 1MB"
-
-      - name: Run valgrind dhat
-        run: |
-          valgrind --tool=dhat --dhat-out-file=dhat.out \
-            ./_build/native/debug/build/tools/memcheck/memcheck.exe 2>&1 | tee dhat_stderr.txt
-          # Show summary
-          grep -E "Total:|At t-gmax:|At t-end:" dhat_stderr.txt
+      - name: Run memcheck
+        run: ./tools/memcheck/run.sh
 
   bench-vs-go:
     runs-on: ubuntu-latest
