@@ -69,26 +69,25 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
   let hist = self.hist
   if src_pos + max_copy <= hist_len && src_pos + max_copy <= dst_base {
     // Non-overlapping, no wrap: bulk copy
-    blit_bytes(hist, dst_base, hist, src_pos, max_copy)
+    @blit.blit_bytes(hist, dst_base, hist, src_pos, max_copy)
   } else if dist == 1 {
     // RLE: fill with single byte using vectorized memset
-    fill_bytes(hist, dst_base, hist.unsafe_get(src_pos).to_int(), max_copy)
+    @blit.fill_bytes(
+      hist,
+      dst_base,
+      hist.unsafe_get(src_pos).to_int(),
+      max_copy,
+    )
   } else if src_pos < dst_base && src_pos + max_copy <= hist_len {
     // Overlapping forward copy, no wrap — copy in dist-sized chunks
     let mut dst_pos = dst_base
     let dst_end = dst_base + max_copy
     while dst_pos + dist <= dst_end {
-      blit_bytes(hist, dst_pos, hist, dst_pos - dist, dist)
+      @blit.blit_bytes(hist, dst_pos, hist, dst_pos - dist, dist)
       dst_pos += dist
     }
     if dst_pos < dst_end {
-      blit_bytes(
-        hist,
-        dst_pos,
-        hist,
-        dst_pos - dist,
-        dst_end - dst_pos,
-      )
+      @blit.blit_bytes(hist, dst_pos, hist, dst_pos - dist, dst_end - dst_pos)
     }
   } else {
     // General case: byte-at-a-time with wrap handling

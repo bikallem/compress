@@ -125,7 +125,7 @@ fn LzwDecompressState::process_code(
     let decoded_len = out_len - i
     // Copy decoded bytes — use unsafe_blit for bulk copy
     if self.o != i {
-      blit_bytes(output, self.o, output, i, decoded_len)
+      @blit.blit_bytes(output, self.o, output, i, decoded_len)
     }
     self.o += decoded_len
     if self.last != DECODER_INVALID_CODE {
