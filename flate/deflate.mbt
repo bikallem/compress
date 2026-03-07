@@ -11,7 +11,7 @@ pub fn compress(
 /// Compresses data using DEFLATE with a preset dictionary.
 pub fn compress_with_dict(
   data : Bytes,
-  _dict : Bytes,
+  dict : Bytes,
   level? : CompressionLevel = DefaultCompression,
 ) -> Bytes raise CompressError {
   let lvl = level.to_int()
