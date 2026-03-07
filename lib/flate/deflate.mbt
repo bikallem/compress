@@ -149,11 +149,10 @@ let dist_encode_table : FixedArray[Int] = {
 }
 
 ///|
-/// DEFLATE compression using LZ77 with fixed Huffman codes.
+/// DEFLATE compression using LZ77 with optimal Huffman coding.
 fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
   let w = DeflateWriter::new(size_hint=data.length())
   if data.length() == 0 {
-    // Empty: emit final block header + end-of-block marker
     w.start_fixed_block(true)
     w.write_fixed_symbol(END_BLOCK_MARKER)
     return w.finish()
@@ -162,7 +161,6 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
   let window_mask = window_size - 1
   let hash_size = 1 << 15
   let hash_mask = hash_size - 1
-  // Level-dependent chain length
   let max_chain = match level {
     1 => 4
     2 => 8
@@ -174,28 +172,24 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
     8 => 512
     _ => 1024
   }
-  // Hash chain arrays
   let head = FixedArray::make(hash_size, -1)
   let prev = FixedArray::make(window_size, -1)
-  // Start final block with fixed Huffman
-  w.start_fixed_block(true)
+  // First pass: collect LZ77 tokens
+  let tokens : Array[Token] = []
   let data_len = data.length()
   let mut i = 0
   while i < data_len {
     if i + 2 < data_len {
-      // Compute hash of 3-byte sequence
       let h = hash4(data, i) & hash_mask
       let match_head = head[h]
       prev[i & window_mask] = match_head
       head[h] = i
-      // Try to find a match
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
         let (length, offset) = find_best_match(
           data, i, match_head, prev, window_mask, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
-          w.write_match_fast(length, offset)
-          // Update hash chains for bytes in the match
+          tokens.push(Token::Match(length~, dist=offset))
           for j in 1..<length {
             if i + j + 2 < data_len {
               let hj = hash4(data, i + j) & hash_mask
@@ -208,11 +202,11 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
         }
       }
     }
-    // Emit literal using precomputed table
-    w.write_literal_fast(data[i])
+    tokens.push(Token::Literal(data[i]))
     i += 1
   }
-  w.write_fixed_symbol(END_BLOCK_MARKER)
+  // Second pass: choose best encoding and emit block
+  w.write_dynamic_block(tokens, true)
   w.finish()
 }
 
