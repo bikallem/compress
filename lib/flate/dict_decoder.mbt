@@ -58,32 +58,48 @@ fn DictDecoder::write_byte(self : DictDecoder, b : Byte) -> Unit {
 /// Copies `length` bytes from `dist` bytes back in the history.
 /// Returns the number of bytes actually copied.
 fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int {
+  let hist_len = self.hist.length()
   let dst_base = self.wr_pos
-  let mut dst_pos = dst_base
+  let max_copy = if dst_base + length > hist_len {
+    hist_len - dst_base
+  } else {
+    length
+  }
   let mut src_pos = dst_base - dist
   if src_pos < 0 {
-    src_pos += self.hist.length()
+    src_pos += hist_len
   }
-  let dst_end = if dst_base + length > self.hist.length() {
-    self.hist.length()
+  let hist = self.hist
+  // Fast path: source doesn't wrap and no overlap with destination
+  if src_pos + max_copy <= hist_len && src_pos + max_copy <= dst_base {
+    // Non-overlapping bulk copy
+    FixedArray::unsafe_blit(hist, dst_base, hist, src_pos, max_copy)
+  } else if dist == 1 {
+    // Run-length encoding: fill with single byte (very common case)
+    let fill_byte = hist[src_pos]
+    for i in dst_base..<(dst_base + max_copy) {
+      hist[i] = fill_byte
+    }
   } else {
-    dst_base + length
-  }
-  while dst_pos < dst_end {
-    self.hist[dst_pos] = self.hist[src_pos]
-    dst_pos += 1
-    src_pos += 1
-    if src_pos == self.hist.length() {
-      src_pos = 0
+    // General case: byte-at-a-time with wrap handling
+    let mut dst_pos = dst_base
+    let mut sp = src_pos
+    let dst_end = dst_base + max_copy
+    while dst_pos < dst_end {
+      hist[dst_pos] = hist[sp]
+      dst_pos += 1
+      sp += 1
+      if sp == hist_len {
+        sp = 0
+      }
     }
   }
-  let n = dst_pos - dst_base
-  self.wr_pos += n
-  if self.wr_pos == self.hist.length() {
+  self.wr_pos += max_copy
+  if self.wr_pos == hist_len {
     self.wr_pos = 0
     self.full = true
   }
-  n
+  max_copy
 }
 
 ///|
@@ -106,8 +122,12 @@ fn DictDecoder::write_slice(self : DictDecoder, data : BytesView) -> Int {
 /// Reads available bytes into the output buffer.
 fn DictDecoder::read_flush(self : DictDecoder, out : @buffer.Buffer) -> Unit {
   if self.wr_pos > self.rd_pos {
-    for i in self.rd_pos..<self.wr_pos {
-      out.write_byte(self.hist[i])
+    let hist = self.hist
+    let mut i = self.rd_pos
+    let end = self.wr_pos
+    while i < end {
+      out.write_byte(hist[i])
+      i += 1
     }
   }
   self.rd_pos = self.wr_pos
