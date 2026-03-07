@@ -48,10 +48,6 @@ fn DictDecoder::avail_write(self : DictDecoder) -> Int {
 fn DictDecoder::write_byte(self : DictDecoder, b : Byte) -> Unit {
   self.hist[self.wr_pos] = b
   self.wr_pos += 1
-  if self.wr_pos == self.hist.length() {
-    self.wr_pos = 0
-    self.full = true
-  }
 }
 
 ///|
@@ -95,10 +91,6 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     }
   }
   self.wr_pos += max_copy
-  if self.wr_pos == hist_len {
-    self.wr_pos = 0
-    self.full = true
-  }
   max_copy
 }
 
@@ -111,24 +103,25 @@ fn DictDecoder::write_slice(self : DictDecoder, data : BytesView) -> Int {
     self.hist[self.wr_pos + i] = data[i]
   }
   self.wr_pos += n
-  if self.wr_pos == self.hist.length() {
-    self.wr_pos = 0
-    self.full = true
-  }
   n
 }
 
 ///|
 /// Reads available bytes into the output buffer.
 fn DictDecoder::read_flush(self : DictDecoder, out : @buffer.Buffer) -> Unit {
+  let hist = self.hist
   if self.wr_pos > self.rd_pos {
-    let hist = self.hist
     let mut i = self.rd_pos
     let end = self.wr_pos
     while i < end {
       out.write_byte(hist[i])
       i += 1
     }
+  }
+  // After flush, wrap both pointers if at end of buffer
+  if self.wr_pos == hist.length() {
+    self.wr_pos = 0
+    self.full = true
   }
   self.rd_pos = self.wr_pos
 }

@@ -176,6 +176,37 @@ test "zlib round-trip larger data" {
 }
 
 ///|
+test "zlib round-trip single byte" {
+  let data : Bytes = b"\x42"
+  let compressed = @zlib.compress(data)
+  let decompressed = @zlib.decompress(compressed)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "zlib round-trip all 0xFF" {
+  let data = Bytes::make(5000, b'\xFF')
+  let compressed = @zlib.compress(data)
+  let decompressed = @zlib.decompress(compressed)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "zlib round-trip 32KB boundary" {
+  let data = Bytes::makei(32768, fn(i) { (i % 256).to_byte() })
+  let compressed = @zlib.compress(data)
+  let decompressed = @zlib.decompress(compressed)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "zlib empty data" {
+  let compressed = @zlib.compress(b"")
+  let decompressed = @zlib.decompress(compressed)
+  assert_eq(decompressed.length(), 0)
+}
+
+///|
 test "zlib compression actually reduces size" {
   let buf = @buffer.new(size_hint=5000)
   // Highly repetitive data

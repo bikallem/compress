@@ -177,3 +177,51 @@ test "compress round-trip MSB 7" {
   let decompressed = @lzw.decompress(compressed, MSB, 7)
   inspect(decompressed == original, content="true")
 }
+
+///|
+test "compress round-trip all byte values LSB 8" {
+  let original = Bytes::makei(256, fn(i) { i.to_byte() })
+  let compressed = @lzw.compress(original, LSB, 8)
+  let decompressed = @lzw.decompress(compressed, LSB, 8)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "compress round-trip large data MSB 8" {
+  let original = Bytes::makei(5000, fn(i) { (i % 256).to_byte() })
+  let compressed = @lzw.compress(original, MSB, 8)
+  let decompressed = @lzw.decompress(compressed, MSB, 8)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "compress round-trip litWidth 2 LSB" {
+  // Only values 0-3 for litWidth 2
+  let buf = @buffer.new(size_hint=100)
+  for _ in 0..<100 {
+    buf.write_byte(b'\x00')
+    buf.write_byte(b'\x01')
+    buf.write_byte(b'\x02')
+    buf.write_byte(b'\x03')
+  }
+  let original = buf.to_bytes()
+  let compressed = @lzw.compress(original, LSB, 2)
+  let decompressed = @lzw.decompress(compressed, LSB, 2)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "decompress invalid code" {
+  // Craft input with an invalid code
+  let result = try? @lzw.decompress(b"\xff\xff\xff\xff", LSB, 8)
+  inspect(result is Err(_), content="true")
+}
+
+///|
+test "compress round-trip all 0xFF LSB 8" {
+  let original = Bytes::make(1000, b'\xFF')
+  let compressed = @lzw.compress(original, LSB, 8)
+  let decompressed = @lzw.decompress(compressed, LSB, 8)
+  assert_eq(decompressed, original)
+  assert_true(compressed.length() < original.length())
+}

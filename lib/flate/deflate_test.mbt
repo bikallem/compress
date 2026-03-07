@@ -165,6 +165,60 @@ test "golden: decompress Go-deflate repeated 4k" {
 }
 
 ///|
+test "compress Level(-1) is default" {
+  let original : Bytes = b"Hello, World! Hello, World! Hello, World!"
+  let default_compressed = @flate.compress(original)
+  let compressed = @flate.compress(original, level=Level(-1))
+  // Both should decompress correctly
+  let d1 = @flate.decompress(default_compressed)
+  let d2 = @flate.decompress(compressed)
+  assert_eq(d1, original)
+  assert_eq(d2, original)
+}
+
+///|
+test "compress 1-byte" {
+  for b in 0..<256 {
+    let original = Bytes::make(1, b.to_byte())
+    let compressed = @flate.compress(original)
+    let decompressed = @flate.decompress(compressed)
+    assert_eq(decompressed, original)
+  }
+}
+
+///|
+test "compress all 0xFF" {
+  let original = Bytes::make(5000, b'\xFF')
+  let compressed = @flate.compress(original)
+  let decompressed = @flate.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "compress increasing sequence" {
+  let original = Bytes::makei(10000, fn(i) { (i % 256).to_byte() })
+  let compressed = @flate.compress(original)
+  let decompressed = @flate.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "compress 32KB boundary" {
+  let original = Bytes::make(32768, b'X')
+  let compressed = @flate.compress(original)
+  let decompressed = @flate.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "compress stored round-trip large" {
+  let original = Bytes::makei(70000, fn(i) { (i % 256).to_byte() })
+  let compressed = @flate.compress(original, level=NoCompression)
+  let decompressed = @flate.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
 test "compress all levels round-trip" {
   let buf = @buffer.new(size_hint=2000)
   let pattern : Bytes = b"The quick brown fox jumps over the lazy dog. "
@@ -180,4 +234,51 @@ test "compress all levels round-trip" {
       msg="roundtrip failed at level \{lvl}",
     )
   }
+}
+
+///|
+test "compress level 1 vs level 9 size" {
+  let buf = @buffer.new(size_hint=5000)
+  let pattern : Bytes = b"The quick brown fox jumps over the lazy dog. "
+  for _ in 0..<100 {
+    buf.write_bytes(pattern)
+  }
+  let original = buf.to_bytes()
+  let fast = @flate.compress(original, level=BestSpeed)
+  let best = @flate.compress(original, level=BestCompression)
+  // Both should decompress correctly
+  assert_eq(@flate.decompress(fast), original)
+  assert_eq(@flate.decompress(best), original)
+  // Best compression should produce smaller or equal output
+  assert_true(best.length() <= fast.length())
+}
+
+///|
+test "compress short strings at all levels" {
+  let strings : Array[Bytes] = [b"a", b"ab", b"abc", b"Hello", b"Hello, World!"]
+  for s in strings {
+    for lvl in [0, 1, 3, 6, 9] {
+      let compressed = @flate.compress(s, level=Level(lvl))
+      let decompressed = @flate.decompress(compressed)
+      assert_eq(decompressed, s)
+    }
+  }
+}
+
+///|
+test "compress back-reference at max distance" {
+  // Create data where matches are at maximum distance (32KB)
+  let buf = @buffer.new(size_hint=40000)
+  let marker : Bytes = b"UNIQUE_MARKER_"
+  buf.write_bytes(marker)
+  // Fill 32KB with other data
+  for i in 0..<(32768 - marker.length()) {
+    buf.write_byte((i % 200 + 50).to_byte())
+  }
+  // Repeat the marker — should create a match at distance ~32KB
+  buf.write_bytes(marker)
+  let original = buf.to_bytes()
+  let compressed = @flate.compress(original)
+  let decompressed = @flate.decompress(compressed)
+  assert_eq(decompressed, original)
 }

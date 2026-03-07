@@ -78,3 +78,21 @@ test "bzip2 truncated data" {
   let result = try? @bzip2.decompress(data)
   guard result is Err(_) else { fail("expected error for truncated data") }
 }
+
+///|
+test "bzip2 wrong block level" {
+  // Valid magic "BZ" but invalid block level (level '0' = 0x30)
+  let data : Bytes = [0x42, 0x5A, 0x68, 0x30, 0x00, 0x00, 0x00, 0x00]
+  let result = try? @bzip2.decompress(data)
+  guard result is Err(_) else { fail("expected error for invalid block level") }
+}
+
+///|
+test "bzip2 corrupt block magic" {
+  // Valid header but corrupt block magic
+  let data : Bytes = [
+    0x42, 0x5A, 0x68, 0x39, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]
+  let result = try? @bzip2.decompress(data)
+  guard result is Err(_) else { fail("expected error for corrupt block magic") }
+}

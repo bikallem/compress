@@ -57,3 +57,43 @@ test "adler32 size" {
   let h = @checksum.Adler32::new()
   inspect(h.size(), content="4")
 }
+
+///|
+test "adler32 abc" {
+  // Known vector: "abc" -> 0x024D0127
+  inspect(@checksum.adler32(b"abc"[:]), content="38600999")
+}
+
+///|
+test "adler32 all 0xFF" {
+  let data = Bytes::make(256, b'\xFF')
+  let one_shot = @checksum.adler32(data[:])
+  let h = @checksum.Adler32::new()
+  h.update(data[:])
+  assert_eq(h.checksum(), one_shot)
+}
+
+///|
+test "adler32 incremental byte-at-a-time" {
+  let data : Bytes = b"Hello, World!"
+  let one_shot = @checksum.adler32(data[:])
+  let h = @checksum.Adler32::new()
+  for i in 0..<data.length() {
+    h.update(data[i:i + 1])
+  }
+  assert_eq(h.checksum(), one_shot)
+}
+
+///|
+test "adler32 multiple resets" {
+  let h = @checksum.Adler32::new()
+  h.update(b"hello"[:])
+  let first = h.checksum()
+  h.reset()
+  h.update(b"world"[:])
+  let second = h.checksum()
+  assert_true(first != second)
+  h.reset()
+  h.update(b"hello"[:])
+  assert_eq(h.checksum(), first)
+}
