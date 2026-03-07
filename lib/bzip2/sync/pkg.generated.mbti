@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/bzip2/sync"
+
+import {
+  "blem00/compress/bzip2",
+  "moonbitlang/core/buffer",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Bzip2Decompressor {
+  buf : @buffer.Buffer
+}
+pub fn Bzip2Decompressor::finish(Self) -> Bytes raise @bzip2.Bzip2Error
+pub fn Bzip2Decompressor::new() -> Self
+pub fn Bzip2Decompressor::update(Self, Bytes) -> Unit
+
+// Type aliases
+
+// Traits
+

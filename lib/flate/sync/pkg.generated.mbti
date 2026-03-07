@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/flate/sync"
+
+import {
+  "blem00/compress/flate",
+  "moonbitlang/core/buffer",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Deflater {
+  level : @flate.CompressionLevel
+  dict : Bytes
+  buf : @buffer.Buffer
+}
+pub fn Deflater::finish(Self) -> Bytes raise @flate.CompressError
+pub fn Deflater::new(level? : @flate.CompressionLevel, dict? : Bytes) -> Self
+pub fn Deflater::update(Self, Bytes) -> Unit
+
+pub struct Inflater {
+  dict : Bytes
+  buf : @buffer.Buffer
+}
+pub fn Inflater::finish(Self) -> Bytes raise @flate.CompressError
+pub fn Inflater::new(dict? : Bytes) -> Self
+pub fn Inflater::update(Self, Bytes) -> Unit
+
+// Type aliases
+
+// Traits
+

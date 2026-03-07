@@ -1,0 +1,4 @@
+import {
+  "blem00/compress/lzw",
+  "moonbitlang/core/buffer",
+}

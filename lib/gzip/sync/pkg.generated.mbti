@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/gzip/sync"
+
+import {
+  "blem00/compress/flate",
+  "blem00/compress/gzip",
+  "moonbitlang/core/buffer",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct GzipCompressor {
+  level : @flate.CompressionLevel
+  header : @gzip.Header
+  buf : @buffer.Buffer
+}
+pub fn GzipCompressor::finish(Self) -> Bytes raise @gzip.GzipError
+pub fn GzipCompressor::new(level? : @flate.CompressionLevel, header? : @gzip.Header) -> Self
+pub fn GzipCompressor::update(Self, Bytes) -> Unit
+
+pub struct GzipDecompressor {
+  buf : @buffer.Buffer
+}
+pub fn GzipDecompressor::finish(Self) -> (Bytes, @gzip.Header) raise @gzip.GzipError
+pub fn GzipDecompressor::new() -> Self
+pub fn GzipDecompressor::update(Self, Bytes) -> Unit
+
+// Type aliases
+
+// Traits
+
