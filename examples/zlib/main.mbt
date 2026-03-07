@@ -33,6 +33,21 @@ fn run() -> Unit raise {
   assert_eq(restored_d, original)
   println("With dict: \{compressed_d.length()} bytes")
 
+  // --- Streaming API ---
+  let dest = @stream.BufferWriter::new()
+  let zlib_writer = @zliblib.ZlibStreamWriter::new(dest)
+  @stream.pipe(
+    @stream.SliceReader::new(original, slice_length=4096),
+    zlib_writer,
+  )
+  let stream_compressed = dest.to_bytes()
+  let reader = @zliblib.ZlibReader::new(
+    @stream.SliceReader::new(stream_compressed),
+  )
+  let stream_restored = @stream.read_all(reader)
+  assert_eq(stream_restored, original)
+  println("Streaming: \{stream_compressed.length()} bytes, round-trip OK")
+
   // --- Error handling ---
   let result : Result[Bytes, Error] = try? @zliblib.decompress(b"\x00\x01\x02")
   match result {

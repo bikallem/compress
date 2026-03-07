@@ -52,6 +52,18 @@ fn run() -> Unit raise {
     "With dict:  \{compressed_dict.length()} bytes (vs \{compressed.length()} without)",
   )
 
+  // --- Streaming API ---
+  let dest = @stream.BufferWriter::new()
+  let writer = @deflate.DeflateWriter::new(dest, level=DefaultCompression)
+  @stream.pipe(@stream.SliceReader::new(original, slice_length=4096), writer)
+  let stream_compressed = dest.to_bytes()
+  let reader = @deflate.InflateReader::new(
+    @stream.SliceReader::new(stream_compressed),
+  )
+  let stream_restored = @stream.read_all(reader)
+  assert_eq(stream_restored, original)
+  println("Streaming: \{stream_compressed.length()} bytes, round-trip OK")
+
   // --- Error handling ---
   let result : Result[Bytes, Error] = try? @deflate.decompress(b"\x00\xFF\xFE")
   match result {

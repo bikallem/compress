@@ -43,6 +43,21 @@ fn run() -> Unit raise {
   println("BestSpeed:       \{fast.length()} bytes")
   println("BestCompression: \{best.length()} bytes")
 
+  // --- Streaming API ---
+  let dest = @stream.BufferWriter::new()
+  let gzip_writer = @gz.GzipStreamWriter::new(dest)
+  @stream.pipe(
+    @stream.SliceReader::new(original, slice_length=4096),
+    gzip_writer,
+  )
+  let stream_compressed = dest.to_bytes()
+  let reader = @gz.GzipReader::new(@stream.SliceReader::new(stream_compressed))
+  let stream_restored = @stream.read_all(reader)
+  assert_eq(stream_restored, original)
+  println(
+    "Streaming: \{stream_compressed.length()} bytes, header.name=\"\{reader.header().name}\"",
+  )
+
   // --- Error handling ---
   let result : Result[(Bytes, @gz.Header), Error] = try? @gz.decompress(
     b"\x00\x01\x02",
