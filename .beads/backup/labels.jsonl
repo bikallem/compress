@@ -35,5 +35,7 @@
 {"issue_id":"compress-claude-rlq","label":"performance"}
 {"issue_id":"compress-claude-taf","label":"flate"}
 {"issue_id":"compress-claude-taf","label":"performance"}
+{"issue_id":"compress-claude-v2e","label":"flate"}
+{"issue_id":"compress-claude-v2e","label":"performance"}
 {"issue_id":"compress-claude-y5b","label":"benchmarks"}
 {"issue_id":"compress-claude-y5b","label":"performance"}
