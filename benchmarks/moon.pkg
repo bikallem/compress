@@ -4,6 +4,5 @@ import {
   "bikallem/compress/gzip",
   "bikallem/compress/lzw",
   "bikallem/compress/zlib",
-  "moonbitlang/core/bench",
   "moonbitlang/core/buffer",
 }

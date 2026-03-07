@@ -6,6 +6,10 @@ pub fn adler32(BytesView) -> UInt
 
 pub fn crc32(BytesView) -> UInt
 
+pub fn has_hw_adler32() -> Bool
+
+pub fn has_hw_crc32() -> Bool
+
 // Errors
 
 // Types and methods

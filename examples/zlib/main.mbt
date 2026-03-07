@@ -12,29 +12,29 @@ fn run() -> Unit raise {
   let original = repeat_bytes(b"zlib framing with Adler-32 checksum. ", 200)
 
   // --- Compress/decompress ---
-  let compressed = @zlib.compress(original)
-  let restored = @zlib.decompress(compressed)
+  let compressed = @zliblib.compress(original)
+  let restored = @zliblib.decompress(compressed)
   assert_eq(restored, original)
   println("zlib: \{original.length()} -> \{compressed.length()} bytes")
 
   // --- With compression level ---
-  let fast = @zlib.compress(original, level=BestSpeed)
-  let best = @zlib.compress(original, level=BestCompression)
+  let fast = @zliblib.compress(original, level=BestSpeed)
+  let best = @zliblib.compress(original, level=BestCompression)
   println("BestSpeed: \{fast.length()}, BestCompression: \{best.length()}")
 
   // --- With preset dictionary ---
   let dict = b"zlib framing Adler checksum"
-  let compressed_d = @zlib.compress_with_dict(
+  let compressed_d = @zliblib.compress_with_dict(
     original,
     dict,
     level=DefaultCompression,
   )
-  let restored_d = @zlib.decompress_with_dict(compressed_d, dict)
+  let restored_d = @zliblib.decompress_with_dict(compressed_d, dict)
   assert_eq(restored_d, original)
   println("With dict: \{compressed_d.length()} bytes")
 
   // --- Error handling ---
-  let result : Result[Bytes, Error] = try? @zlib.decompress(b"\x00\x01\x02")
+  let result : Result[Bytes, Error] = try? @zliblib.decompress(b"\x00\x01\x02")
   match result {
     Err(e) => println("Expected error: \{e}")
     Ok(_) => println("Unexpected")

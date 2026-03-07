@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/lzw",
+  "bikallem/compress/lzw" @lzwlib,
   "moonbitlang/core/buffer",
 }
 

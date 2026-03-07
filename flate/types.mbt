@@ -24,10 +24,7 @@ fn CompressionLevel::to_int(self : CompressionLevel) -> Int {
 ///|
 pub suberror CompressError {
   CorruptInput(String)
-  InternalError(String)
   InvalidLevel(Int)
-  ChecksumMismatch(expected~ : UInt, got~ : UInt)
-  InvalidHeader(String)
   UnexpectedEOF
 } derive(Show)
 
@@ -45,26 +42,10 @@ const MAX_MATCH_OFFSET : Int = 32768
 const MAX_CODE_LEN : Int = 16
 
 ///|
-const MAX_NUM_LIT : Int = 286
-
-///|
-const MAX_NUM_DIST : Int = 30
-
-///|
 const END_BLOCK_MARKER : Int = 256
 
 ///|
 const NUM_CODES : Int = 19
-
-///|
-// Block types
-const BLOCK_STORED : Int = 0
-
-///|
-const BLOCK_FIXED : Int = 1
-
-///|
-const BLOCK_DYNAMIC : Int = 2
 
 ///|
 // Length code base values (RFC 1951 section 3.2.5)

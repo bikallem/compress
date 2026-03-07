@@ -12,21 +12,21 @@ fn run() -> Unit raise {
   let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
 
   // --- LSB order (GIF format) ---
-  let compressed_lsb = @lzw.compress(original, LSB, 8)
-  let restored_lsb = @lzw.decompress(compressed_lsb, LSB, 8)
+  let compressed_lsb = @lzwlib.compress(original, LSB, 8)
+  let restored_lsb = @lzwlib.decompress(compressed_lsb, LSB, 8)
   assert_eq(restored_lsb, original)
   println("LZW LSB: \{original.length()} -> \{compressed_lsb.length()} bytes")
 
   // --- MSB order (TIFF/PDF format) ---
-  let compressed_msb = @lzw.compress(original, MSB, 8)
-  let restored_msb = @lzw.decompress(compressed_msb, MSB, 8)
+  let compressed_msb = @lzwlib.compress(original, MSB, 8)
+  let restored_msb = @lzwlib.decompress(compressed_msb, MSB, 8)
   assert_eq(restored_msb, original)
   println("LZW MSB: \{original.length()} -> \{compressed_msb.length()} bytes")
 
   // --- Different literal widths ---
   let small = repeat_bytes(b"\x00\x01\x02\x03", 200)
-  let compressed_2 = @lzw.compress(small, LSB, 2)
-  let restored_2 = @lzw.decompress(compressed_2, LSB, 2)
+  let compressed_2 = @lzwlib.compress(small, LSB, 2)
+  let restored_2 = @lzwlib.decompress(compressed_2, LSB, 2)
   assert_eq(restored_2, small)
   println("LZW litWidth=2: \{small.length()} -> \{compressed_2.length()} bytes")
 }

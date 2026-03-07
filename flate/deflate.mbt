@@ -570,7 +570,7 @@ fn reverse_uint(val : UInt, n : Int) -> UInt {
 }
 
 ///|
-fn encode_length(length : Int) -> (Int, Int, Int) {
+fn _encode_length(length : Int) -> (Int, Int, Int) {
   let idx = (length - MIN_MATCH_LENGTH) * 3
   (
     length_encode_table[idx],
@@ -580,7 +580,7 @@ fn encode_length(length : Int) -> (Int, Int, Int) {
 }
 
 ///|
-fn encode_distance(dist : Int) -> (Int, Int, Int) {
+fn _encode_distance(dist : Int) -> (Int, Int, Int) {
   let didx = (dist - 1) * 2
   let dist_code = dist_encode_table[didx]
   let dist_extra_bits = dist_encode_table[didx + 1]

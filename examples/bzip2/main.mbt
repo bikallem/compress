@@ -7,7 +7,7 @@ fn main {
     0x9A, 0x68, 0x33, 0x4D, 0x13, 0x33, 0x8B, 0xB9, 0x22, 0x9C, 0x28, 0x48, 0x0D,
     0x2A, 0x32, 0x49, 0x00,
   ]
-  let result : Result[Bytes, Error] = try? @bzip2.decompress(compressed)
+  let result : Result[Bytes, Error] = try? @bz2.decompress(compressed)
   match result {
     Ok(decompressed) => {
       println("bzip2 decompressed: \{decompressed.length()} bytes")
@@ -22,9 +22,7 @@ fn main {
   }
 
   // --- Error handling ---
-  let bad_result : Result[Bytes, Error] = try? @bzip2.decompress(
-    b"\x00\x01\x02",
-  )
+  let bad_result : Result[Bytes, Error] = try? @bz2.decompress(b"\x00\x01\x02")
   match bad_result {
     Err(e) => println("Expected error: \{e}")
     Ok(_) => println("Unexpected success")

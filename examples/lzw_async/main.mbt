@@ -31,7 +31,7 @@ fn main {
     @moonasync.with_task_group(root => {
       // --- Compress via LzwWriter ---
       let (pipe_read, pipe_write) = @io.pipe()
-      let writer = @lzw_async.LzwWriter::new(pipe_write, LSB, 8)
+      let writer = @lzwlib_async.LzwWriter::new(pipe_write, LSB, 8)
       root.spawn_bg(() => {
         ignore(writer.write_once(original, offset=0, len=original.length()))
         writer.close()
@@ -44,7 +44,7 @@ fn main {
 
       // --- Decompress via LzwReader ---
       let (pipe_read2, pipe_write2) = @io.pipe()
-      let reader = @lzw_async.LzwReader::new(pipe_read2, LSB, 8)
+      let reader = @lzwlib_async.LzwReader::new(pipe_read2, LSB, 8)
       root.spawn_bg(() => {
         ignore(
           pipe_write2.write_once(compressed, offset=0, len=compressed.length()),

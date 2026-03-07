@@ -27,7 +27,7 @@ async fn read_all_bytes(reader : &@io.Reader) -> Bytes {
 fn main {
   @moonasync.run_async_main(async fn() {
     let original = repeat_bytes(b"Async gzip streaming example. ", 500)
-    let hdr : @gzip.Header = {
+    let hdr : @gz.Header = {
       name: "data.txt",
       comment: "",
       extra: b"",
@@ -38,7 +38,7 @@ fn main {
     @moonasync.with_task_group(root => {
       // --- Compress through GzipWriter ---
       let (pipe_read, pipe_write) = @io.pipe()
-      let writer = @gzip_async.GzipWriter::new(
+      let writer = @gz_async.GzipWriter::new(
         pipe_write,
         level=DefaultCompression,
         header=hdr,
@@ -55,7 +55,7 @@ fn main {
 
       // --- Decompress through GzipReader ---
       let (pipe_read2, pipe_write2) = @io.pipe()
-      let reader = @gzip_async.GzipReader::new(pipe_read2)
+      let reader = @gz_async.GzipReader::new(pipe_read2)
       root.spawn_bg(() => {
         ignore(
           pipe_write2.write_once(compressed, offset=0, len=compressed.length()),

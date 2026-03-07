@@ -1,6 +1,6 @@
 import {
   "bikallem/compress/flate",
-  "bikallem/compress/flate/async" @flate_async,
+  "bikallem/compress/flate/async" @deflate_async,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",

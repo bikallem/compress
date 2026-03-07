@@ -27,7 +27,7 @@ pub async fn GzipWriter::write(self : GzipWriter, data : &@io.Data) -> Unit {
 }
 
 ///|
-pub async fn GzipWriter::write_once(
+pub fn GzipWriter::write_once(
   self : GzipWriter,
   bytes : Bytes,
   offset~ : Int,

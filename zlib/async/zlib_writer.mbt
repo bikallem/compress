@@ -25,7 +25,7 @@ pub async fn ZlibWriter::write(self : ZlibWriter, data : &@io.Data) -> Unit {
 }
 
 ///|
-pub async fn ZlibWriter::write_once(
+pub fn ZlibWriter::write_once(
   self : ZlibWriter,
   bytes : Bytes,
   offset~ : Int,

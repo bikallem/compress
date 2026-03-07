@@ -34,7 +34,7 @@ pub struct ZlibWriter {
 pub async fn ZlibWriter::close(Self) -> Unit
 pub fn ZlibWriter::new(&@io.Writer, level? : @flate.CompressionLevel) -> Self
 pub async fn ZlibWriter::write(Self, &@io.Data) -> Unit
-pub async fn ZlibWriter::write_once(Self, Bytes, offset~ : Int, len~ : Int) -> Int
+pub fn ZlibWriter::write_once(Self, Bytes, offset~ : Int, len~ : Int) -> Int
 pub async fn ZlibWriter::write_reader(Self, &@io.Reader) -> Unit
 pub impl @io.Writer for ZlibWriter
 

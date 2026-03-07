@@ -12,39 +12,39 @@ fn run() -> Unit raise {
   let original = repeat_bytes(b"gzip example data for compression. ", 200)
 
   // --- Compress with default settings ---
-  let compressed = @gzip.compress(original)
+  let compressed = @gz.compress(original)
   println(
     "gzip compressed: \{original.length()} -> \{compressed.length()} bytes",
   )
 
   // --- Decompress (returns data + header) ---
-  let (restored, header) = @gzip.decompress(compressed)
+  let (restored, header) = @gz.decompress(compressed)
   assert_eq(restored, original)
   println("Round-trip: OK")
   println("Header OS: \{header.os}")
 
   // --- Compress with custom header ---
-  let hdr : @gzip.Header = {
+  let hdr : @gz.Header = {
     name: "example.txt",
     comment: "compressed by blem/compress",
     extra: b"",
     mod_time: 1709856000U,
     os: b'\xff',
   }
-  let compressed2 = @gzip.compress(original, header=hdr, level=BestCompression)
-  let (restored2, header2) = @gzip.decompress(compressed2)
+  let compressed2 = @gz.compress(original, header=hdr, level=BestCompression)
+  let (restored2, header2) = @gz.decompress(compressed2)
   assert_eq(restored2, original)
   println("Name:    \{header2.name}")
   println("Comment: \{header2.comment}")
 
   // --- Compress with different levels ---
-  let fast = @gzip.compress(original, level=BestSpeed)
-  let best = @gzip.compress(original, level=BestCompression)
+  let fast = @gz.compress(original, level=BestSpeed)
+  let best = @gz.compress(original, level=BestCompression)
   println("BestSpeed:       \{fast.length()} bytes")
   println("BestCompression: \{best.length()} bytes")
 
   // --- Error handling ---
-  let result : Result[(Bytes, @gzip.Header), Error] = try? @gzip.decompress(
+  let result : Result[(Bytes, @gz.Header), Error] = try? @gz.decompress(
     b"\x00\x01\x02",
   )
   match result {

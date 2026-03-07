@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/bzip2/async" @bzip2_async,
+  "bikallem/compress/bzip2/async" @bz2_async,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",

@@ -252,11 +252,7 @@ fn decode_block(
 
 ///|
 /// Performs inverse Burrows-Wheeler Transform using LF mapping.
-fn inverse_bwt(
-  data : FixedArray[Int],
-  length : Int,
-  orig_ptr : Int,
-) -> Bytes raise Bzip2Error {
+fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
   // Count occurrences of each byte value
   let counts = FixedArray::make(256, 0)
   for i in 0..<length {

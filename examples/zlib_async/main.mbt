@@ -31,7 +31,7 @@ fn main {
     @moonasync.with_task_group(root => {
       // --- Compress through ZlibWriter ---
       let (pipe_read, pipe_write) = @io.pipe()
-      let writer = @zlib_async.ZlibWriter::new(pipe_write, level=BestSpeed)
+      let writer = @zliblib_async.ZlibWriter::new(pipe_write, level=BestSpeed)
       root.spawn_bg(() => {
         ignore(writer.write_once(original, offset=0, len=original.length()))
         writer.close()
@@ -44,7 +44,7 @@ fn main {
 
       // --- Decompress through ZlibReader ---
       let (pipe_read2, pipe_write2) = @io.pipe()
-      let reader = @zlib_async.ZlibReader::new(pipe_read2)
+      let reader = @zliblib_async.ZlibReader::new(pipe_read2)
       root.spawn_bg(() => {
         ignore(
           pipe_write2.write_once(compressed, offset=0, len=compressed.length()),

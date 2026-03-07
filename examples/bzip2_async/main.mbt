@@ -28,7 +28,7 @@ fn main {
     @moonasync.with_task_group(root => {
       // --- Decompress through Bzip2Reader ---
       let (pipe_read, pipe_write) = @io.pipe()
-      let reader = @bzip2_async.Bzip2Reader::new(pipe_read)
+      let reader = @bz2_async.Bzip2Reader::new(pipe_read)
       root.spawn_bg(() => {
         ignore(
           pipe_write.write_once(compressed, offset=0, len=compressed.length()),

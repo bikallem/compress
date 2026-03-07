@@ -1,4 +1,3 @@
 import {
-  "bikallem/compress/checksum",
   "moonbitlang/core/buffer",
 }

@@ -18,7 +18,7 @@ echo "Running MoonBit benchmarks..."
 cd "$REPO_ROOT"
 # MoonBit bench output lines look like: "bench_name  123.45 µs ± ..."
 # Filter out header lines (contain "time" or parentheses)
-moon bench -p bench --target native --release 2>&1 \
+moon bench -p benchmarks --target native --release 2>&1 \
   | grep -E '^[a-z_].*[0-9]' \
   | grep -v 'time' > "$MOON_OUT" || true
 

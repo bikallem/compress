@@ -36,10 +36,6 @@ const GZIP_MAGIC2 : Byte = 0x8B
 const GZIP_DEFLATE : Byte = 8
 
 ///|
-// Header flags
-const GZIP_FTEXT : Int = 1
-
-///|
 const GZIP_FHCRC : Int = 2
 
 ///|

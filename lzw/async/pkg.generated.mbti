@@ -36,7 +36,7 @@ pub struct LzwWriter {
 pub async fn LzwWriter::close(Self) -> Unit
 pub fn LzwWriter::new(&@io.Writer, @lzw.BitOrder, Int) -> Self
 pub async fn LzwWriter::write(Self, &@io.Data) -> Unit
-pub async fn LzwWriter::write_once(Self, Bytes, offset~ : Int, len~ : Int) -> Int
+pub fn LzwWriter::write_once(Self, Bytes, offset~ : Int, len~ : Int) -> Int
 pub async fn LzwWriter::write_reader(Self, &@io.Reader) -> Unit
 pub impl @io.Writer for LzwWriter
 

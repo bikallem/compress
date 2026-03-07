@@ -68,7 +68,7 @@ jobs:
         run: moon install
 
       - name: Run benchmarks (current)
-        run: moon bench -p bench --target native --release 2>&1 | tee bench_current.txt
+        run: moon bench -p benchmarks --target native --release 2>&1 | tee bench_current.txt
 
       - name: Run benchmarks (previous commit)
         if: github.event_name == 'push'
@@ -76,7 +76,7 @@ jobs:
           git stash --include-untracked || true
           git checkout HEAD~1
           moon install
-          moon bench -p bench --target native --release 2>&1 | tee bench_prev.txt
+          moon bench -p benchmarks --target native --release 2>&1 | tee bench_prev.txt
           git checkout -
           git stash pop || true
 

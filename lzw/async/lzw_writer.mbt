@@ -27,7 +27,7 @@ pub async fn LzwWriter::write(self : LzwWriter, data : &@io.Data) -> Unit {
 }
 
 ///|
-pub async fn LzwWriter::write_once(
+pub fn LzwWriter::write_once(
   self : LzwWriter,
   bytes : Bytes,
   offset~ : Int,

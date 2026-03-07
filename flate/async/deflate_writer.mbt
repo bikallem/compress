@@ -50,7 +50,7 @@ pub async fn DeflateWriter::write(
 }
 
 ///|
-pub async fn DeflateWriter::write_once(
+pub fn DeflateWriter::write_once(
   self : DeflateWriter,
   bytes : Bytes,
   offset~ : Int,

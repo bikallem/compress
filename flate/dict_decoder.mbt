@@ -33,7 +33,7 @@ fn DictDecoder::init_dict(self : DictDecoder, dict : Bytes) -> Unit {
 
 ///|
 /// Returns the number of bytes available for reading.
-fn DictDecoder::avail_read(self : DictDecoder) -> Int {
+fn DictDecoder::_avail_read(self : DictDecoder) -> Int {
   self.wr_pos - self.rd_pos
 }
 
@@ -96,7 +96,7 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
 
 ///|
 /// Writes a slice of bytes.
-fn DictDecoder::write_slice(self : DictDecoder, data : BytesView) -> Int {
+fn DictDecoder::_write_slice(self : DictDecoder, data : BytesView) -> Int {
   let avail = self.avail_write()
   let n = if data.length() > avail { avail } else { data.length() }
   for i in 0..<n {

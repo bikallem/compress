@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/bzip2",
+  "bikallem/compress/bzip2" @bz2,
 }
 
 options(

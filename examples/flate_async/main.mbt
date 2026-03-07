@@ -30,7 +30,7 @@ fn main {
 
     // --- Compress: write through DeflateWriter to a pipe ---
     let (pipe_read, pipe_write) = @io.pipe()
-    let writer = @flate_async.DeflateWriter::new(
+    let writer = @deflate_async.DeflateWriter::new(
       pipe_write,
       level=DefaultCompression,
     )
@@ -47,7 +47,7 @@ fn main {
 
       // --- Decompress: read through InflateReader from a pipe ---
       let (pipe_read2, pipe_write2) = @io.pipe()
-      let reader = @flate_async.InflateReader::new(pipe_read2)
+      let reader = @deflate_async.InflateReader::new(pipe_read2)
       root.spawn_bg(() => {
         ignore(
           pipe_write2.write_once(compressed, offset=0, len=compressed.length()),

@@ -13,10 +13,7 @@ pub fn decompress_with_dict(Bytes, Bytes) -> Bytes raise CompressError
 // Errors
 pub suberror CompressError {
   CorruptInput(String)
-  InternalError(String)
   InvalidLevel(Int)
-  ChecksumMismatch(expected~ : UInt, got~ : UInt)
-  InvalidHeader(String)
   UnexpectedEOF
 }
 pub impl Show for CompressError

@@ -50,13 +50,13 @@ fn BitReader::read(self : BitReader, n : Int) -> Int raise CompressError {
 
 ///|
 /// Peek at the low n bits without consuming them.
-fn BitReader::peek(self : BitReader, n : Int) -> Int {
+fn BitReader::_peek(self : BitReader, n : Int) -> Int {
   (self.buf & ((1UL << n) - 1UL)).to_int()
 }
 
 ///|
 /// Consume n bits from the buffer (after a peek).
-fn BitReader::consume(self : BitReader, n : Int) -> Unit {
+fn BitReader::_consume(self : BitReader, n : Int) -> Unit {
   self.buf = self.buf >> n
   self.count -= n
 }

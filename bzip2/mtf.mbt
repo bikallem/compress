@@ -2,7 +2,7 @@
 /// Move-to-front transform decoder.
 /// Given an MTF-encoded sequence and an initial symbol list,
 /// decodes back to original symbols.
-fn mtf_decode(
+fn _mtf_decode(
   symbols : FixedArray[Int],
   length : Int,
   list : FixedArray[Byte],
