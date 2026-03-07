@@ -1,7 +1,0 @@
-import {
-  "blem00/compress/bzip2/sync" @bzip2_sync,
-}
-
-options(
-  "is-main": true,
-)

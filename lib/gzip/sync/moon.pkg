@@ -1,5 +1,0 @@
-import {
-  "blem00/compress/flate",
-  "blem00/compress/gzip",
-  "moonbitlang/core/buffer",
-}

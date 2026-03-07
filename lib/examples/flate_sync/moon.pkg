@@ -1,9 +1,0 @@
-import {
-  "blem00/compress/flate",
-  "blem00/compress/flate/sync" @flate_sync,
-  "moonbitlang/core/buffer",
-}
-
-options(
-  "is-main": true,
-)

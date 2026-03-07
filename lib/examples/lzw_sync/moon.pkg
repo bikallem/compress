@@ -1,9 +1,0 @@
-import {
-  "blem00/compress/lzw",
-  "blem00/compress/lzw/sync" @lzw_sync,
-  "moonbitlang/core/buffer",
-}
-
-options(
-  "is-main": true,
-)

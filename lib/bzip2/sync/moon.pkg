@@ -1,4 +1,0 @@
-import {
-  "blem00/compress/bzip2",
-  "moonbitlang/core/buffer",
-}

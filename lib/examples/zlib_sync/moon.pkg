@@ -1,9 +1,0 @@
-import {
-  "blem00/compress/zlib",
-  "blem00/compress/zlib/sync" @zlib_sync,
-  "moonbitlang/core/buffer",
-}
-
-options(
-  "is-main": true,
-)
