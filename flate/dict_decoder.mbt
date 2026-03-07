@@ -127,10 +127,9 @@ fn DictDecoder::_write_slice(self : DictDecoder, data : BytesView) -> Int {
 
 ///|
 /// Reads available bytes into the output buffer.
-fn DictDecoder::read_flush(self : DictDecoder, out : @buffer.Buffer) -> Unit {
+fn DictDecoder::read_flush(self : DictDecoder, out : OutputBuffer) -> Unit {
   if self.wr_pos > self.rd_pos {
-    let bytes = self.hist.unsafe_reinterpret_as_bytes()
-    out.write_bytesview(bytes[self.rd_pos:self.wr_pos])
+    out.write_fixed(self.hist, self.rd_pos, self.wr_pos - self.rd_pos)
   }
   // After flush, wrap both pointers if at end of buffer
   if self.wr_pos == self.hist.length() {

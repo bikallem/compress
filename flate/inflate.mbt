@@ -21,7 +21,7 @@ fn decompress_core(
   data : Bytes,
   dict : Bytes,
 ) -> (Bytes, Bytes) raise CompressError {
-  let out = @buffer.new(size_hint=data.length() * 2)
+  let out = OutputBuffer::new(data.length() * 4)
   let dd = DictDecoder::new()
   if dict.length() > 0 {
     dd.init_dict(dict)
@@ -55,7 +55,7 @@ fn decompress_core(
 ///|
 fn decode_stored_block(
   dd : DictDecoder,
-  out : @buffer.Buffer,
+  out : OutputBuffer,
   br : BitReader,
 ) -> Unit raise CompressError {
   let discard = br.count % 8
@@ -99,7 +99,7 @@ fn decode_stored_block(
 ///|
 fn decode_huffman_block(
   dd : DictDecoder,
-  out : @buffer.Buffer,
+  out : OutputBuffer,
   br : BitReader,
   lit_dec : HuffmanDecoder,
   dist_dec : HuffmanDecoder,
