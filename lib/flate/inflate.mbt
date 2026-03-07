@@ -52,6 +52,23 @@ pub fn decompress_with_dict(
 }
 
 ///|
+/// Fill the bit buffer with as many bytes as possible (up to 56 bits).
+/// This reduces per-byte overhead by batching reads.
+fn fill_bits(
+  bit_buf : Ref[UInt64],
+  bit_count : Ref[Int],
+  data : Bytes,
+  pos : Ref[Int],
+) -> Unit {
+  let data_len = data.length()
+  while bit_count.val <= 56 && pos.val < data_len {
+    bit_buf.val = bit_buf.val | (data[pos.val].to_uint64() << bit_count.val)
+    bit_count.val += 8
+    pos.val += 1
+  }
+}
+
+///|
 fn ensure_bits(
   bit_buf : Ref[UInt64],
   bit_count : Ref[Int],
@@ -127,8 +144,25 @@ fn decode_huffman_block(
   lit_dec : HuffmanDecoder,
   dist_dec : HuffmanDecoder,
 ) -> Unit raise CompressError {
+  let chunk_mask = (1UL << HUFFMAN_CHUNK_BITS) - 1UL
+  let lit_chunks = lit_dec.chunks
   while true {
-    let sym = lit_dec.decode(bit_buf, bit_count, data, pos)
+    // Eagerly fill the bit buffer to reduce per-symbol overhead
+    fill_bits(bit_buf, bit_count, data, pos)
+    // Fast path: inline the common case of direct chunk lookup
+    let idx = (bit_buf.val & chunk_mask).to_int()
+    let entry = lit_chunks[idx]
+    let sym = if (entry & 0x80U) == 0U &&
+      bit_count.val >= (entry & 0xFFU).reinterpret_as_int() {
+      let n = (entry & 0xFFU).reinterpret_as_int()
+      let s = (entry >> 8).reinterpret_as_int()
+      bit_buf.val = bit_buf.val >> n
+      bit_count.val -= n
+      s
+    } else {
+      // Slow path: link table lookup or insufficient bits
+      lit_dec.decode(bit_buf, bit_count, data, pos)
+    }
     if sym < 256 {
       // Literal byte
       dd.write_byte(sym.to_byte())
@@ -136,7 +170,6 @@ fn decode_huffman_block(
         dd.read_flush(out)
       }
     } else if sym == END_BLOCK_MARKER {
-      // End of block
       dd.read_flush(out)
       return
     } else {
@@ -145,14 +178,48 @@ fn decode_huffman_block(
       if length_code >= length_base.length() {
         raise CompressError::CorruptInput("invalid length code \{sym}")
       }
-      let length = length_base[length_code] +
-        read_bits(bit_buf, bit_count, data, pos, length_extra[length_code])
-      let dist_sym = dist_dec.decode(bit_buf, bit_count, data, pos)
+      let extra = length_extra[length_code]
+      let extra_val = if extra > 0 {
+        ensure_bits(bit_buf, bit_count, data, pos, extra)
+        let mask = (1UL << extra) - 1UL
+        let val = (bit_buf.val & mask).to_int()
+        bit_buf.val = bit_buf.val >> extra
+        bit_count.val -= extra
+        val
+      } else {
+        0
+      }
+      let length = length_base[length_code] + extra_val
+      // Decode distance - inline fast path
+      fill_bits(bit_buf, bit_count, data, pos)
+      let dist_chunks = dist_dec.chunks
+      let dist_idx = (bit_buf.val & chunk_mask).to_int()
+      let dist_entry = dist_chunks[dist_idx]
+      let dist_sym = if (dist_entry & 0x80U) == 0U &&
+        bit_count.val >= (dist_entry & 0xFFU).reinterpret_as_int() {
+        let n = (dist_entry & 0xFFU).reinterpret_as_int()
+        let s = (dist_entry >> 8).reinterpret_as_int()
+        bit_buf.val = bit_buf.val >> n
+        bit_count.val -= n
+        s
+      } else {
+        dist_dec.decode(bit_buf, bit_count, data, pos)
+      }
       if dist_sym >= dist_base.length() {
         raise CompressError::CorruptInput("invalid distance code \{dist_sym}")
       }
-      let dist = dist_base[dist_sym] +
-        read_bits(bit_buf, bit_count, data, pos, dist_extra[dist_sym])
+      let dextra = dist_extra[dist_sym]
+      let dextra_val = if dextra > 0 {
+        ensure_bits(bit_buf, bit_count, data, pos, dextra)
+        let mask = (1UL << dextra) - 1UL
+        let val = (bit_buf.val & mask).to_int()
+        bit_buf.val = bit_buf.val >> dextra
+        bit_count.val -= dextra
+        val
+      } else {
+        0
+      }
+      let dist = dist_base[dist_sym] + dextra_val
       if dist > dd.hist_size() {
         raise CompressError::CorruptInput(
           "distance \{dist} exceeds history \{dd.hist_size()}",
