@@ -191,10 +191,43 @@ fn compute_bit_lengths(
 }
 
 ///|
-/// LZ77 token: either a literal byte or a length/distance match.
-priv enum Token {
-  Literal(Byte)
-  Match(length~ : Int, dist~ : Int)
+/// LZ77 token: bit-packed into Int64 to avoid heap allocation.
+/// Layout: bit 63 = is_match, bits 0-7 = literal byte (if literal),
+///         bits 0-15 = length, bits 16-31 = distance (if match).
+#valtype
+priv struct Token {
+  bits : Int64
+}
+
+///|
+fn Token::literal(b : Byte) -> Token {
+  { bits: b.to_int().to_int64() }
+}
+
+///|
+fn Token::match_(length : Int, dist : Int) -> Token {
+  let bits = (1L << 63) | (dist.to_int64() << 16) | length.to_int64()
+  { bits, }
+}
+
+///|
+fn Token::is_match(self : Token) -> Bool {
+  self.bits < 0L // bit 63 set = negative
+}
+
+///|
+fn Token::get_literal(self : Token) -> Byte {
+  (self.bits & 0xFFL).to_byte()
+}
+
+///|
+fn Token::get_length(self : Token) -> Int {
+  (self.bits & 0xFFFFL).to_int()
+}
+
+///|
+fn Token::get_dist(self : Token) -> Int {
+  ((self.bits >> 16) & 0xFFFFL).to_int()
 }
 
 ///|
@@ -379,16 +412,17 @@ fn DeflateWriter::write_dynamic_block(
   let lit_freqs = FixedArray::make(286, 0)
   let dist_freqs = FixedArray::make(30, 0)
   for t in tokens {
-    match t {
-      Literal(b) => lit_freqs[b.to_int()] += 1
-      Match(length~, dist~) => {
-        let lidx = (length - MIN_MATCH_LENGTH) * 3
-        let length_code = length_encode_table[lidx]
-        lit_freqs[length_code] += 1
-        let didx = (dist - 1) * 2
-        let dist_code = dist_encode_table[didx]
-        dist_freqs[dist_code] += 1
-      }
+    if t.is_match() {
+      let length = t.get_length()
+      let dist = t.get_dist()
+      let lidx = (length - MIN_MATCH_LENGTH) * 3
+      let length_code = length_encode_table[lidx]
+      lit_freqs[length_code] += 1
+      let didx = (dist - 1) * 2
+      let dist_code = dist_encode_table[didx]
+      dist_freqs[dist_code] += 1
+    } else {
+      lit_freqs[t.get_literal().to_int()] += 1
     }
   }
   lit_freqs[END_BLOCK_MARKER] += 1
@@ -417,9 +451,10 @@ fn DeflateWriter::write_dynamic_block(
     // Use fixed Huffman
     self.start_fixed_block(is_final)
     for t in tokens {
-      match t {
-        Literal(b) => self.write_literal_fast(b)
-        Match(length~, dist~) => self.write_match_fast(length, dist)
+      if t.is_match() {
+        self.write_match_fast(t.get_length(), t.get_dist())
+      } else {
+        self.write_literal_fast(t.get_literal())
       }
     }
     self.write_fixed_symbol(END_BLOCK_MARKER)
@@ -427,45 +462,44 @@ fn DeflateWriter::write_dynamic_block(
     // Use dynamic Huffman
     self.write_dynamic_header(dyn_lit_codes, dyn_dist_codes, is_final)
     for t in tokens {
-      match t {
-        Literal(b) => {
-          let entry = dyn_lit_codes.get(b.to_int())
-          let code = entry >> 5
-          let n = (entry & 0x1FU).reinterpret_as_int()
-          self.write_bits_lsb(code, n)
+      if t.is_match() {
+        let length = t.get_length()
+        let dist = t.get_dist()
+        // Length code
+        let lidx = (length - MIN_MATCH_LENGTH) * 3
+        let length_code = length_encode_table[lidx]
+        let length_extra_bits = length_encode_table[lidx + 1]
+        let length_extra_val = length_encode_table[lidx + 2]
+        let lentry = dyn_lit_codes.get(length_code)
+        let lcode = lentry >> 5
+        let ln = (lentry & 0x1FU).reinterpret_as_int()
+        self.write_bits_lsb(lcode, ln)
+        if length_extra_bits > 0 {
+          self.write_bits_lsb(
+            length_extra_val.reinterpret_as_uint(),
+            length_extra_bits,
+          )
         }
-        Match(length~, dist~) => {
-          // Length code
-          let lidx = (length - MIN_MATCH_LENGTH) * 3
-          let length_code = length_encode_table[lidx]
-          let length_extra_bits = length_encode_table[lidx + 1]
-          let length_extra_val = length_encode_table[lidx + 2]
-          let lentry = dyn_lit_codes.get(length_code)
-          let lcode = lentry >> 5
-          let ln = (lentry & 0x1FU).reinterpret_as_int()
-          self.write_bits_lsb(lcode, ln)
-          if length_extra_bits > 0 {
-            self.write_bits_lsb(
-              length_extra_val.reinterpret_as_uint(),
-              length_extra_bits,
-            )
-          }
-          // Distance code
-          let didx = (dist - 1) * 2
-          let dist_code = dist_encode_table[didx]
-          let dist_extra_bits = dist_encode_table[didx + 1]
-          let dist_extra_val = dist - dist_base[dist_code]
-          let dentry = dyn_dist_codes.get(dist_code)
-          let dcode = dentry >> 5
-          let dn = (dentry & 0x1FU).reinterpret_as_int()
-          self.write_bits_lsb(dcode, dn)
-          if dist_extra_bits > 0 {
-            self.write_bits_lsb(
-              dist_extra_val.reinterpret_as_uint(),
-              dist_extra_bits,
-            )
-          }
+        // Distance code
+        let didx = (dist - 1) * 2
+        let dist_code = dist_encode_table[didx]
+        let dist_extra_bits = dist_encode_table[didx + 1]
+        let dist_extra_val = dist - dist_base[dist_code]
+        let dentry = dyn_dist_codes.get(dist_code)
+        let dcode = dentry >> 5
+        let dn = (dentry & 0x1FU).reinterpret_as_int()
+        self.write_bits_lsb(dcode, dn)
+        if dist_extra_bits > 0 {
+          self.write_bits_lsb(
+            dist_extra_val.reinterpret_as_uint(),
+            dist_extra_bits,
+          )
         }
+      } else {
+        let entry = dyn_lit_codes.get(t.get_literal().to_int())
+        let code = entry >> 5
+        let n = (entry & 0x1FU).reinterpret_as_int()
+        self.write_bits_lsb(code, n)
       }
     }
     // End of block

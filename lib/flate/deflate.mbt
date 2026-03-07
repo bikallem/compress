@@ -157,9 +157,11 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
     w.write_fixed_symbol(END_BLOCK_MARKER)
     return w.finish()
   }
-  let tokens = if level <= 1 {
-    deflate_fast_tokens(data)
-  } else if level <= 3 {
+  if level <= 1 {
+    // Single-pass: write fixed Huffman directly, no token collection
+    return deflate_fast_direct(data, w)
+  }
+  let tokens = if level <= 3 {
     deflate_greedy_tokens(data, level)
   } else {
     deflate_lazy_tokens(data, level)
@@ -169,13 +171,13 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
 }
 
 ///|
-/// Fast encoder for level 1: single hash probe, no chains.
-fn deflate_fast_tokens(data : Bytes) -> Array[Token] {
-  let tokens : Array[Token] = []
+/// Single-pass level 1: hash, match, and emit fixed Huffman codes in one pass.
+fn deflate_fast_direct(data : Bytes, w : DeflateWriter) -> Bytes {
   let data_len = data.length()
   let hash_size = 1 << 15
   let hash_mask = hash_size - 1
   let head = FixedArray::make(hash_size, -1)
+  w.start_fixed_block(true)
   let mut i = 0
   while i < data_len {
     if i + 2 < data_len {
@@ -183,7 +185,6 @@ fn deflate_fast_tokens(data : Bytes) -> Array[Token] {
       let match_pos = head[h]
       head[h] = i
       if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
-        // Single probe: just measure this one match
         let max_len = if data_len - i < MAX_MATCH_LENGTH {
           data_len - i
         } else {
@@ -194,8 +195,7 @@ fn deflate_fast_tokens(data : Bytes) -> Array[Token] {
           length += 1
         }
         if length >= MIN_MATCH_LENGTH {
-          tokens.push(Token::Match(length~, dist=i - match_pos))
-          // Skip matched bytes, only update hash for first skipped byte
+          w.write_match_fast(length, i - match_pos)
           if i + 1 + 2 < data_len {
             let h1 = hash4(data, i + 1) & hash_mask
             head[h1] = i + 1
@@ -205,10 +205,11 @@ fn deflate_fast_tokens(data : Bytes) -> Array[Token] {
         }
       }
     }
-    tokens.push(Token::Literal(data[i]))
+    w.write_literal_fast(data[i])
     i += 1
   }
-  tokens
+  w.write_fixed_symbol(END_BLOCK_MARKER)
+  w.finish()
 }
 
 ///|
@@ -235,7 +236,7 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
           data, i, match_head, prev, window_mask, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
-          tokens.push(Token::Match(length~, dist=offset))
+          tokens.push(Token::match_(length, offset))
           for j in 1..<length {
             if i + j + 2 < data_len {
               let hj = hash4(data, i + j) & hash_mask
@@ -248,7 +249,7 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
         }
       }
     }
-    tokens.push(Token::Literal(data[i]))
+    tokens.push(Token::literal(data[i]))
     i += 1
   }
   tokens
@@ -299,14 +300,14 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
     if has_prev {
       if cur_len > prev_match_len + 1 {
         // Current match is better — emit previous as literal, keep current
-        tokens.push(Token::Literal(prev_literal))
+        tokens.push(Token::literal(prev_literal))
         prev_match_len = cur_len
         prev_match_dist = cur_dist
         prev_literal = data[i]
         i += 1
       } else {
         // Previous match is good enough — emit it
-        tokens.push(Token::Match(length=prev_match_len, dist=prev_match_dist))
+        tokens.push(Token::match_(prev_match_len, prev_match_dist))
         // Update hash chains for skipped bytes (starting from byte after prev literal)
         let start = i
         let end = start + prev_match_len - 1 // -1 because we already hashed position i
@@ -328,13 +329,13 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
       prev_literal = data[i]
       i += 1
     } else {
-      tokens.push(Token::Literal(data[i]))
+      tokens.push(Token::literal(data[i]))
       i += 1
     }
   }
   if has_prev {
     // Flush deferred match
-    tokens.push(Token::Match(length=prev_match_len, dist=prev_match_dist))
+    tokens.push(Token::match_(prev_match_len, prev_match_dist))
   }
   tokens
 }
