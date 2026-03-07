@@ -26,27 +26,27 @@ pub fn Header::default() -> Header {
 
 ///|
 // gzip magic bytes
-let gzip_magic1 : Byte = 0x1F
+const GZIP_MAGIC1 : Byte = 0x1F
 
 ///|
-let gzip_magic2 : Byte = 0x8B
+const GZIP_MAGIC2 : Byte = 0x8B
 
 ///|
 // Compression method: deflate = 8
-let gzip_deflate : Byte = 8
+const GZIP_DEFLATE : Byte = 8
 
 ///|
 // Header flags
-let gzip_ftext : Int = 1
+const GZIP_FTEXT : Int = 1
 
 ///|
-let gzip_fhcrc : Int = 2
+const GZIP_FHCRC : Int = 2
 
 ///|
-let gzip_fextra : Int = 4
+const GZIP_FEXTRA : Int = 4
 
 ///|
-let gzip_fname : Int = 8
+const GZIP_FNAME : Int = 8
 
 ///|
-let gzip_fcomment : Int = 16
+const GZIP_FCOMMENT : Int = 16

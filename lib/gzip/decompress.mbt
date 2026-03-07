@@ -7,11 +7,11 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
     raise GzipError::UnexpectedEOF
   }
   // Check magic bytes
-  if data[0] != gzip_magic1 || data[1] != gzip_magic2 {
+  if data[0] != GZIP_MAGIC1 || data[1] != GZIP_MAGIC2 {
     raise GzipError::InvalidHeader("invalid gzip magic bytes")
   }
   // Check compression method
-  if data[2] != gzip_deflate {
+  if data[2] != GZIP_DEFLATE {
     raise GzipError::InvalidHeader("unsupported compression method \{data[2]}")
   }
   let flg = data[3].to_int()
@@ -27,7 +27,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   // Parse optional fields
   // FEXTRA
   let mut extra = Bytes::default()
-  if (flg & gzip_fextra) != 0 {
+  if (flg & GZIP_FEXTRA) != 0 {
     if pos + 2 > data.length() {
       raise GzipError::UnexpectedEOF
     }
@@ -45,7 +45,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   }
   // FNAME
   let mut name = ""
-  if (flg & gzip_fname) != 0 {
+  if (flg & GZIP_FNAME) != 0 {
     let name_buf = @buffer.new()
     while pos < data.length() && data[pos] != b'\x00' {
       name_buf.write_byte(data[pos])
@@ -65,7 +65,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   }
   // FCOMMENT
   let mut comment = ""
-  if (flg & gzip_fcomment) != 0 {
+  if (flg & GZIP_FCOMMENT) != 0 {
     let comment_buf = @buffer.new()
     while pos < data.length() && data[pos] != b'\x00' {
       comment_buf.write_byte(data[pos])
@@ -83,7 +83,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
     comment = sb.to_string()
   }
   // FHCRC
-  if (flg & gzip_fhcrc) != 0 {
+  if (flg & GZIP_FHCRC) != 0 {
     if pos + 2 > data.length() {
       raise GzipError::UnexpectedEOF
     }

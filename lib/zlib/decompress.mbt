@@ -23,7 +23,7 @@ pub fn decompress_with_dict(
   }
   // Check compression method (lower 4 bits of CMF must be 8 = deflate)
   let cm = cmf & 0x0F
-  if cm != zlib_deflate_method {
+  if cm != ZLIB_DEFLATE_METHOD {
     raise ZlibError::InvalidHeader("unsupported compression method \{cm}")
   }
   // Check CINFO (upper 4 bits of CMF) - window size must be <= 7

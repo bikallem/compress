@@ -1,11 +1,11 @@
 ///|
 /// Largest prime smaller than 65536.
-let adler32_mod : UInt = 65521
+const ADLER32_MOD : UInt = 65521
 
 ///|
 /// nmax is the largest n such that 255*n*(n+1)/2 + (n+1)*(mod-1) <= 2^32-1.
 /// This bounds how many bytes we can process before reducing.
-let adler32_nmax : Int = 5552
+const ADLER32_NMAX : Int = 5552
 
 ///|
 /// Computes Adler-32 checksum of the given bytes in one shot.
@@ -15,8 +15,8 @@ pub fn adler32(data : BytesView) -> UInt {
   let mut offset = 0
   let len = data.length()
   while offset < len {
-    let chunk_end = if offset + adler32_nmax < len {
-      offset + adler32_nmax
+    let chunk_end = if offset + ADLER32_NMAX < len {
+      offset + ADLER32_NMAX
     } else {
       len
     }
@@ -24,8 +24,8 @@ pub fn adler32(data : BytesView) -> UInt {
       s1 = s1 + data[i].to_uint()
       s2 = s2 + s1
     }
-    s1 = s1 % adler32_mod
-    s2 = s2 % adler32_mod
+    s1 = s1 % ADLER32_MOD
+    s2 = s2 % ADLER32_MOD
     offset = chunk_end
   }
   (s2 << 16) | s1
@@ -60,8 +60,8 @@ pub impl Hasher for Adler32 with update(self, data) -> Unit {
   let mut offset = 0
   let len = data.length()
   while offset < len {
-    let chunk_end = if offset + adler32_nmax < len {
-      offset + adler32_nmax
+    let chunk_end = if offset + ADLER32_NMAX < len {
+      offset + ADLER32_NMAX
     } else {
       len
     }
@@ -69,8 +69,8 @@ pub impl Hasher for Adler32 with update(self, data) -> Unit {
       self.s1 = self.s1 + data[i].to_uint()
       self.s2 = self.s2 + self.s1
     }
-    self.s1 = self.s1 % adler32_mod
-    self.s2 = self.s2 % adler32_mod
+    self.s1 = self.s1 % ADLER32_MOD
+    self.s2 = self.s2 % ADLER32_MOD
     offset = chunk_end
   }
 }

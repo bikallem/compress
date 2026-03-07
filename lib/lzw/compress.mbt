@@ -37,11 +37,11 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
     order,
     lit_width: lw,
     buf: @buffer.new(size_hint=256),
-    table: FixedArray::make(table_size, 0U),
+    table: FixedArray::make(TABLE_SIZE, 0U),
     width: 1 + lw,
     hi: (1 << lw) + 1,
     overflow: 1 << (lw + 1),
-    saved_code: invalid_code,
+    saved_code: INVALID_CODE,
     bits: 0U,
     n_bits: 0,
   }
@@ -81,14 +81,14 @@ fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
     self.width += 1
     self.overflow = self.overflow << 1
   }
-  if self.hi == max_code {
+  if self.hi == MAX_CODE {
     let clear = 1 << self.lit_width
     self.write_code(clear)
     self.width = self.lit_width + 1
     self.hi = clear + 1
     self.overflow = clear << 1
     // Clear the hash table
-    for i in 0..<table_size {
+    for i in 0..<TABLE_SIZE {
       self.table[i] = 0U
     }
     return true
@@ -103,7 +103,7 @@ fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
   }
   let mut code = self.saved_code
   let mut start = 0
-  if code == invalid_code {
+  if code == INVALID_CODE {
     // First write: send clear code
     let clear = 1 << self.lit_width
     self.write_code(clear)
@@ -113,17 +113,17 @@ fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
   for i in start..<data.length() {
     let literal = data[i].to_int()
     let key = (code << 8) | literal
-    let mut hash = ((key >> 12) ^ key) & table_mask
+    let mut hash = ((key >> 12) ^ key) & TABLE_MASK
     // Hash table lookup
     let mut found = false
     while self.table[hash] != 0U {
       let t = self.table[hash]
       if key.reinterpret_as_uint() == t >> 12 {
-        code = (t & max_code.reinterpret_as_uint()).reinterpret_as_int()
+        code = (t & MAX_CODE.reinterpret_as_uint()).reinterpret_as_int()
         found = true
         break
       }
-      hash = (hash + 1) & table_mask
+      hash = (hash + 1) & TABLE_MASK
     }
     if found {
       continue
@@ -137,7 +137,7 @@ fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
     }
     // Insert into hash table
     while self.table[hash] != 0U {
-      hash = (hash + 1) & table_mask
+      hash = (hash + 1) & TABLE_MASK
     }
     self.table[hash] = (key.reinterpret_as_uint() << 12) |
       self.hi.reinterpret_as_uint()
@@ -148,7 +148,7 @@ fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
 ///|
 fn LzwCompressState::close(self : LzwCompressState) -> Bytes {
   // Write the saved code if valid
-  if self.saved_code != invalid_code {
+  if self.saved_code != INVALID_CODE {
     self.write_code(self.saved_code)
     ignore(self.inc_hi())
   } else {

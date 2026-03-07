@@ -13,7 +13,7 @@ priv struct HuffmanDecoder {
 }
 
 ///|
-let huffman_chunk_bits : Int = 9
+const HUFFMAN_CHUNK_BITS : Int = 9
 
 ///|
 /// Builds a Huffman decoder from code lengths.
@@ -22,8 +22,8 @@ fn HuffmanDecoder::build(
   lengths : FixedArray[Int],
 ) -> HuffmanDecoder raise CompressError {
   // Count codes of each length
-  let count = FixedArray::make(max_code_len + 1, 0)
-  let mut min_bits = max_code_len
+  let count = FixedArray::make(MAX_CODE_LEN + 1, 0)
+  let mut min_bits = MAX_CODE_LEN
   let mut max_bits = 0
   for i in 0..<lengths.length() {
     let n = lengths[i]
@@ -41,14 +41,14 @@ fn HuffmanDecoder::build(
     raise CompressError::CorruptInput("empty Huffman tree")
   }
   // Compute next_code[] per RFC 1951 section 3.2.2
-  let next_code = FixedArray::make(max_code_len + 1, 0)
+  let next_code = FixedArray::make(MAX_CODE_LEN + 1, 0)
   let mut code = 0
   for bits in 1..<=max_bits {
     code = (code + count[bits - 1]) << 1
     next_code[bits] = code
   }
   // Build chunks table
-  let chunk_size = 1 << huffman_chunk_bits
+  let chunk_size = 1 << HUFFMAN_CHUNK_BITS
   let chunks = FixedArray::make(chunk_size, 0U)
   let links : Array[FixedArray[UInt]] = []
   // Assign codes and populate lookup tables
@@ -61,7 +61,7 @@ fn HuffmanDecoder::build(
     next_code[n] += 1
     // Reverse the bits for LSB-first lookup
     let reversed = reverse_bits(c, n)
-    if n <= huffman_chunk_bits {
+    if n <= HUFFMAN_CHUNK_BITS {
       // Direct entry in chunks table
       let entry = (sym.reinterpret_as_uint() << 8) | n.reinterpret_as_uint()
       // Fill all chunk entries that share this prefix
@@ -73,23 +73,23 @@ fn HuffmanDecoder::build(
       }
     } else {
       // Longer code: need link table
-      let prefix = reversed & ((1 << huffman_chunk_bits) - 1)
+      let prefix = reversed & ((1 << HUFFMAN_CHUNK_BITS) - 1)
       if chunks[prefix] == 0U {
         // Create link table entry
         let link_idx = links.length()
-        let link_bits = max_bits - huffman_chunk_bits
+        let link_bits = max_bits - HUFFMAN_CHUNK_BITS
         let link_size = 1 << link_bits
         links.push(FixedArray::make(link_size, 0U))
         chunks[prefix] = (link_idx.reinterpret_as_uint() << 8) |
-          ((huffman_chunk_bits + link_bits).reinterpret_as_uint() | 0x80U)
+          ((HUFFMAN_CHUNK_BITS + link_bits).reinterpret_as_uint() | 0x80U)
       }
       let link_info = chunks[prefix]
       let link_idx = (link_info >> 8).reinterpret_as_int()
       let link_table = links[link_idx]
-      let suffix = reversed >> huffman_chunk_bits
-      let link_bits = max_bits - huffman_chunk_bits
+      let suffix = reversed >> HUFFMAN_CHUNK_BITS
+      let link_bits = max_bits - HUFFMAN_CHUNK_BITS
       let entry = (sym.reinterpret_as_uint() << 8) | n.reinterpret_as_uint()
-      let step = 1 << (n - huffman_chunk_bits)
+      let step = 1 << (n - HUFFMAN_CHUNK_BITS)
       let mut idx = suffix
       while idx < 1 << link_bits {
         link_table[idx] = entry
@@ -134,7 +134,7 @@ fn HuffmanDecoder::decode(
     pos.val += 1
   }
   // Look up in chunks table
-  let idx = (bit_buf.val & ((1UL << huffman_chunk_bits) - 1UL)).to_int()
+  let idx = (bit_buf.val & ((1UL << HUFFMAN_CHUNK_BITS) - 1UL)).to_int()
   let entry = self.chunks[idx]
   if (entry & 0x80U) == 0U {
     // Direct hit
@@ -147,8 +147,8 @@ fn HuffmanDecoder::decode(
   // Need link table
   let link_idx = (entry >> 8).reinterpret_as_int()
   let link_table = self.links[link_idx]
-  let suffix = (bit_buf.val >> huffman_chunk_bits).to_int() &
-    ((1 << (self.max_bits - huffman_chunk_bits)) - 1)
+  let suffix = (bit_buf.val >> HUFFMAN_CHUNK_BITS).to_int() &
+    ((1 << (self.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
   let link_entry = link_table[suffix]
   if link_entry == 0U {
     raise CompressError::CorruptInput("invalid Huffman code")

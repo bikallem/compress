@@ -15,19 +15,19 @@ pub suberror LzwError {
 } derive(Show)
 
 ///|
-let max_width : Int = 12
+const MAX_WIDTH : Int = 12
 
 ///|
-let decoder_invalid_code : Int = 0xffff
+const DECODER_INVALID_CODE : Int = 0xffff
 
 ///|
-let max_code : Int = (1 << 12) - 1
+const MAX_CODE : Int = (1 << 12) - 1
 
 ///|
-let invalid_code : Int = -1
+const INVALID_CODE : Int = -1
 
 ///|
-let table_size : Int = 4 * (1 << 12)
+const TABLE_SIZE : Int = 4 * (1 << 12)
 
 ///|
-let table_mask : Int = table_size - 1
+const TABLE_MASK : Int = TABLE_SIZE - 1

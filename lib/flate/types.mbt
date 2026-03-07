@@ -33,38 +33,38 @@ pub suberror CompressError {
 
 ///|
 // DEFLATE constants from RFC 1951
-let max_match_length : Int = 258
+const MAX_MATCH_LENGTH : Int = 258
 
 ///|
-let min_match_length : Int = 3
+const MIN_MATCH_LENGTH : Int = 3
 
 ///|
-let max_match_offset : Int = 32768
+const MAX_MATCH_OFFSET : Int = 32768
 
 ///|
-let max_code_len : Int = 16
+const MAX_CODE_LEN : Int = 16
 
 ///|
-let max_num_lit : Int = 286
+const MAX_NUM_LIT : Int = 286
 
 ///|
-let max_num_dist : Int = 30
+const MAX_NUM_DIST : Int = 30
 
 ///|
-let end_block_marker : Int = 256
+const END_BLOCK_MARKER : Int = 256
 
 ///|
-let num_codes : Int = 19
+const NUM_CODES : Int = 19
 
 ///|
 // Block types
-let block_stored : Int = 0
+const BLOCK_STORED : Int = 0
 
 ///|
-let block_fixed : Int = 1
+const BLOCK_FIXED : Int = 1
 
 ///|
-let block_dynamic : Int = 2
+const BLOCK_DYNAMIC : Int = 2
 
 ///|
 // Length code base values (RFC 1951 section 3.2.5)

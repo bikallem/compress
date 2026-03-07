@@ -17,7 +17,7 @@ pub fn compress_with_dict(
   let buf = @buffer.new(size_hint=data.length() + 12)
   // Build CMF byte: CINFO (4 bits) | CM (4 bits)
   // CM = 8 (deflate), CINFO = 7 (32K window)
-  let cmf = (zlib_default_cinfo << 4) | zlib_deflate_method
+  let cmf = (ZLIB_DEFAULT_CINFO << 4) | ZLIB_DEFLATE_METHOD
   // Build FLG byte: FLEVEL (2 bits) | FDICT (1 bit) | FCHECK (5 bits)
   let flevel = match level {
     NoCompression | HuffmanOnly => 0

@@ -1,6 +1,6 @@
 ///|
 /// IEEE polynomial used by ethernet, gzip, PNG, etc.
-let ieee_poly : UInt = 0xEDB88320
+const IEEE_POLY : UInt = 0xEDB88320
 
 ///|
 /// Precomputed CRC-32 table for the IEEE polynomial.
@@ -10,7 +10,7 @@ let crc32_table : FixedArray[UInt] = {
     let mut crc : UInt = i.reinterpret_as_uint()
     for _ in 0..<8 {
       if (crc & 1U) == 1U {
-        crc = (crc >> 1) ^ ieee_poly
+        crc = (crc >> 1) ^ IEEE_POLY
       } else {
         crc = crc >> 1
       }

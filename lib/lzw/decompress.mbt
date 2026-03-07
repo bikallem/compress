@@ -47,13 +47,13 @@ fn LzwDecompressState::new(
     lit_width,
     clear,
     eof,
-    suffix: FixedArray::make(1 << max_width, b'\x00'),
-    prefix: FixedArray::make(1 << max_width, 0),
-    output: FixedArray::make(2 * (1 << max_width), b'\x00'),
+    suffix: FixedArray::make(1 << MAX_WIDTH, b'\x00'),
+    prefix: FixedArray::make(1 << MAX_WIDTH, 0),
+    output: FixedArray::make(2 * (1 << MAX_WIDTH), b'\x00'),
     width,
     hi: eof,
     overflow: 1 << width,
-    last: decoder_invalid_code,
+    last: DECODER_INVALID_CODE,
     o: 0,
     bits: 0U,
     n_bits: 0,
@@ -114,7 +114,7 @@ fn LzwDecompressState::decompress(
       // Literal code
       self.output[self.o] = code.to_byte()
       self.o += 1
-      if self.last != decoder_invalid_code {
+      if self.last != DECODER_INVALID_CODE {
         self.suffix[self.hi] = code.to_byte()
         self.prefix[self.hi] = self.last
       }
@@ -123,7 +123,7 @@ fn LzwDecompressState::decompress(
       self.width = 1 + self.lit_width
       self.hi = self.eof
       self.overflow = 1 << self.width
-      self.last = decoder_invalid_code
+      self.last = DECODER_INVALID_CODE
       continue
     } else if code == self.eof {
       // EOF code
@@ -137,7 +137,7 @@ fn LzwDecompressState::decompress(
       // Code in dictionary
       let mut c = code
       let mut i = self.output.length() - 1
-      if code == self.hi && self.last != decoder_invalid_code {
+      if code == self.hi && self.last != DECODER_INVALID_CODE {
         // Special case: code == hi
         c = self.last
         while c >= self.clear {
@@ -160,7 +160,7 @@ fn LzwDecompressState::decompress(
         self.output[self.o + j] = self.output[i + j]
       }
       self.o += decoded_len
-      if self.last != decoder_invalid_code {
+      if self.last != DECODER_INVALID_CODE {
         self.suffix[self.hi] = c.to_byte()
         self.prefix[self.hi] = self.last
       }
@@ -173,8 +173,8 @@ fn LzwDecompressState::decompress(
       if self.hi > self.overflow {
         abort("unreachable")
       }
-      if self.width == max_width {
-        self.last = decoder_invalid_code
+      if self.width == MAX_WIDTH {
+        self.last = DECODER_INVALID_CODE
         self.hi -= 1
       } else {
         self.width += 1
@@ -182,7 +182,7 @@ fn LzwDecompressState::decompress(
       }
     }
     // Flush output when buffer gets full
-    if self.o >= 1 << max_width {
+    if self.o >= 1 << MAX_WIDTH {
       for i in 0..<self.o {
         result.write_byte(self.output[i])
       }

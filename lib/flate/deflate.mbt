@@ -58,7 +58,7 @@ fn deflate_lz77(data : Bytes, _level : Int) -> Bytes {
   let w = DeflateWriter::new()
   if data.length() == 0 {
     // Empty: emit final empty fixed block
-    w.write_fixed_bits(end_block_marker, true)
+    w.write_fixed_bits(END_BLOCK_MARKER, true)
     return w.finish()
   }
   // For simplicity, emit a single final block with fixed Huffman encoding.
@@ -83,11 +83,11 @@ fn deflate_lz77(data : Bytes, _level : Int) -> Bytes {
       prev[i & window_mask] = match_head
       head[h] = i
       // Try to find a match
-      if match_head >= 0 && i - match_head <= max_match_offset {
+      if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
         let (length, offset) = find_best_match(
           data, i, match_head, prev, window_mask,
         )
-        if length >= min_match_length {
+        if length >= MIN_MATCH_LENGTH {
           w.write_match(length, offset)
           // Update hash chains for bytes in the match
           for j in 1..<length {
@@ -106,7 +106,7 @@ fn deflate_lz77(data : Bytes, _level : Int) -> Bytes {
     w.write_literal(data[i])
     i += 1
   }
-  w.write_fixed_bits(end_block_marker, false)
+  w.write_fixed_bits(END_BLOCK_MARKER, false)
   w.finish()
 }
 
@@ -126,17 +126,17 @@ fn find_best_match(
   prev : FixedArray[Int],
   window_mask : Int,
 ) -> (Int, Int) {
-  let mut best_len = min_match_length - 1
+  let mut best_len = MIN_MATCH_LENGTH - 1
   let mut best_offset = 0
   let mut pos = match_head
   let max_chain = 128
   let mut chain_count = 0
-  let max_len = if data.length() - cur < max_match_length {
+  let max_len = if data.length() - cur < MAX_MATCH_LENGTH {
     data.length() - cur
   } else {
-    max_match_length
+    MAX_MATCH_LENGTH
   }
-  while pos >= 0 && cur - pos <= max_match_offset && chain_count < max_chain {
+  while pos >= 0 && cur - pos <= MAX_MATCH_OFFSET && chain_count < max_chain {
     // Count matching bytes
     let mut length = 0
     while length < max_len && data[cur + length] == data[pos + length] {
@@ -156,7 +156,7 @@ fn find_best_match(
     pos = next
     chain_count += 1
   }
-  if best_offset > 0 && best_len >= min_match_length {
+  if best_offset > 0 && best_len >= MIN_MATCH_LENGTH {
     (best_len, best_offset)
   } else {
     (0, 0)
@@ -228,7 +228,7 @@ fn DeflateWriter::write_fixed_bits(
     // BFINAL=1, BTYPE=01 (fixed)
     self.write_bits_lsb(0b011U, 3)
   }
-  if sym == end_block_marker {
+  if sym == END_BLOCK_MARKER {
     // Fixed Huffman: symbol 256 is 7-bit code 0b0000000
     // Codes 256-279: 7-bit starting at 0
     let code = sym - 256

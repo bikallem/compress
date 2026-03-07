@@ -11,8 +11,8 @@ pub suberror ZlibError {
 ///|
 /// CMF byte: compression method (lower 4 bits) and compression info (upper 4 bits).
 /// For deflate: method = 8, info = log2(window_size) - 8 (max 7 = 32K window).
-let zlib_deflate_method : Int = 8
+const ZLIB_DEFLATE_METHOD : Int = 8
 
 ///|
 /// Default window size exponent for deflate (32KB = 2^15, so CINFO = 7).
-let zlib_default_cinfo : Int = 7
+const ZLIB_DEFAULT_CINFO : Int = 7

@@ -135,7 +135,7 @@ fn decode_huffman_block(
       if dd.avail_write() == 0 {
         dd.read_flush(out)
       }
-    } else if sym == end_block_marker {
+    } else if sym == END_BLOCK_MARKER {
       // End of block
       dd.read_flush(out)
       return
@@ -182,7 +182,7 @@ fn read_dynamic_header(
   let hdist = read_bits(bit_buf, bit_count, data, pos, 5) + 1
   let hclen = read_bits(bit_buf, bit_count, data, pos, 4) + 4
   // Read code length code lengths
-  let cl_lengths = FixedArray::make(num_codes, 0)
+  let cl_lengths = FixedArray::make(NUM_CODES, 0)
   for i in 0..<hclen {
     cl_lengths[code_order[i]] = read_bits(bit_buf, bit_count, data, pos, 3)
   }

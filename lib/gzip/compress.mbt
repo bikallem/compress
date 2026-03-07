@@ -7,20 +7,20 @@ pub fn compress(
 ) -> Bytes raise GzipError {
   let buf = @buffer.new(size_hint=data.length() + 32)
   // Magic bytes
-  buf.write_byte(gzip_magic1)
-  buf.write_byte(gzip_magic2)
+  buf.write_byte(GZIP_MAGIC1)
+  buf.write_byte(GZIP_MAGIC2)
   // Compression method: deflate
-  buf.write_byte(gzip_deflate)
+  buf.write_byte(GZIP_DEFLATE)
   // Build FLG byte
   let mut flg = 0
   if header.name.length() > 0 {
-    flg = flg | gzip_fname
+    flg = flg | GZIP_FNAME
   }
   if header.comment.length() > 0 {
-    flg = flg | gzip_fcomment
+    flg = flg | GZIP_FCOMMENT
   }
   if header.extra.length() > 0 {
-    flg = flg | gzip_fextra
+    flg = flg | GZIP_FEXTRA
   }
   buf.write_byte(flg.to_byte())
   // MTIME (4 bytes LE)
