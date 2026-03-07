@@ -1,0 +1,29 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/checksum"
+
+// Values
+pub fn adler32(BytesView) -> UInt
+
+pub fn crc32(BytesView) -> UInt
+
+// Errors
+
+// Types and methods
+type Adler32
+pub fn Adler32::new() -> Self
+pub impl Hasher for Adler32
+
+type CRC32
+pub fn CRC32::new() -> Self
+pub impl Hasher for CRC32
+
+// Type aliases
+
+// Traits
+pub(open) trait Hasher {
+  size(Self) -> Int
+  reset(Self) -> Unit
+  update(Self, BytesView) -> Unit
+  checksum(Self) -> UInt
+}
+

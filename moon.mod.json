@@ -1,0 +1,10 @@
+{
+  "name": "blem00/compress",
+  "version": "0.1.0",
+  "source": "lib",
+  "readme": "README.md",
+  "repository": "",
+  "license": "Apache-2.0",
+  "keywords": ["compression", "deflate", "gzip", "zlib", "lzw", "bzip2"],
+  "description": "Compression library for MoonBit: flate, gzip, zlib, lzw, bzip2"
+}
