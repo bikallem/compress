@@ -30,10 +30,10 @@ priv struct LzwDecompressState {
   mut overflow : Int
   mut last : Int
   mut o : Int
-  // Bit reading state
-  mut bits : UInt
-  mut n_bits : Int
-  mut pos : Int
+  // Bit reading state (initial values; locals used in hot loop)
+  bits : UInt
+  n_bits : Int
+  pos : Int
 }
 
 ///|
@@ -65,9 +65,9 @@ fn LzwDecompressState::flush(
   self : LzwDecompressState,
   result : @buffer.Buffer,
 ) -> Unit {
-  let output = self.output
-  for i in 0..<self.o {
-    result.write_byte(output[i])
+  if self.o > 0 {
+    let bytes = self.output.unsafe_reinterpret_as_bytes()
+    result.write_bytesview(bytes[0:self.o])
   }
   self.o = 0
 }
@@ -79,15 +79,19 @@ fn LzwDecompressState::process_code(
   code : Int,
   result : @buffer.Buffer,
 ) -> Bool raise LzwError {
-  if code < self.clear {
+  let output = self.output
+  let suffix = self.suffix
+  let prefix = self.prefix
+  let clear = self.clear
+  if code < clear {
     // Literal code
-    self.output[self.o] = code.to_byte()
+    output[self.o] = code.to_byte()
     self.o += 1
     if self.last != DECODER_INVALID_CODE {
-      self.suffix[self.hi] = code.to_byte()
-      self.prefix[self.hi] = self.last
+      suffix[self.hi] = code.to_byte()
+      prefix[self.hi] = self.last
     }
-  } else if code == self.clear {
+  } else if code == clear {
     self.width = 1 + self.lit_width
     self.hi = self.eof
     self.overflow = 1 << self.width
@@ -98,31 +102,32 @@ fn LzwDecompressState::process_code(
     return true
   } else if code <= self.hi {
     let mut c = code
-    let mut i = self.output.length() - 1
+    let out_len = output.length()
+    let mut i = out_len - 1
     if code == self.hi && self.last != DECODER_INVALID_CODE {
       c = self.last
-      while c >= self.clear {
-        c = self.prefix[c]
+      while c >= clear {
+        c = prefix[c]
       }
-      self.output[i] = c.to_byte()
+      output[i] = c.to_byte()
       i -= 1
       c = self.last
     }
-    while c >= self.clear {
-      self.output[i] = self.suffix[c]
+    while c >= clear {
+      output[i] = suffix[c]
       i -= 1
-      c = self.prefix[c]
+      c = prefix[c]
     }
-    self.output[i] = c.to_byte()
-    let decoded_len = self.output.length() - i
+    output[i] = c.to_byte()
+    let decoded_len = out_len - i
     // Copy decoded bytes — use unsafe_blit for bulk copy
     if self.o != i {
-      FixedArray::unsafe_blit(self.output, self.o, self.output, i, decoded_len)
+      FixedArray::unsafe_blit(output, self.o, output, i, decoded_len)
     }
     self.o += decoded_len
     if self.last != DECODER_INVALID_CODE {
-      self.suffix[self.hi] = c.to_byte()
-      self.prefix[self.hi] = self.last
+      suffix[self.hi] = c.to_byte()
+      prefix[self.hi] = self.last
     }
   } else {
     raise LzwError::InvalidCode("lzw: invalid code \{code}")
@@ -153,20 +158,24 @@ fn decompress_lsb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
   let state = LzwDecompressState::new(lit_width)
   let result = @buffer.new(size_hint=data.length() * 2)
   let data_len = data.length()
+  // Extract bit-reader state to locals for the hot loop
+  let mut bits = state.bits
+  let mut n_bits = state.n_bits
+  let mut pos = state.pos
   while true {
-    // Read code (LSB)
-    while state.n_bits < state.width {
-      if state.pos >= data_len {
+    // Read code (LSB) — inlined with locals
+    while n_bits < state.width {
+      if pos >= data_len {
         raise LzwError::UnexpectedEOF
       }
-      state.bits = state.bits | (data[state.pos].to_uint() << state.n_bits)
-      state.n_bits += 8
-      state.pos += 1
+      bits = bits | (data[pos].to_uint() << n_bits)
+      n_bits += 8
+      pos += 1
     }
     let mask = (1U << state.width) - 1U
-    let code = (state.bits & mask).reinterpret_as_int()
-    state.bits = state.bits >> state.width
-    state.n_bits -= state.width
+    let code = (bits & mask).reinterpret_as_int()
+    bits = bits >> state.width
+    n_bits -= state.width
     if state.process_code(code, result) {
       break
     }
@@ -180,20 +189,22 @@ fn decompress_msb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
   let state = LzwDecompressState::new(lit_width)
   let result = @buffer.new(size_hint=data.length() * 2)
   let data_len = data.length()
+  let mut bits = state.bits
+  let mut n_bits = state.n_bits
+  let mut pos = state.pos
   while true {
-    // Read code (MSB)
-    while state.n_bits < state.width {
-      if state.pos >= data_len {
+    // Read code (MSB) — inlined with locals
+    while n_bits < state.width {
+      if pos >= data_len {
         raise LzwError::UnexpectedEOF
       }
-      state.bits = state.bits |
-        (data[state.pos].to_uint() << (24 - state.n_bits))
-      state.n_bits += 8
-      state.pos += 1
+      bits = bits | (data[pos].to_uint() << (24 - n_bits))
+      n_bits += 8
+      pos += 1
     }
-    let code = (state.bits >> (32 - state.width)).reinterpret_as_int()
-    state.bits = state.bits << state.width
-    state.n_bits -= state.width
+    let code = (bits >> (32 - state.width)).reinterpret_as_int()
+    bits = bits << state.width
+    n_bits -= state.width
     if state.process_code(code, result) {
       break
     }
