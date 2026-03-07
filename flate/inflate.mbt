@@ -68,9 +68,28 @@ fn decode_stored_block(
   if (len ^ nlen) != 0xFFFF {
     raise CompressError::CorruptInput("invalid stored block lengths")
   }
-  for _ in 0..<len {
-    let b = br.read(8).to_byte()
-    dd.write_byte(b)
+  // Drain any buffered whole bytes first
+  let mut remaining = len
+  while remaining > 0 && br.count >= 8 {
+    dd.write_byte((br.buf & 0xFFUL).to_byte())
+    br.buf = br.buf >> 8
+    br.count -= 8
+    remaining -= 1
+    if dd.avail_write() == 0 {
+      dd.read_flush(out)
+    }
+  }
+  // Bulk copy remaining directly from input data
+  while remaining > 0 {
+    let avail = dd.avail_write()
+    let n = if remaining < avail { remaining } else { avail }
+    let hist = dd.hist
+    for i in 0..<n {
+      hist[dd.wr_pos + i] = br.data[br.pos + i]
+    }
+    dd.wr_pos += n
+    br.pos += n
+    remaining -= n
     if dd.avail_write() == 0 {
       dd.read_flush(out)
     }
@@ -87,25 +106,42 @@ fn decode_huffman_block(
 ) -> Unit raise CompressError {
   let chunk_mask = (1UL << HUFFMAN_CHUNK_BITS) - 1UL
   let lit_chunks = lit_dec.chunks
+  let dist_chunks = dist_dec.chunks
+  let hist = dd.hist
+  let hist_len = hist.length()
   while true {
-    // Eagerly fill the bit buffer
+    // Fill bit buffer
     br.fill()
-    // Fast path: inline direct chunk lookup
-    let idx = (br.buf & chunk_mask).to_int()
-    let entry = lit_chunks[idx]
+    // Inline Huffman decode for literal/length
+    let entry = lit_chunks[(br.buf & chunk_mask).to_int()]
     let sym = if (entry & 0x80U) == 0U &&
       br.count >= (entry & 0xFFU).reinterpret_as_int() {
+      // Direct chunk hit — most common path
       let n = (entry & 0xFFU).reinterpret_as_int()
       let s = (entry >> 8).reinterpret_as_int()
       br.buf = br.buf >> n
       br.count -= n
       s
+    } else if (entry & 0x80U) != 0U {
+      // Link table path — inlined to avoid function call
+      let link_idx = (entry >> 8).reinterpret_as_int()
+      let link_table = lit_dec.links[link_idx]
+      let suffix = (br.buf >> HUFFMAN_CHUNK_BITS).to_int() &
+        ((1 << (lit_dec.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
+      let link_entry = link_table[suffix]
+      let n = (link_entry & 0xFFU).reinterpret_as_int()
+      let s = (link_entry >> 8).reinterpret_as_int()
+      br.buf = br.buf >> n
+      br.count -= n
+      s
     } else {
+      // Insufficient bits — fallback to full decode with refill
       lit_dec.decode(br)
     }
     if sym < 256 {
-      dd.write_byte(sym.to_byte())
-      if dd.avail_write() == 0 {
+      hist[dd.wr_pos] = sym.to_byte()
+      dd.wr_pos += 1
+      if dd.wr_pos == hist_len {
         dd.read_flush(out)
       }
     } else if sym == END_BLOCK_MARKER {
@@ -128,15 +164,24 @@ fn decode_huffman_block(
         0
       }
       let length = length_base[length_code] + extra_val
-      // Decode distance - inline fast path
+      // Decode distance — fully inlined
       br.fill()
-      let dist_chunks = dist_dec.chunks
-      let dist_idx = (br.buf & chunk_mask).to_int()
-      let dist_entry = dist_chunks[dist_idx]
+      let dist_entry = dist_chunks[(br.buf & chunk_mask).to_int()]
       let dist_sym = if (dist_entry & 0x80U) == 0U &&
         br.count >= (dist_entry & 0xFFU).reinterpret_as_int() {
         let n = (dist_entry & 0xFFU).reinterpret_as_int()
         let s = (dist_entry >> 8).reinterpret_as_int()
+        br.buf = br.buf >> n
+        br.count -= n
+        s
+      } else if (dist_entry & 0x80U) != 0U {
+        let link_idx = (dist_entry >> 8).reinterpret_as_int()
+        let link_table = dist_dec.links[link_idx]
+        let suffix = (br.buf >> HUFFMAN_CHUNK_BITS).to_int() &
+          ((1 << (dist_dec.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
+        let link_entry = link_table[suffix]
+        let n = (link_entry & 0xFFU).reinterpret_as_int()
+        let s = (link_entry >> 8).reinterpret_as_int()
         br.buf = br.buf >> n
         br.count -= n
         s
@@ -167,7 +212,7 @@ fn decode_huffman_block(
       while remaining > 0 {
         let n = dd.write_copy(dist, remaining)
         remaining -= n
-        if dd.avail_write() == 0 {
+        if dd.wr_pos == hist_len {
           dd.read_flush(out)
         }
       }

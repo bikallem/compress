@@ -16,25 +16,40 @@ fn BitReader::new(data : Bytes) -> BitReader {
 ///|
 /// Fill the bit buffer with as many bytes as possible (up to 56 bits).
 fn BitReader::fill(self : BitReader) -> Unit {
-  let data_len = self.data.length()
-  while self.count <= 56 && self.pos < data_len {
-    self.buf = self.buf | (self.data[self.pos].to_uint64() << self.count)
-    self.count += 8
-    self.pos += 1
+  let data = self.data
+  let data_len = data.length()
+  let mut pos = self.pos
+  let mut buf = self.buf
+  let mut count = self.count
+  while count <= 56 && pos < data_len {
+    buf = buf | (data[pos].to_uint64() << count)
+    count += 8
+    pos += 1
   }
+  self.buf = buf
+  self.count = count
+  self.pos = pos
 }
 
 ///|
 /// Ensure at least n bits are available in the buffer.
 fn BitReader::ensure(self : BitReader, n : Int) -> Unit raise CompressError {
-  while self.count < n {
-    if self.pos >= self.data.length() {
+  let data = self.data
+  let data_len = data.length()
+  let mut pos = self.pos
+  let mut buf = self.buf
+  let mut count = self.count
+  while count < n {
+    if pos >= data_len {
       raise CompressError::UnexpectedEOF
     }
-    self.buf = self.buf | (self.data[self.pos].to_uint64() << self.count)
-    self.count += 8
-    self.pos += 1
+    buf = buf | (data[pos].to_uint64() << count)
+    count += 8
+    pos += 1
   }
+  self.buf = buf
+  self.count = count
+  self.pos = pos
 }
 
 ///|

@@ -66,15 +66,31 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     src_pos += hist_len
   }
   let hist = self.hist
-  // Fast path: source doesn't wrap and no overlap with destination
   if src_pos + max_copy <= hist_len && src_pos + max_copy <= dst_base {
-    // Non-overlapping bulk copy
+    // Non-overlapping, no wrap: bulk copy
     FixedArray::unsafe_blit(hist, dst_base, hist, src_pos, max_copy)
   } else if dist == 1 {
-    // Run-length encoding: fill with single byte (very common case)
+    // RLE: fill with single byte (very common)
     let fill_byte = hist[src_pos]
     for i in dst_base..<(dst_base + max_copy) {
       hist[i] = fill_byte
+    }
+  } else if src_pos < dst_base && src_pos + max_copy <= hist_len {
+    // Overlapping forward copy, no wrap — copy in dist-sized chunks
+    let mut dst_pos = dst_base
+    let dst_end = dst_base + max_copy
+    while dst_pos + dist <= dst_end {
+      FixedArray::unsafe_blit(hist, dst_pos, hist, dst_pos - dist, dist)
+      dst_pos += dist
+    }
+    if dst_pos < dst_end {
+      FixedArray::unsafe_blit(
+        hist,
+        dst_pos,
+        hist,
+        dst_pos - dist,
+        dst_end - dst_pos,
+      )
     }
   } else {
     // General case: byte-at-a-time with wrap handling
@@ -109,17 +125,12 @@ fn DictDecoder::_write_slice(self : DictDecoder, data : BytesView) -> Int {
 ///|
 /// Reads available bytes into the output buffer.
 fn DictDecoder::read_flush(self : DictDecoder, out : @buffer.Buffer) -> Unit {
-  let hist = self.hist
   if self.wr_pos > self.rd_pos {
-    let mut i = self.rd_pos
-    let end = self.wr_pos
-    while i < end {
-      out.write_byte(hist[i])
-      i += 1
-    }
+    let bytes = self.hist.unsafe_reinterpret_as_bytes()
+    out.write_bytesview(bytes[self.rd_pos:self.wr_pos])
   }
   // After flush, wrap both pointers if at end of buffer
-  if self.wr_pos == hist.length() {
+  if self.wr_pos == self.hist.length() {
     self.wr_pos = 0
     self.full = true
   }
