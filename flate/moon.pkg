@@ -1,4 +1,5 @@
 import {
+  "bikallem/compress/stream",
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",
