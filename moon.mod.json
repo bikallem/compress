@@ -16,5 +16,5 @@
     "bzip2"
   ],
   "description": "Compression library for MoonBit: flate, gzip, zlib, lzw, bzip2",
-  "source": "lib"
+  "source": "."
 }
