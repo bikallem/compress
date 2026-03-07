@@ -56,7 +56,7 @@ fn deflate_stored(data : Bytes) -> Bytes {
 /// Precomputed reversed fixed Huffman literal codes.
 /// Entry format: (reversed_code << 4) | code_length
 /// For symbols 0-143: 8-bit codes, for 144-255: 9-bit codes
-let fixed_lit_codes : FixedArray[UInt] = {
+let fixed_lit_codes : ReadOnlyArray[UInt] = {
   let t = FixedArray::make(286, 0U)
   for sym in 0..<=143 {
     let code = sym + 0x30
@@ -76,24 +76,24 @@ let fixed_lit_codes : FixedArray[UInt] = {
     let code = sym - 280 + 0xC0
     t[sym] = (reverse_uint_8(code.reinterpret_as_uint()) << 4) | 8U
   }
-  t
+  ReadOnlyArray::from_array(t[:])
 }
 
 ///|
 /// Precomputed reversed 5-bit distance codes.
-let fixed_dist_codes : FixedArray[UInt] = {
+let fixed_dist_codes : ReadOnlyArray[UInt] = {
   let t = FixedArray::make(30, 0U)
   for i in 0..<30 {
     t[i] = reverse_uint_5(i.reinterpret_as_uint())
   }
-  t
+  ReadOnlyArray::from_array(t[:])
 }
 
 ///|
 /// Precomputed length encoding table.
 /// Entry format: (length_code, extra_bits, extra_value) packed into FixedArray
 /// Index: length - MIN_MATCH_LENGTH (0-255 for lengths 3-258)
-let length_encode_table : FixedArray[Int] = {
+let length_encode_table : ReadOnlyArray[Int] = {
   let size = MAX_MATCH_LENGTH - MIN_MATCH_LENGTH + 1
   let t = FixedArray::make(size * 3, 0)
   for length in MIN_MATCH_LENGTH..<=MAX_MATCH_LENGTH {
@@ -119,14 +119,14 @@ let length_encode_table : FixedArray[Int] = {
       t[idx * 3 + 2] = 0
     }
   }
-  t
+  ReadOnlyArray::from_array(t[:])
 }
 
 ///|
 /// Precomputed distance encoding table.
 /// For each distance 1-32768, stores (dist_code, extra_bits, extra_value)
 /// Uses binary search for O(1) lookup.
-let dist_encode_table : FixedArray[Int] = {
+let dist_encode_table : ReadOnlyArray[Int] = {
   // Store (dist_code, extra_bits) for each distance 1..32768
   // We only need dist_code for each distance; extra_value = dist - dist_base[code]
   let size = MAX_MATCH_OFFSET
@@ -145,7 +145,7 @@ let dist_encode_table : FixedArray[Int] = {
       }
     }
   }
-  t
+  ReadOnlyArray::from_array(t[:])
 }
 
 ///|

@@ -369,7 +369,7 @@ fn undo_rle1(data : Bytes) -> Bytes raise Bzip2Error {
 
 ///|
 /// bzip2 CRC-32 (non-reflected polynomial 0x04C11DB7).
-let bzip2_crc_table : FixedArray[UInt] = {
+let bzip2_crc_table : ReadOnlyArray[UInt] = {
   let t = FixedArray::make(256, 0U)
   for i in 0..<256 {
     let mut crc = i.reinterpret_as_uint() << 24
@@ -382,7 +382,7 @@ let bzip2_crc_table : FixedArray[UInt] = {
     }
     t[i] = crc
   }
-  t
+  ReadOnlyArray::from_array(t[:])
 }
 
 ///|

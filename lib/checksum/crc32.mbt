@@ -6,7 +6,7 @@ const IEEE_POLY : UInt = 0xEDB88320
 /// Precomputed slicing-by-8 CRC-32 tables for the IEEE polynomial.
 /// Table 0 is the standard byte-at-a-time table.
 /// Tables 1-7 enable processing 8 bytes at a time.
-let crc32_tables : FixedArray[FixedArray[UInt]] = {
+let crc32_tables : ReadOnlyArray[ReadOnlyArray[UInt]] = {
   let tables = FixedArray::make(8, FixedArray::make(0, 0U))
   // Build table 0 (standard)
   let t0 = FixedArray::make(256, 0U)
@@ -31,7 +31,11 @@ let crc32_tables : FixedArray[FixedArray[UInt]] = {
     }
     tables[k] = tk
   }
-  tables
+  // Convert to ReadOnlyArray
+  let ro = FixedArray::makei(8, fn(i) {
+    ReadOnlyArray::from_array(tables[i][:])
+  })
+  ReadOnlyArray::from_array(ro[:])
 }
 
 ///|
