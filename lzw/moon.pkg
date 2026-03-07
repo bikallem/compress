@@ -1,18 +1,8 @@
 import {
-  "bikallem/compress/flate",
-  "moonbitlang/async/io",
+  "bikallem/compress/stream",
   "moonbitlang/core/buffer",
 }
 
 import {
-  "moonbitlang/async" @moonasync,
-  "moonbitlang/async/io",
+  "bikallem/compress/stream",
 } for "test"
-
-options(
-  targets: {
-    "async_decompress.mbt": [ "native" ],
-    "async_decompress_test.mbt": [ "native" ],
-    "async_writer.mbt": [ "native" ],
-  },
-)

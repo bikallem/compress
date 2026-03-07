@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "bikallem/compress/lzw"
 
+import {
+  "bikallem/compress/stream",
+}
+
 // Values
 pub fn compress(Bytes, BitOrder, Int) -> Bytes raise LzwError
 
@@ -21,6 +25,18 @@ pub(all) enum BitOrder {
 }
 pub impl Eq for BitOrder
 pub impl Show for BitOrder
+
+pub struct LzwReader {
+  // private fields
+}
+pub fn LzwReader::new(&@stream.Reader, BitOrder, Int, slice_length? : Int) -> Self
+pub impl @stream.Reader for LzwReader
+
+pub struct LzwStreamWriter {
+  // private fields
+}
+pub fn LzwStreamWriter::new(&@stream.Writer, BitOrder, Int, slice_length? : Int) -> Self
+pub impl @stream.Writer for LzwStreamWriter
 
 // Type aliases
 

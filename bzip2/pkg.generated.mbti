@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "bikallem/compress/bzip2"
 
+import {
+  "bikallem/compress/stream",
+}
+
 // Values
 pub fn compress(Bytes, level? : Int) -> Bytes raise Bzip2Error
 
@@ -16,6 +20,11 @@ pub suberror Bzip2Error {
 pub impl Show for Bzip2Error
 
 // Types and methods
+pub struct Bzip2Reader {
+  // private fields
+}
+pub fn Bzip2Reader::new(&@stream.Reader, slice_length? : Int) -> Self
+pub impl @stream.Reader for Bzip2Reader
 
 // Type aliases
 

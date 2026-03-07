@@ -3,6 +3,7 @@ package "bikallem/compress/zlib"
 
 import {
   "bikallem/compress/flate",
+  "bikallem/compress/stream",
 }
 
 // Values
@@ -25,6 +26,17 @@ pub suberror ZlibError {
 pub impl Show for ZlibError
 
 // Types and methods
+pub struct ZlibReader {
+  // private fields
+}
+pub fn ZlibReader::new(&@stream.Reader, dict? : Bytes, slice_length? : Int) -> Self
+pub impl @stream.Reader for ZlibReader
+
+pub struct ZlibStreamWriter {
+  // private fields
+}
+pub fn ZlibStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, dict? : Bytes, slice_length? : Int) -> Self
+pub impl @stream.Writer for ZlibStreamWriter
 
 // Type aliases
 

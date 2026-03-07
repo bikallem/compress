@@ -3,6 +3,7 @@ package "bikallem/compress/gzip"
 
 import {
   "bikallem/compress/flate",
+  "bikallem/compress/stream",
 }
 
 // Values
@@ -21,6 +22,19 @@ pub suberror GzipError {
 pub impl Show for GzipError
 
 // Types and methods
+pub struct GzipReader {
+  // private fields
+}
+pub fn GzipReader::header(Self) -> Header
+pub fn GzipReader::new(&@stream.Reader, slice_length? : Int) -> Self
+pub impl @stream.Reader for GzipReader
+
+pub struct GzipStreamWriter {
+  // private fields
+}
+pub fn GzipStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, header? : Header, slice_length? : Int) -> Self
+pub impl @stream.Writer for GzipStreamWriter
+
 pub(all) struct Header {
   name : String
   comment : String
