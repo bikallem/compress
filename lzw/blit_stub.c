@@ -7,7 +7,5 @@ MOONBIT_FFI_EXPORT void bikallem_compress_lzw_blit_bytes(
     moonbit_bytes_t dst, int32_t dst_off,
     moonbit_bytes_t src, int32_t src_off,
     int32_t len) {
-  if (len > 0) {
-    memmove(dst + dst_off, src + src_off, (size_t)len);
-  }
+  memmove(dst + dst_off, src + src_off, (size_t)len);
 }
