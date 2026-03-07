@@ -1,0 +1,7 @@
+import {
+  "bikallem/compress/stream",
+}
+
+options(
+  "is-main": true,
+)
