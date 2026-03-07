@@ -6,12 +6,15 @@
 {"issue_id":"compress-claude-2tv","label":"performance"}
 {"issue_id":"compress-claude-96p","label":"bzip2"}
 {"issue_id":"compress-claude-96p","label":"feature"}
+{"issue_id":"compress-claude-bn9","label":"documentation"}
+{"issue_id":"compress-claude-bn9","label":"examples"}
 {"issue_id":"compress-claude-ceg","label":"quality"}
 {"issue_id":"compress-claude-ceg","label":"testing"}
 {"issue_id":"compress-claude-l8t","label":"docs"}
 {"issue_id":"compress-claude-nqn","label":"quality"}
 {"issue_id":"compress-claude-nqn","label":"testing"}
 {"issue_id":"compress-claude-nwp","label":"docs"}
+{"issue_id":"compress-claude-rfg","label":"cleanup"}
 {"issue_id":"compress-claude-rlq","label":"flate"}
 {"issue_id":"compress-claude-rlq","label":"performance"}
 {"issue_id":"compress-claude-taf","label":"flate"}
