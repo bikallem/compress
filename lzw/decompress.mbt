@@ -63,11 +63,10 @@ fn LzwDecompressState::new(lit_width : Int) -> LzwDecompressState {
 /// Flush output buffer to result.
 fn LzwDecompressState::flush(
   self : LzwDecompressState,
-  result : @buffer.Buffer,
+  result : OutputBuffer,
 ) -> Unit {
   if self.o > 0 {
-    let bytes = self.output.unsafe_reinterpret_as_bytes()
-    result.write_bytesview(bytes[0:self.o])
+    result.write_fixed(self.output, 0, self.o)
   }
   self.o = 0
 }
@@ -77,7 +76,7 @@ fn LzwDecompressState::flush(
 fn LzwDecompressState::process_code(
   self : LzwDecompressState,
   code : Int,
-  result : @buffer.Buffer,
+  result : OutputBuffer,
 ) -> Bool raise LzwError {
   let output = self.output
   let suffix = self.suffix
@@ -160,7 +159,7 @@ fn LzwDecompressState::process_code(
 /// LSB-specific decompression — avoids match on order in hot loop.
 fn decompress_lsb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
   let state = LzwDecompressState::new(lit_width)
-  let result = @buffer.new(size_hint=data.length() * 2)
+  let result = OutputBuffer::new(data.length() * 4)
   let data_len = data.length()
   // Extract bit-reader state to locals for the hot loop
   let mut bits = state.bits
@@ -191,7 +190,7 @@ fn decompress_lsb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
 /// MSB-specific decompression — avoids match on order in hot loop.
 fn decompress_msb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
   let state = LzwDecompressState::new(lit_width)
-  let result = @buffer.new(size_hint=data.length() * 2)
+  let result = OutputBuffer::new(data.length() * 4)
   let data_len = data.length()
   let mut bits = state.bits
   let mut n_bits = state.n_bits
