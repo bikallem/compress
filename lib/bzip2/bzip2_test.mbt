@@ -96,3 +96,77 @@ test "bzip2 corrupt block magic" {
   let result = try? @bzip2.decompress(data)
   guard result is Err(_) else { fail("expected error for corrupt block magic") }
 }
+
+///|
+test "bzip2 round-trip Hello" {
+  let original : Bytes = b"Hello"
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip repeated" {
+  let original : Bytes = b"AAAAAAAAAA"
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip abcabc" {
+  let original : Bytes = b"abcabcabcabc"
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip empty" {
+  let original : Bytes = b""
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip larger" {
+  let sb = @buffer.new(size_hint=500)
+  for _ in 0..<10 {
+    sb.write_bytes(b"The quick brown fox jumps over the lazy dog. ")
+  }
+  let original = sb.to_bytes()
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip binary data" {
+  let original = Bytes::makei(256, fn(i) { i.to_byte() })
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip level 1" {
+  let original : Bytes = b"Hello, bzip2 compression at level 1!"
+  let compressed = @bzip2.compress(original, level=1)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
+
+///|
+test "bzip2 round-trip RLE1 trigger" {
+  // 10 copies of the same byte should trigger RLE1 encoding
+  let sb = @buffer.new(size_hint=100)
+  for _ in 0..<10 {
+    sb.write_byte(b'X')
+  }
+  sb.write_bytes(b"abc")
+  let original = sb.to_bytes()
+  let compressed = @bzip2.compress(original)
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, original)
+}
