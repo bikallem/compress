@@ -5,6 +5,10 @@
  * Adler-32: Uses SSSE3 _mm_sad_epu8 for vectorized byte sums.
  *
  * Falls back to returning 0 (caller uses software path) when not available.
+ *
+ * Supports GCC/Clang (__attribute__((target(...))), <cpuid.h>) and
+ * MSVC (__cpuid, <intrin.h>). On MSVC x64, SSSE3 and PCLMUL intrinsics
+ * are always available without special compiler flags.
  */
 
 #include <moonbit.h>
@@ -12,10 +16,30 @@
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define HW_X86 1
-#include <cpuid.h>
-#include <immintrin.h>
 #else
 #define HW_X86 0
+#endif
+
+#if HW_X86
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#include <immintrin.h>
+#endif
+#endif
+
+/* Per-function ISA targeting:
+ * - GCC/Clang: __attribute__((target("..."))) enables specific ISA per function.
+ * - MSVC x64: SSE2/SSSE3/SSE4.1/PCLMUL intrinsics are always available;
+ *   no per-function attribute needed. MSVC x86 (32-bit) may need /arch:AVX
+ *   but that's a build flag, not per-function. We just omit the attribute. */
+#ifdef _MSC_VER
+#define TARGET_PCLMUL_SSE41
+#define TARGET_SSSE3
+#else
+#define TARGET_PCLMUL_SSE41 __attribute__((target("pclmul,sse4.1")))
+#define TARGET_SSSE3        __attribute__((target("ssse3")))
 #endif
 
 /* ─── CPUID detection ─── */
@@ -28,11 +52,18 @@ static void detect_hw(void) {
     if (hw_detected) return;
     hw_detected = 1;
 #if HW_X86
+#ifdef _MSC_VER
+    int cpuinfo[4];
+    __cpuid(cpuinfo, 1);
+    has_pclmul = (cpuinfo[2] >> 1) & 1;   /* PCLMULQDQ */
+    has_ssse3  = (cpuinfo[2] >> 9) & 1;   /* SSSE3 */
+#else
     unsigned int eax, ebx, ecx, edx;
     if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
         has_pclmul = (ecx >> 1) & 1;   /* PCLMULQDQ */
         has_ssse3  = (ecx >> 9) & 1;   /* SSSE3 */
     }
+#endif
 #endif
 }
 
@@ -40,20 +71,18 @@ static void detect_hw(void) {
 
 /*
  * CLMUL-based IEEE CRC-32 folding.
- * Constants from Intel's "Fast CRC Computation Using PCLMULQDQ" whitepaper
- * and verified against the Linux kernel implementation.
+ * Constants from chromium/zlib crc32_simd.c (widely deployed, verified).
  *
  * All constants are bit-reflected and left-shifted by 1 (per the algorithm).
  */
 
 #if HW_X86
 
-__attribute__((target("pclmul,sse4.1")))
+TARGET_PCLMUL_SSE41
 static uint32_t crc32_clmul(uint32_t crc, const uint8_t *buf, int32_t len) {
     if (len < 64) return 0; /* too short for CLMUL, signal fallback */
 
     /*
-     * From chromium/zlib crc32_simd.c (verified, widely deployed):
      * k1 = x^(4*128+64) mod P(x) << 1
      * k2 = x^(4*128)    mod P(x) << 1
      * k3 = x^(128+64)   mod P(x) << 1
@@ -146,10 +175,8 @@ static uint32_t crc32_clmul(uint32_t crc, const uint8_t *buf, int32_t len) {
     uint32_t result = (uint32_t)_mm_extract_epi32(_mm_xor_si128(t2, t4), 1);
 
     /* Process remaining bytes with software */
-    /* We return the intermediate CRC; caller handles remaining bytes */
     if (len > 0) {
-        /* Simple byte-at-a-time for remainder (< 16 bytes) */
-        /* Use reflected table lookup */
+        /* Simple half-byte table for remainder (< 16 bytes) */
         static const uint32_t crc_table[16] = {
             0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC,
             0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
@@ -174,7 +201,7 @@ static uint32_t crc32_clmul(uint32_t crc, const uint8_t *buf, int32_t len) {
 
 #if HW_X86
 
-__attribute__((target("ssse3")))
+TARGET_SSSE3
 static uint32_t adler32_ssse3(uint32_t adler, const uint8_t *buf, int32_t len) {
     if (len < 32) return 0; /* too short, signal fallback */
 
@@ -277,9 +304,8 @@ int32_t moonbit_checksum_has_hw_adler32(void) {
 
 /*
  * Hardware-accelerated CRC-32 IEEE.
- * Returns the final CRC-32, or 0 with *ok=0 if hardware not available.
+ * Returns the final CRC-32, or 0 if hardware not available / data too short.
  * The 'crc' parameter is the initial CRC (pre-inverted by caller).
- * data is a MoonBit Bytes (pointer to byte data, length via Moonbit_array_length).
  */
 MOONBIT_FFI_EXPORT
 uint32_t moonbit_crc32_hw(uint32_t crc, moonbit_bytes_t data, int32_t offset, int32_t len) {
@@ -295,8 +321,7 @@ uint32_t moonbit_crc32_hw(uint32_t crc, moonbit_bytes_t data, int32_t offset, in
 
 /*
  * Hardware-accelerated Adler-32.
- * Returns the Adler-32, or 0 if hardware not available.
- * adler is the initial adler value (s2<<16 | s1).
+ * Returns the Adler-32, or 0 if hardware not available / data too short.
  */
 MOONBIT_FFI_EXPORT
 uint32_t moonbit_adler32_hw(uint32_t adler, moonbit_bytes_t data, int32_t offset, int32_t len) {
