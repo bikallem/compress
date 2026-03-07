@@ -35,6 +35,7 @@
 {"issue_id":"compress-claude-rfg","label":"cleanup"}
 {"issue_id":"compress-claude-rlq","label":"flate"}
 {"issue_id":"compress-claude-rlq","label":"performance"}
+{"issue_id":"compress-claude-s20","label":"architecture refactor"}
 {"issue_id":"compress-claude-taf","label":"flate"}
 {"issue_id":"compress-claude-taf","label":"performance"}
 {"issue_id":"compress-claude-v2e","label":"flate"}
