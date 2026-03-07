@@ -1,0 +1,12 @@
+import {
+  "blem00/compress/flate",
+  "blem00/compress/gzip",
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
+  "moonbitlang/core/buffer",
+}
+
+import {
+  "moonbitlang/async",
+  "moonbitlang/async/io",
+} for "test"

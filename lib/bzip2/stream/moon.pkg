@@ -1,0 +1,10 @@
+import {
+  "blem00/compress/bzip2",
+  "moonbitlang/async/io",
+  "moonbitlang/core/buffer",
+}
+
+import {
+  "moonbitlang/async",
+  "moonbitlang/async/io",
+} for "test"

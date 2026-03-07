@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/flate/stream"
+
+import {
+  "blem00/compress/flate",
+  "moonbitlang/async/io",
+  "moonbitlang/core/buffer",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct DeflateWriter {
+  dest : &@io.Writer
+  level : @flate.CompressionLevel
+  dict : Bytes
+  buf : @buffer.Buffer
+  mut closed : Bool
+}
+pub async fn DeflateWriter::close(Self) -> Unit
+pub fn DeflateWriter::new(&@io.Writer, level? : @flate.CompressionLevel, dict? : Bytes) -> Self
+pub async fn DeflateWriter::write(Self, &@io.Data) -> Unit
+pub async fn DeflateWriter::write_once(Self, Bytes, offset~ : Int, len~ : Int) -> Int
+pub async fn DeflateWriter::write_reader(Self, &@io.Reader) -> Unit
+pub impl @io.Writer for DeflateWriter
+
+pub struct InflateReader {
+  source : &@io.Reader
+  dict : Bytes
+  mut decompressed : Bytes
+  mut pos : Int
+  mut done : Bool
+  reader_buf : @io.ReaderBuffer
+}
+pub async fn InflateReader::_direct_read(Self, FixedArray[Byte], offset~ : Int, max_len~ : Int) -> Int
+pub fn InflateReader::_get_internal_buffer(Self) -> @io.ReaderBuffer
+pub fn InflateReader::new(&@io.Reader, dict? : Bytes) -> Self
+pub impl @io.Reader for InflateReader
+
+// Type aliases
+
+// Traits
+
