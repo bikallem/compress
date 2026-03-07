@@ -57,6 +57,36 @@ test "zlib round-trip all compression levels" {
 }
 
 ///|
+fn zlib_hex_to_bytes(hex : String) -> Bytes {
+  let len = hex.length() / 2
+  Bytes::makei(len, fn(i) {
+    let hi = zlib_hex_digit(hex[i * 2])
+    let lo = zlib_hex_digit(hex[i * 2 + 1])
+    ((hi << 4) | lo).to_byte()
+  })
+}
+
+///|
+fn zlib_hex_digit(c : UInt16) -> Int {
+  if c >= '0' && c <= '9' {
+    c.to_int() - 48
+  } else if c >= 'a' && c <= 'f' {
+    c.to_int() - 87
+  } else {
+    0
+  }
+}
+
+///|
+test "golden: decompress Go-zlib hello" {
+  let compressed = zlib_hex_to_bytes(
+    "789cf248cdc9c9d75108cf2fca495104040000ffff1f9e046a",
+  )
+  let decompressed = @zlib.decompress(compressed)
+  assert_eq(decompressed, b"Hello, World!")
+}
+
+///|
 test "zlib header validation - bad checksum" {
   // Valid zlib header is 0x78 0x9C (default compression)
   // Corrupt the FLG byte to break FCHECK

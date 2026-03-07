@@ -78,6 +78,35 @@ test "invalid litWidth" {
 }
 
 ///|
+fn lzw_hex_to_bytes(hex : String) -> Bytes {
+  let len = hex.length() / 2
+  Bytes::makei(len, fn(i) {
+    let hi = lzw_hex_digit(hex[i * 2])
+    let lo = lzw_hex_digit(hex[i * 2 + 1])
+    ((hi << 4) | lo).to_byte()
+  })
+}
+
+///|
+fn lzw_hex_digit(c : UInt16) -> Int {
+  if c >= '0' && c <= '9' {
+    c.to_int() - 48
+  } else if c >= 'a' && c <= 'f' {
+    c.to_int() - 87
+  } else {
+    0
+  }
+}
+
+///|
+test "golden: decompress Go-lzw hello" {
+  // Go compress/lzw LSB litWidth=8: "Hello, World!"
+  let compressed = lzw_hex_to_bytes("00919461c3e60d0b1057dec86143264440")
+  let decompressed = @lzw.decompress(compressed, LSB, 8)
+  assert_eq(decompressed, b"Hello, World!")
+}
+
+///|
 test "compress round-trip LSB 8" {
   let original : Bytes = b"TOBEORNOTTOBEORTOBEORNOT"
   let compressed = @lzw.compress(original, LSB, 8)

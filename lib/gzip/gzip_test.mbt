@@ -112,6 +112,36 @@ test "gzip header with name and comment" {
 }
 
 ///|
+fn gzip_hex_to_bytes(hex : String) -> Bytes {
+  let len = hex.length() / 2
+  Bytes::makei(len, fn(i) {
+    let hi = gzip_hex_digit(hex[i * 2])
+    let lo = gzip_hex_digit(hex[i * 2 + 1])
+    ((hi << 4) | lo).to_byte()
+  })
+}
+
+///|
+fn gzip_hex_digit(c : UInt16) -> Int {
+  if c >= '0' && c <= '9' {
+    c.to_int() - 48
+  } else if c >= 'a' && c <= 'f' {
+    c.to_int() - 87
+  } else {
+    0
+  }
+}
+
+///|
+test "golden: decompress Go-gzip hello" {
+  let compressed = gzip_hex_to_bytes(
+    "1f8b08000000000000fff248cdc9c9d75108cf2fca495104040000ffffd0c34aec0d000000",
+  )
+  let (decompressed, _header) = @gzip.decompress(compressed)
+  assert_eq(decompressed, b"Hello, World!")
+}
+
+///|
 test "gzip invalid magic" {
   let data : Bytes = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
