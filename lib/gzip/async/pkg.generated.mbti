@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/gzip/stream"
+package "blem00/compress/gzip/async"
 
 import {
   "blem00/compress/flate",

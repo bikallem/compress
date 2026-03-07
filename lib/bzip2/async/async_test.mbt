@@ -21,13 +21,13 @@ let bzip2_hello : Bytes = [
 
 ///|
 async test "bzip2_reader decompress" {
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (pipe_read, pipe_write) = @io.pipe()
     root.spawn_bg(() => {
       defer pipe_write.close()
       pipe_write.write(bzip2_hello)
     })
-    let reader = @stream.Bzip2Reader::new(pipe_read)
+    let reader = @async.Bzip2Reader::new(pipe_read)
     let result = read_all_bytes(reader)
     assert_eq(result, b"Hello")
   })

@@ -15,13 +15,13 @@ async fn read_all_bytes(reader : &@io.Reader) -> Bytes {
 async test "inflate_reader round-trip" {
   let original = b"Hello, async DEFLATE world!"
   let compressed = @flate.compress(original)
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (pipe_read, pipe_write) = @io.pipe()
     root.spawn_bg(() => {
       defer pipe_write.close()
       pipe_write.write(compressed)
     })
-    let reader = @stream.InflateReader::new(pipe_read)
+    let reader = @async.InflateReader::new(pipe_read)
     let result = read_all_bytes(reader)
     assert_eq(result, original)
   })
@@ -30,9 +30,9 @@ async test "inflate_reader round-trip" {
 ///|
 async test "deflate_writer round-trip" {
   let original = b"Hello, async DEFLATE writer!"
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (pipe_read, pipe_write) = @io.pipe()
-    let writer = @stream.DeflateWriter::new(pipe_write)
+    let writer = @async.DeflateWriter::new(pipe_write)
     root.spawn_bg(() => {
       ignore(writer.write_once(original, offset=0, len=original.length()))
       writer.close()
@@ -47,15 +47,15 @@ async test "deflate_writer round-trip" {
 ///|
 async test "deflate_writer/inflate_reader pipeline" {
   let original = b"The quick brown fox jumps over the lazy dog."
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (mid_read, mid_write) = @io.pipe()
-    let writer = @stream.DeflateWriter::new(mid_write)
+    let writer = @async.DeflateWriter::new(mid_write)
     root.spawn_bg(() => {
       ignore(writer.write_once(original, offset=0, len=original.length()))
       writer.close()
       mid_write.close()
     })
-    let reader = @stream.InflateReader::new(mid_read)
+    let reader = @async.InflateReader::new(mid_read)
     let result = read_all_bytes(reader)
     assert_eq(result, original)
   })

@@ -15,13 +15,13 @@ async fn read_all_bytes(reader : &@io.Reader) -> Bytes {
 async test "lzw_reader round-trip" {
   let original = b"Hello, async LZW world!"
   let compressed = @lzw.compress(original, @lzw.LSB, 8)
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (pipe_read, pipe_write) = @io.pipe()
     root.spawn_bg(() => {
       defer pipe_write.close()
       pipe_write.write(compressed)
     })
-    let reader = @stream.LzwReader::new(pipe_read, @lzw.LSB, 8)
+    let reader = @async.LzwReader::new(pipe_read, @lzw.LSB, 8)
     let result = read_all_bytes(reader)
     assert_eq(result, original)
   })
@@ -30,9 +30,9 @@ async test "lzw_reader round-trip" {
 ///|
 async test "lzw_writer round-trip" {
   let original = b"Hello, async LZW writer!"
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (pipe_read, pipe_write) = @io.pipe()
-    let writer = @stream.LzwWriter::new(pipe_write, @lzw.LSB, 8)
+    let writer = @async.LzwWriter::new(pipe_write, @lzw.LSB, 8)
     root.spawn_bg(() => {
       ignore(writer.write_once(original, offset=0, len=original.length()))
       writer.close()
@@ -47,15 +47,15 @@ async test "lzw_writer round-trip" {
 ///|
 async test "lzw_writer/lzw_reader pipeline" {
   let original = b"The quick brown fox jumps over the lazy dog."
-  @async.with_task_group(root => {
+  @moonasync.with_task_group(root => {
     let (mid_read, mid_write) = @io.pipe()
-    let writer = @stream.LzwWriter::new(mid_write, @lzw.MSB, 8)
+    let writer = @async.LzwWriter::new(mid_write, @lzw.MSB, 8)
     root.spawn_bg(() => {
       ignore(writer.write_once(original, offset=0, len=original.length()))
       writer.close()
       mid_write.close()
     })
-    let reader = @stream.LzwReader::new(mid_read, @lzw.MSB, 8)
+    let reader = @async.LzwReader::new(mid_read, @lzw.MSB, 8)
     let result = read_all_bytes(reader)
     assert_eq(result, original)
   })

@@ -4,7 +4,6 @@ import {
   "blem00/compress/gzip",
   "blem00/compress/lzw",
   "blem00/compress/zlib",
-  "blem00/compress/bzip2",
   "moonbitlang/core/bench",
   "moonbitlang/core/buffer",
 }

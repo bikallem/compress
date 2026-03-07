@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/lzw/stream"
+package "blem00/compress/lzw/async"
 
 import {
   "blem00/compress/lzw",

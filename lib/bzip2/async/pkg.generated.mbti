@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/bzip2/stream"
+package "blem00/compress/bzip2/async"
 
 import {
   "moonbitlang/async/io",

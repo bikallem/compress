@@ -5,6 +5,6 @@ import {
 }
 
 import {
-  "moonbitlang/async",
+  "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
 } for "test"
