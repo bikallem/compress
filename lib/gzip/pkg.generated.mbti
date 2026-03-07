@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/gzip"
+
+import {
+  "blem00/compress/flate",
+}
+
+// Values
+pub fn compress(Bytes, level? : @flate.CompressionLevel, header? : Header) -> Bytes raise GzipError
+
+pub fn decompress(Bytes) -> (Bytes, Header) raise GzipError
+
+// Errors
+pub suberror GzipError {
+  InvalidHeader(String)
+  ChecksumMismatch(expected~ : UInt, got~ : UInt)
+  SizeMismatch(expected~ : UInt, got~ : UInt)
+  DeflateError(String)
+  UnexpectedEOF
+}
+pub impl Show for GzipError
+
+// Types and methods
+pub(all) struct Header {
+  name : String
+  comment : String
+  extra : Bytes
+  mod_time : UInt
+  os : Byte
+}
+pub fn Header::default() -> Self
+pub impl Eq for Header
+pub impl Show for Header
+
+// Type aliases
+
+// Traits
+
