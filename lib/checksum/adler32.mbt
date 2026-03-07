@@ -9,6 +9,7 @@ const ADLER32_NMAX : Int = 5552
 
 ///|
 /// Computes Adler-32 checksum of the given bytes in one shot.
+/// Uses 16x loop unrolling within NMAX-bounded chunks.
 pub fn adler32(data : BytesView) -> UInt {
   let mut s1 = 1U
   let mut s2 = 0U
@@ -20,13 +21,52 @@ pub fn adler32(data : BytesView) -> UInt {
     } else {
       len
     }
-    for i in offset..<chunk_end {
-      s1 = s1 + data[i].to_uint()
+    let chunk_len = chunk_end - offset
+    // Process 16 bytes at a time
+    let unrolled_end = offset + (chunk_len & -16)
+    while offset < unrolled_end {
+      s1 = s1 + data[offset].to_uint()
       s2 = s2 + s1
+      s1 = s1 + data[offset + 1].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 2].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 3].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 4].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 5].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 6].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 7].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 8].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 9].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 10].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 11].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 12].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 13].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 14].to_uint()
+      s2 = s2 + s1
+      s1 = s1 + data[offset + 15].to_uint()
+      s2 = s2 + s1
+      offset += 16
+    }
+    // Remaining bytes in chunk
+    while offset < chunk_end {
+      s1 = s1 + data[offset].to_uint()
+      s2 = s2 + s1
+      offset += 1
     }
     s1 = s1 % ADLER32_MOD
     s2 = s2 % ADLER32_MOD
-    offset = chunk_end
   }
   (s2 << 16) | s1
 }
@@ -65,13 +105,50 @@ pub impl Hasher for Adler32 with update(self, data) -> Unit {
     } else {
       len
     }
-    for i in offset..<chunk_end {
-      self.s1 = self.s1 + data[i].to_uint()
+    let chunk_len = chunk_end - offset
+    let unrolled_end = offset + (chunk_len & -16)
+    while offset < unrolled_end {
+      self.s1 = self.s1 + data[offset].to_uint()
       self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 1].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 2].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 3].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 4].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 5].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 6].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 7].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 8].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 9].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 10].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 11].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 12].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 13].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 14].to_uint()
+      self.s2 = self.s2 + self.s1
+      self.s1 = self.s1 + data[offset + 15].to_uint()
+      self.s2 = self.s2 + self.s1
+      offset += 16
+    }
+    while offset < chunk_end {
+      self.s1 = self.s1 + data[offset].to_uint()
+      self.s2 = self.s2 + self.s1
+      offset += 1
     }
     self.s1 = self.s1 % ADLER32_MOD
     self.s2 = self.s2 % ADLER32_MOD
-    offset = chunk_end
   }
 }
 
