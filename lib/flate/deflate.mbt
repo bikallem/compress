@@ -157,26 +157,72 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
     w.write_fixed_symbol(END_BLOCK_MARKER)
     return w.finish()
   }
+  let tokens = if level <= 1 {
+    deflate_fast_tokens(data)
+  } else if level <= 3 {
+    deflate_greedy_tokens(data, level)
+  } else {
+    deflate_lazy_tokens(data, level)
+  }
+  w.write_dynamic_block(tokens, true)
+  w.finish()
+}
+
+///|
+/// Fast encoder for level 1: single hash probe, no chains.
+fn deflate_fast_tokens(data : Bytes) -> Array[Token] {
+  let tokens : Array[Token] = []
+  let data_len = data.length()
+  let hash_size = 1 << 15
+  let hash_mask = hash_size - 1
+  let head = FixedArray::make(hash_size, -1)
+  let mut i = 0
+  while i < data_len {
+    if i + 2 < data_len {
+      let h = hash4(data, i) & hash_mask
+      let match_pos = head[h]
+      head[h] = i
+      if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
+        // Single probe: just measure this one match
+        let max_len = if data_len - i < MAX_MATCH_LENGTH {
+          data_len - i
+        } else {
+          MAX_MATCH_LENGTH
+        }
+        let mut length = 0
+        while length < max_len && data[i + length] == data[match_pos + length] {
+          length += 1
+        }
+        if length >= MIN_MATCH_LENGTH {
+          tokens.push(Token::Match(length~, dist=i - match_pos))
+          // Skip matched bytes, only update hash for first skipped byte
+          if i + 1 + 2 < data_len {
+            let h1 = hash4(data, i + 1) & hash_mask
+            head[h1] = i + 1
+          }
+          i += length
+          continue
+        }
+      }
+    }
+    tokens.push(Token::Literal(data[i]))
+    i += 1
+  }
+  tokens
+}
+
+///|
+/// Greedy encoder for levels 2-3: hash chains, take first good match.
+fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
+  let tokens : Array[Token] = []
+  let data_len = data.length()
   let window_size = 1 << 15
   let window_mask = window_size - 1
   let hash_size = 1 << 15
   let hash_mask = hash_size - 1
-  let max_chain = match level {
-    1 => 4
-    2 => 8
-    3 => 16
-    4 => 32
-    5 => 64
-    6 => 128
-    7 => 256
-    8 => 512
-    _ => 1024
-  }
+  let max_chain = if level == 2 { 8 } else { 16 }
   let head = FixedArray::make(hash_size, -1)
   let prev = FixedArray::make(window_size, -1)
-  // First pass: collect LZ77 tokens
-  let tokens : Array[Token] = []
-  let data_len = data.length()
   let mut i = 0
   while i < data_len {
     if i + 2 < data_len {
@@ -205,9 +251,92 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
     tokens.push(Token::Literal(data[i]))
     i += 1
   }
-  // Second pass: choose best encoding and emit block
-  w.write_dynamic_block(tokens, true)
-  w.finish()
+  tokens
+}
+
+///|
+/// Lazy matching encoder for levels 4+: tries next position before committing.
+fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
+  let tokens : Array[Token] = []
+  let data_len = data.length()
+  let window_size = 1 << 15
+  let window_mask = window_size - 1
+  let hash_size = 1 << 15
+  let hash_mask = hash_size - 1
+  let max_chain = match level {
+    4 => 32
+    5 => 64
+    6 => 128
+    7 => 256
+    8 => 512
+    _ => 1024
+  }
+  let head = FixedArray::make(hash_size, -1)
+  let prev = FixedArray::make(window_size, -1)
+  let mut i = 0
+  let mut prev_match_len = 0
+  let mut prev_match_dist = 0
+  let mut prev_literal : Byte = b'\x00'
+  let mut has_prev = false
+  while i < data_len {
+    let mut cur_len = 0
+    let mut cur_dist = 0
+    if i + 2 < data_len {
+      let h = hash4(data, i) & hash_mask
+      let match_head = head[h]
+      prev[i & window_mask] = match_head
+      head[h] = i
+      if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
+        let (length, offset) = find_best_match(
+          data, i, match_head, prev, window_mask, max_chain,
+        )
+        if length >= MIN_MATCH_LENGTH {
+          cur_len = length
+          cur_dist = offset
+        }
+      }
+    }
+    if has_prev {
+      if cur_len > prev_match_len + 1 {
+        // Current match is better — emit previous as literal, keep current
+        tokens.push(Token::Literal(prev_literal))
+        prev_match_len = cur_len
+        prev_match_dist = cur_dist
+        prev_literal = data[i]
+        i += 1
+      } else {
+        // Previous match is good enough — emit it
+        tokens.push(Token::Match(length=prev_match_len, dist=prev_match_dist))
+        // Update hash chains for skipped bytes (starting from byte after prev literal)
+        let start = i
+        let end = start + prev_match_len - 1 // -1 because we already hashed position i
+        for j in start..<end {
+          if j + 2 < data_len {
+            let hj = hash4(data, j) & hash_mask
+            prev[j & window_mask] = head[hj]
+            head[hj] = j
+          }
+        }
+        i = end
+        has_prev = false
+      }
+    } else if cur_len >= MIN_MATCH_LENGTH {
+      // Defer: try next position for a better match
+      has_prev = true
+      prev_match_len = cur_len
+      prev_match_dist = cur_dist
+      prev_literal = data[i]
+      i += 1
+    } else {
+      tokens.push(Token::Literal(data[i]))
+      i += 1
+    }
+  }
+  if has_prev {
+    // Flush deferred match
+    tokens.push(Token::Match(length=prev_match_len, dist=prev_match_dist))
+  }
+  tokens
 }
 
 ///|
