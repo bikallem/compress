@@ -116,38 +116,35 @@ fn reverse_bits(val : Int, n : Int) -> Int {
 /// Decodes a single symbol from the bit stream.
 fn HuffmanDecoder::decode(
   self : HuffmanDecoder,
-  bit_buf : Ref[UInt64],
-  bit_count : Ref[Int],
-  data : Bytes,
-  pos : Ref[Int],
+  br : BitReader,
 ) -> Int raise CompressError {
   // Ensure enough bits
-  while bit_count.val < self.max_bits {
-    if pos.val >= data.length() {
-      if bit_count.val >= self.min_bits {
+  while br.count < self.max_bits {
+    if br.pos >= br.data.length() {
+      if br.count >= self.min_bits {
         break
       }
       raise CompressError::UnexpectedEOF
     }
-    bit_buf.val = bit_buf.val | (data[pos.val].to_uint64() << bit_count.val)
-    bit_count.val += 8
-    pos.val += 1
+    br.buf = br.buf | (br.data[br.pos].to_uint64() << br.count)
+    br.count += 8
+    br.pos += 1
   }
   // Look up in chunks table
-  let idx = (bit_buf.val & ((1UL << HUFFMAN_CHUNK_BITS) - 1UL)).to_int()
+  let idx = (br.buf & ((1UL << HUFFMAN_CHUNK_BITS) - 1UL)).to_int()
   let entry = self.chunks[idx]
   if (entry & 0x80U) == 0U {
     // Direct hit
     let n = (entry & 0xFFU).reinterpret_as_int()
     let sym = (entry >> 8).reinterpret_as_int()
-    bit_buf.val = bit_buf.val >> n
-    bit_count.val -= n
+    br.buf = br.buf >> n
+    br.count -= n
     return sym
   }
   // Need link table
   let link_idx = (entry >> 8).reinterpret_as_int()
   let link_table = self.links[link_idx]
-  let suffix = (bit_buf.val >> HUFFMAN_CHUNK_BITS).to_int() &
+  let suffix = (br.buf >> HUFFMAN_CHUNK_BITS).to_int() &
     ((1 << (self.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
   let link_entry = link_table[suffix]
   if link_entry == 0U {
@@ -155,7 +152,7 @@ fn HuffmanDecoder::decode(
   }
   let n = (link_entry & 0xFFU).reinterpret_as_int()
   let sym = (link_entry >> 8).reinterpret_as_int()
-  bit_buf.val = bit_buf.val >> n
-  bit_count.val -= n
+  br.buf = br.buf >> n
+  br.count -= n
   sym
 }
