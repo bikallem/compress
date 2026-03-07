@@ -1,3 +1,16 @@
 import {
+  "moonbitlang/async/io",
   "moonbitlang/core/buffer",
 }
+
+import {
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
+} for "test"
+
+options(
+  targets: {
+    "async_decompress.mbt": [ "native" ],
+    "async_decompress_test.mbt": [ "native" ],
+  },
+)

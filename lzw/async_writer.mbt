@@ -3,7 +3,7 @@
 /// using LZW, writing compressed output to the underlying writer on close.
 pub struct LzwWriter {
   dest : &@io.Writer
-  order : @lzw.BitOrder
+  order : BitOrder
   lit_width : Int
   buf : @buffer.Buffer
   mut closed : Bool
@@ -12,7 +12,7 @@ pub struct LzwWriter {
 ///|
 pub fn LzwWriter::new(
   dest : &@io.Writer,
-  order : @lzw.BitOrder,
+  order : BitOrder,
   lit_width : Int,
 ) -> LzwWriter {
   { dest, order, lit_width, buf: @buffer.new(), closed: false }
@@ -20,7 +20,7 @@ pub fn LzwWriter::new(
 
 ///|
 pub async fn LzwWriter::write(self : LzwWriter, data : &@io.Data) -> Unit {
-  let bytes = extract_data_bytes(data)
+  let bytes = @flate.extract_data_bytes(data)
   for i in 0..<bytes.length() {
     self.buf.write_byte(bytes[i])
   }
@@ -59,11 +59,7 @@ pub async fn LzwWriter::close(self : LzwWriter) -> Unit {
     return
   }
   self.closed = true
-  let compressed = @lzw.compress(
-    self.buf.to_bytes(),
-    self.order,
-    self.lit_width,
-  )
+  let compressed = compress(self.buf.to_bytes(), self.order, self.lit_width)
   self.dest.write(compressed)
 }
 

@@ -4,7 +4,7 @@
 pub struct GzipWriter {
   dest : &@io.Writer
   level : @flate.CompressionLevel
-  header : @gzip.Header
+  header : Header
   buf : @buffer.Buffer
   mut closed : Bool
 }
@@ -13,14 +13,14 @@ pub struct GzipWriter {
 pub fn GzipWriter::new(
   dest : &@io.Writer,
   level? : @flate.CompressionLevel = DefaultCompression,
-  header? : @gzip.Header = { ..@gzip.Header::default() },
+  header? : Header = { ..Header::default() },
 ) -> GzipWriter {
   { dest, level, header, buf: @buffer.new(), closed: false }
 }
 
 ///|
 pub async fn GzipWriter::write(self : GzipWriter, data : &@io.Data) -> Unit {
-  let bytes = extract_data_bytes(data)
+  let bytes = @flate.extract_data_bytes(data)
   for i in 0..<bytes.length() {
     self.buf.write_byte(bytes[i])
   }
@@ -59,7 +59,7 @@ pub async fn GzipWriter::close(self : GzipWriter) -> Unit {
     return
   }
   self.closed = true
-  let compressed = @gzip.compress(
+  let compressed = compress(
     self.buf.to_bytes(),
     level=self.level,
     header=self.header,

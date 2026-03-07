@@ -403,8 +403,8 @@ fn rle_count_freqs(
 
 ///|
 /// Write the dynamic Huffman block header and encode tokens.
-fn DeflateWriter::write_dynamic_block(
-  self : DeflateWriter,
+fn BitWriter::write_dynamic_block(
+  self : BitWriter,
   tokens : Array[Token],
   is_final : Bool,
 ) -> Unit {
@@ -512,8 +512,8 @@ fn DeflateWriter::write_dynamic_block(
 
 ///|
 /// Write the dynamic Huffman block header (HLIT, HDIST, HCLEN, code lengths).
-fn DeflateWriter::write_dynamic_header(
-  self : DeflateWriter,
+fn BitWriter::write_dynamic_header(
+  self : BitWriter,
   lit_codes : HuffmanCode,
   dist_codes : HuffmanCode,
   is_final : Bool,

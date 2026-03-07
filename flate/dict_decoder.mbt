@@ -127,6 +127,29 @@ fn DictDecoder::read_flush(self : DictDecoder, out : @buffer.Buffer) -> Unit {
 }
 
 ///|
+/// Writes available bytes to a writer (async streaming output).
+async fn DictDecoder::flush_to_writer(
+  self : DictDecoder,
+  writer : &@io.Writer,
+) -> Unit {
+  let hist = self.hist
+  if self.wr_pos > self.rd_pos {
+    let bytes = hist.unsafe_reinterpret_as_bytes()
+    let mut offset = self.rd_pos
+    let end = self.wr_pos
+    while offset < end {
+      let written = writer.write_once(bytes, offset~, len=end - offset)
+      offset += written
+    }
+  }
+  if self.wr_pos == hist.length() {
+    self.wr_pos = 0
+    self.full = true
+  }
+  self.rd_pos = self.wr_pos
+}
+
+///|
 /// Returns the total number of bytes in the history.
 fn DictDecoder::hist_size(self : DictDecoder) -> Int {
   if self.full {

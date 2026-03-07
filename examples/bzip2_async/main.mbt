@@ -12,6 +12,14 @@ async fn read_all_bytes(reader : &@io.Reader) -> Bytes {
 }
 
 ///|
+async fn write_all(w : &@io.Writer, data : Bytes) -> Unit {
+  let mut offset = 0
+  let len = data.length()
+  while offset < len {
+    let written = w.write_once(data, offset~, len=len - offset)
+    offset += written
+  }
+}
 
 ///|
 #cfg(target="native")
@@ -26,16 +34,18 @@ fn main {
     ]
 
     @moonasync.with_task_group(root => {
-      // --- Decompress through Bzip2Reader ---
+      // --- Decompress: streaming decompress_to ---
       let (pipe_read, pipe_write) = @io.pipe()
-      let reader = @bz2_async.Bzip2Reader::new(pipe_read)
+      let (pipe_read2, pipe_write2) = @io.pipe()
       root.spawn_bg(() => {
-        ignore(
-          pipe_write.write_once(compressed, offset=0, len=compressed.length()),
-        )
+        write_all(pipe_write, compressed)
         pipe_write.close()
       })
-      let restored = read_all_bytes(reader)
+      root.spawn_bg(() => {
+        @bz2.decompress_to(pipe_read, pipe_write2)
+        pipe_write2.close()
+      })
+      let restored = read_all_bytes(pipe_read2)
       assert_eq(restored, b"Hello")
       println("bzip2 async decompression: OK (\{restored.length()} bytes)")
     })

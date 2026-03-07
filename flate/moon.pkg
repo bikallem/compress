@@ -1,3 +1,19 @@
 import {
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
   "moonbitlang/core/buffer",
 }
+
+import {
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
+} for "test"
+
+options(
+  targets: {
+    "async_bit_reader.mbt": [ "native" ],
+    "async_deflate_writer.mbt": [ "native" ],
+    "async_inflate.mbt": [ "native" ],
+    "async_inflate_test.mbt": [ "native" ],
+  },
+)

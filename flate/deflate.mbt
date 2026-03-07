@@ -151,7 +151,7 @@ let dist_encode_table : ReadOnlyArray[Int] = {
 ///|
 /// DEFLATE compression using LZ77 with optimal Huffman coding.
 fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
-  let w = DeflateWriter::new(size_hint=data.length())
+  let w = BitWriter::new(size_hint=data.length())
   if data.length() == 0 {
     w.start_fixed_block(true)
     w.write_fixed_symbol(END_BLOCK_MARKER)
@@ -172,7 +172,7 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
 
 ///|
 /// Single-pass level 1: hash, match, and emit fixed Huffman codes in one pass.
-fn deflate_fast_direct(data : Bytes, w : DeflateWriter) -> Bytes {
+fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
   let data_len = data.length()
   let hash_size = 1 << 15
   let hash_mask = hash_size - 1
@@ -407,23 +407,19 @@ fn find_best_match(
 
 ///|
 /// Internal bit writer for DEFLATE output.
-priv struct DeflateWriter {
+priv struct BitWriter {
   buf : @buffer.Buffer
   mut bits : UInt64
   mut n_bits : Int
 }
 
 ///|
-fn DeflateWriter::new(size_hint? : Int = 256) -> DeflateWriter {
+fn BitWriter::new(size_hint? : Int = 256) -> BitWriter {
   { buf: @buffer.new(size_hint~), bits: 0UL, n_bits: 0 }
 }
 
 ///|
-fn DeflateWriter::write_bits_lsb(
-  self : DeflateWriter,
-  val : UInt,
-  n : Int,
-) -> Unit {
+fn BitWriter::write_bits_lsb(self : BitWriter, val : UInt, n : Int) -> Unit {
   self.bits = self.bits | (val.to_uint64() << self.n_bits)
   self.n_bits += n
   while self.n_bits >= 8 {
@@ -434,17 +430,14 @@ fn DeflateWriter::write_bits_lsb(
 }
 
 ///|
-fn DeflateWriter::start_fixed_block(
-  self : DeflateWriter,
-  is_final : Bool,
-) -> Unit {
+fn BitWriter::start_fixed_block(self : BitWriter, is_final : Bool) -> Unit {
   let header = if is_final { 0b011U } else { 0b010U }
   self.write_bits_lsb(header, 3)
 }
 
 ///|
 /// Write a literal byte using precomputed table.
-fn DeflateWriter::write_literal_fast(self : DeflateWriter, b : Byte) -> Unit {
+fn BitWriter::write_literal_fast(self : BitWriter, b : Byte) -> Unit {
   let entry = fixed_lit_codes[b.to_int()]
   let code = entry >> 4
   let n = (entry & 0xFU).reinterpret_as_int()
@@ -453,7 +446,7 @@ fn DeflateWriter::write_literal_fast(self : DeflateWriter, b : Byte) -> Unit {
 
 ///|
 /// Write a fixed Huffman symbol (literal, length code, or end-of-block) using precomputed table.
-fn DeflateWriter::write_fixed_symbol(self : DeflateWriter, sym : Int) -> Unit {
+fn BitWriter::write_fixed_symbol(self : BitWriter, sym : Int) -> Unit {
   let entry = fixed_lit_codes[sym]
   let code = entry >> 4
   let n = (entry & 0xFU).reinterpret_as_int()
@@ -463,8 +456,8 @@ fn DeflateWriter::write_fixed_symbol(self : DeflateWriter, sym : Int) -> Unit {
 
 ///|
 /// Write a match using precomputed tables.
-fn DeflateWriter::write_match_fast(
-  self : DeflateWriter,
+fn BitWriter::write_match_fast(
+  self : BitWriter,
   length : Int,
   offset : Int,
 ) -> Unit {
@@ -497,7 +490,7 @@ fn DeflateWriter::write_match_fast(
 }
 
 ///|
-fn DeflateWriter::finish(self : DeflateWriter) -> Bytes {
+fn BitWriter::finish(self : BitWriter) -> Bytes {
   if self.n_bits > 0 {
     self.buf.write_byte((self.bits & 0xFFUL).to_byte())
   }

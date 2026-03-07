@@ -3,7 +3,7 @@
 /// using DEFLATE, writing compressed output to the underlying writer on close.
 pub struct DeflateWriter {
   dest : &@io.Writer
-  level : @flate.CompressionLevel
+  level : CompressionLevel
   dict : Bytes
   buf : @buffer.Buffer
   mut closed : Bool
@@ -12,30 +12,10 @@ pub struct DeflateWriter {
 ///|
 pub fn DeflateWriter::new(
   dest : &@io.Writer,
-  level? : @flate.CompressionLevel = DefaultCompression,
+  level? : CompressionLevel = DefaultCompression,
   dict? : Bytes = Bytes::default(),
 ) -> DeflateWriter {
   { dest, level, dict, buf: @buffer.new(), closed: false }
-}
-
-///|
-async fn extract_data_bytes(data : &@io.Data) -> Bytes {
-  let buf = @buffer.new()
-  let (r, w) = @io.pipe()
-  @moonasync.with_task_group(root => {
-    root.spawn_bg(() => {
-      defer w.close()
-      w.write(data)
-    })
-    while true {
-      let chunk = r.read_some()
-      guard chunk is Some(bytes) else { break }
-      for i in 0..<bytes.length() {
-        buf.write_byte(bytes[i])
-      }
-    }
-  })
-  buf.to_bytes()
 }
 
 ///|
@@ -85,9 +65,9 @@ pub async fn DeflateWriter::close(self : DeflateWriter) -> Unit {
   self.closed = true
   let data = self.buf.to_bytes()
   let compressed = if self.dict.length() > 0 {
-    @flate.compress_with_dict(data, self.dict, level=self.level)
+    compress_with_dict(data, self.dict, level=self.level)
   } else {
-    @flate.compress(data, level=self.level)
+    compress(data, level=self.level)
   }
   self.dest.write(compressed)
 }
@@ -110,4 +90,24 @@ pub impl @io.Writer for DeflateWriter with write_once(
 ///|
 pub impl @io.Writer for DeflateWriter with write_reader(self, reader) {
   self.write_reader(reader)
+}
+
+///|
+pub async fn extract_data_bytes(data : &@io.Data) -> Bytes {
+  let buf = @buffer.new()
+  let (r, w) = @io.pipe()
+  @moonasync.with_task_group(root => {
+    root.spawn_bg(() => {
+      defer w.close()
+      w.write(data)
+    })
+    while true {
+      let chunk = r.read_some()
+      guard chunk is Some(bytes) else { break }
+      for i in 0..<bytes.length() {
+        buf.write_byte(bytes[i])
+      }
+    }
+  })
+  buf.to_bytes()
 }

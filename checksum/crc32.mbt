@@ -38,7 +38,6 @@ let crc32_tables : FixedArray[FixedArray[UInt]] = {
 /// Computes CRC-32 (IEEE) checksum of the given bytes in one shot.
 /// Uses hardware CLMUL acceleration when available, software slicing-by-8 otherwise.
 pub fn crc32(data : BytesView) -> UInt {
-  // Try hardware acceleration first
   if crc32_try_hw(data) is Some(result) {
     return result
   }

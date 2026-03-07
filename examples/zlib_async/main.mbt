@@ -21,6 +21,14 @@ async fn read_all_bytes(reader : &@io.Reader) -> Bytes {
 }
 
 ///|
+async fn write_all(w : &@io.Writer, data : Bytes) -> Unit {
+  let mut offset = 0
+  let len = data.length()
+  while offset < len {
+    let written = w.write_once(data, offset~, len=len - offset)
+    offset += written
+  }
+}
 
 ///|
 #cfg(target="native")
@@ -31,9 +39,9 @@ fn main {
     @moonasync.with_task_group(root => {
       // --- Compress through ZlibWriter ---
       let (pipe_read, pipe_write) = @io.pipe()
-      let writer = @zliblib_async.ZlibWriter::new(pipe_write, level=BestSpeed)
+      let writer = @zliblib.ZlibWriter::new(pipe_write, level=BestSpeed)
       root.spawn_bg(() => {
-        ignore(writer.write_once(original, offset=0, len=original.length()))
+        write_all(writer, original)
         writer.close()
         pipe_write.close()
       })
@@ -42,16 +50,18 @@ fn main {
         "zlib compressed: \{original.length()} -> \{compressed.length()} bytes",
       )
 
-      // --- Decompress through ZlibReader ---
+      // --- Decompress: streaming decompress_to ---
       let (pipe_read2, pipe_write2) = @io.pipe()
-      let reader = @zliblib_async.ZlibReader::new(pipe_read2)
+      let (pipe_read3, pipe_write3) = @io.pipe()
       root.spawn_bg(() => {
-        ignore(
-          pipe_write2.write_once(compressed, offset=0, len=compressed.length()),
-        )
+        write_all(pipe_write2, compressed)
         pipe_write2.close()
       })
-      let restored = read_all_bytes(reader)
+      root.spawn_bg(() => {
+        @zliblib.decompress_to(pipe_read2, pipe_write3)
+        pipe_write3.close()
+      })
+      let restored = read_all_bytes(pipe_read3)
       assert_eq(restored, original)
       println("zlib async round-trip: OK (\{restored.length()} bytes)")
     })

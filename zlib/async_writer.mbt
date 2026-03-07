@@ -18,7 +18,7 @@ pub fn ZlibWriter::new(
 
 ///|
 pub async fn ZlibWriter::write(self : ZlibWriter, data : &@io.Data) -> Unit {
-  let bytes = extract_data_bytes(data)
+  let bytes = @flate.extract_data_bytes(data)
   for i in 0..<bytes.length() {
     self.buf.write_byte(bytes[i])
   }
@@ -57,7 +57,7 @@ pub async fn ZlibWriter::close(self : ZlibWriter) -> Unit {
     return
   }
   self.closed = true
-  let compressed = @zlib.compress(self.buf.to_bytes(), level=self.level)
+  let compressed = compress(self.buf.to_bytes(), level=self.level)
   self.dest.write(compressed)
 }
 

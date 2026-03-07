@@ -5,4 +5,5 @@ import {
   "bikallem/compress/lzw",
   "bikallem/compress/zlib",
   "moonbitlang/core/buffer",
+  "moonbitlang/core/bench",
 }
