@@ -86,3 +86,35 @@ test "crc32 abc" {
   // Known vector: "abc" -> 0x352441C2
   inspect(@checksum.crc32(b"abc"[:]), content="891568578")
 }
+
+///|
+test "crc32 256 sequential bytes" {
+  // Exercises hw CLMUL path (>= 64 bytes). Reference: Python zlib.crc32
+  let data = Bytes::makei(256, fn(i) { i.to_byte() })
+  inspect(@checksum.crc32(data[:]), content="688229491")
+}
+
+///|
+test "crc32 1024 zeros" {
+  let data = Bytes::make(1024, b'\x00')
+  inspect(@checksum.crc32(data[:]), content="4021661486")
+}
+
+///|
+test "crc32 10000 sequential bytes" {
+  let data = Bytes::makei(10000, fn(i) { (i % 256).to_byte() })
+  inspect(@checksum.crc32(data[:]), content="3523200252")
+}
+
+///|
+test "crc32 hw matches software for various sizes" {
+  // Test at boundaries around 64 (hw threshold)
+  let sizes = [63, 64, 65, 80, 100, 127, 128, 255, 256, 512, 1000, 4096]
+  for size in sizes {
+    let data = Bytes::makei(size, fn(i) { ((i * 7 + 13) % 256).to_byte() })
+    let result = @checksum.crc32(data[:])
+    let h = @checksum.CRC32::new()
+    h.update(data[:])
+    assert_eq(result, h.checksum())
+  }
+}

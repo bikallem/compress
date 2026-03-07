@@ -36,12 +36,15 @@ extern "c" fn adler32_hw_ffi(
 
 ///|
 /// Native CRC-32 dispatch: CLMUL acceleration.
-/// NOTE: Currently disabled in crc32.mbt due to incorrect results for some
-/// data patterns. The CLMUL folding implementation produces wrong CRCs
-/// for certain inputs (verified against Python zlib reference).
-/// Keeping the FFI declarations for when the C implementation is fixed.
-fn crc32_try_hw(_data : BytesView) -> UInt? {
-  None
+fn crc32_try_hw(data : BytesView) -> UInt? {
+  if data.length() >= 64 && has_hw_crc32() {
+    Some(
+      crc32_hw_ffi(0xFFFFFFFF_U, data.data(), data.start_offset(), data.length()) ^
+        0xFFFFFFFF_U,
+    )
+  } else {
+    None
+  }
 }
 
 ///|

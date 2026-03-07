@@ -182,7 +182,9 @@ static uint32_t crc32_clmul(uint32_t crc, const uint8_t *buf, int32_t len) {
 
     uint32_t result = (uint32_t)_mm_extract_epi32(x1, 1);
 
-    /* Process tail bytes (< 16) with software */
+    /* Process tail bytes (< 16) with software.
+     * Barrett reduction returns the unfinalized CRC state, so we can
+     * continue directly with the standard reflected CRC update loop. */
     if (len > 0) {
         static const uint32_t crc_table[16] = {
             0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC,
@@ -190,13 +192,11 @@ static uint32_t crc32_clmul(uint32_t crc, const uint8_t *buf, int32_t len) {
             0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C,
             0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C,
         };
-        result = ~result;
         for (int32_t i = 0; i < len; i++) {
             result ^= buf[i];
             result = (result >> 4) ^ crc_table[result & 0xF];
             result = (result >> 4) ^ crc_table[result & 0xF];
         }
-        result = ~result;
     }
 
     return result;
