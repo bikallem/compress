@@ -35,10 +35,21 @@ extern "c" fn adler32_hw_ffi(
 ) -> UInt = "moonbit_adler32_hw"
 
 ///|
-/// Native CRC-32 dispatch: hardware acceleration not yet implemented.
-/// CLMUL-based IEEE CRC-32 requires carefully verified fold constants.
-fn crc32_try_hw(_data : BytesView) -> UInt? {
-  None
+/// Native CRC-32 dispatch: CLMUL acceleration for data >= 64 bytes.
+/// The C function takes a running CRC state and returns the running state.
+/// We pass 0xFFFFFFFF (standard init) and finalize with XOR 0xFFFFFFFF.
+fn crc32_try_hw(data : BytesView) -> UInt? {
+  if data.length() >= 64 && has_hw_crc32() {
+    let result = crc32_hw_ffi(
+      0xFFFFFFFF_U,
+      data.data(),
+      data.start_offset(),
+      data.length(),
+    )
+    Some(result ^ 0xFFFFFFFF_U)
+  } else {
+    None
+  }
 }
 
 ///|
