@@ -1,5 +1,7 @@
 {"issue_id":"compress-claude-091","label":"architecture"}
 {"issue_id":"compress-claude-091","label":"refactor"}
+{"issue_id":"compress-claude-27y","label":"checksum"}
+{"issue_id":"compress-claude-27y","label":"performance"}
 {"issue_id":"compress-claude-2jw","label":"checksum"}
 {"issue_id":"compress-claude-2jw","label":"performance"}
 {"issue_id":"compress-claude-2qx","label":"flate"}
