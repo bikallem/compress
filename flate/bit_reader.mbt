@@ -49,14 +49,25 @@ fn BitReader::read(self : BitReader, n : Int) -> Int raise CompressError {
 }
 
 ///|
-/// Peek at the low n bits without consuming them.
-fn BitReader::_peek(self : BitReader, n : Int) -> Int {
-  (self.buf & ((1UL << n) - 1UL)).to_int()
-}
-
-///|
-/// Consume n bits from the buffer (after a peek).
-fn BitReader::_consume(self : BitReader, n : Int) -> Unit {
-  self.buf = self.buf >> n
-  self.count -= n
+/// Returns any unconsumed bytes remaining in the bit buffer and input.
+fn BitReader::remaining_bytes(self : BitReader) -> Bytes {
+  let discard = self.count % 8
+  let aligned_buf = self.buf >> discard
+  let aligned_count = self.count - discard
+  let num_bytes = aligned_count / 8
+  let remaining_input = self.data.length() - self.pos
+  let total = num_bytes + remaining_input
+  if total == 0 {
+    return Bytes::default()
+  }
+  let result = FixedArray::make(total, b'\x00')
+  let mut b = aligned_buf
+  for i in 0..<num_bytes {
+    result[i] = (b & 0xFFUL).to_byte()
+    b = b >> 8
+  }
+  for i in 0..<remaining_input {
+    result[num_bytes + i] = self.data[self.pos + i]
+  }
+  result.unsafe_reinterpret_as_bytes()
 }

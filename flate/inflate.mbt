@@ -1,7 +1,7 @@
 ///|
 /// Decompresses DEFLATE-encoded data (RFC 1951).
 pub fn decompress(data : Bytes) -> Bytes raise CompressError {
-  decompress_with_dict(data, Bytes::default())
+  decompress_core(data, Bytes::default()).0
 }
 
 ///|
@@ -10,6 +10,17 @@ pub fn decompress_with_dict(
   data : Bytes,
   dict : Bytes,
 ) -> Bytes raise CompressError {
+  decompress_core(data, dict).0
+}
+
+///|
+/// Core decompression returning both result and unconsumed input bytes.
+/// The remaining bytes are useful for wrapper formats (gzip, zlib) that
+/// need to read a footer after the DEFLATE stream.
+fn decompress_core(
+  data : Bytes,
+  dict : Bytes,
+) -> (Bytes, Bytes) raise CompressError {
   let out = @buffer.new(size_hint=data.length() * 2)
   let dd = DictDecoder::new()
   if dict.length() > 0 {
@@ -38,7 +49,7 @@ pub fn decompress_with_dict(
     }
   }
   dd.read_flush(out)
-  out.to_bytes()
+  (out.to_bytes(), br.remaining_bytes())
 }
 
 ///|

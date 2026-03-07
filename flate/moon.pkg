@@ -11,7 +11,6 @@ import {
 
 options(
   targets: {
-    "async_bit_reader.mbt": [ "native" ],
     "async_deflate_writer.mbt": [ "native" ],
     "async_inflate.mbt": [ "native" ],
     "async_inflate_test.mbt": [ "native" ],
