@@ -67,20 +67,21 @@ pub fn crc32(data : BytesView) -> UInt {
     let p1 = ((crc >> 8) ^ b1) & 0xFFU
     let p2 = ((crc >> 16) ^ b2) & 0xFFU
     let p3 = ((crc >> 24) ^ b3) & 0xFFU
-    crc = t7[p0.reinterpret_as_int()] ^
-      t6[p1.reinterpret_as_int()] ^
-      t5[p2.reinterpret_as_int()] ^
-      t4[p3.reinterpret_as_int()] ^
-      t3[b4.reinterpret_as_int()] ^
-      t2[b5.reinterpret_as_int()] ^
-      t1[b6.reinterpret_as_int()] ^
-      t0[b7.reinterpret_as_int()]
+    // Safety: all indices are byte values (0-255), tables are 256 entries
+    crc = t7.unsafe_get(p0.reinterpret_as_int()) ^
+      t6.unsafe_get(p1.reinterpret_as_int()) ^
+      t5.unsafe_get(p2.reinterpret_as_int()) ^
+      t4.unsafe_get(p3.reinterpret_as_int()) ^
+      t3.unsafe_get(b4.reinterpret_as_int()) ^
+      t2.unsafe_get(b5.reinterpret_as_int()) ^
+      t1.unsafe_get(b6.reinterpret_as_int()) ^
+      t0.unsafe_get(b7.reinterpret_as_int())
     i += 8
   }
   // Process remaining bytes one at a time
   while i < len {
     let index = (crc ^ data[i].to_uint()) & 0xFF_U
-    crc = t0[index.reinterpret_as_int()] ^ (crc >> 8)
+    crc = t0.unsafe_get(index.reinterpret_as_int()) ^ (crc >> 8)
     i += 1
   }
   crc ^ 0xFFFFFFFF_U
@@ -133,19 +134,20 @@ pub impl Hasher for CRC32 with update(self, data) -> Unit {
     let p1 = ((self.crc >> 8) ^ b1) & 0xFFU
     let p2 = ((self.crc >> 16) ^ b2) & 0xFFU
     let p3 = ((self.crc >> 24) ^ b3) & 0xFFU
-    self.crc = t7[p0.reinterpret_as_int()] ^
-      t6[p1.reinterpret_as_int()] ^
-      t5[p2.reinterpret_as_int()] ^
-      t4[p3.reinterpret_as_int()] ^
-      t3[b4.reinterpret_as_int()] ^
-      t2[b5.reinterpret_as_int()] ^
-      t1[b6.reinterpret_as_int()] ^
-      t0[b7.reinterpret_as_int()]
+    // Safety: all indices are byte values (0-255), tables are 256 entries
+    self.crc = t7.unsafe_get(p0.reinterpret_as_int()) ^
+      t6.unsafe_get(p1.reinterpret_as_int()) ^
+      t5.unsafe_get(p2.reinterpret_as_int()) ^
+      t4.unsafe_get(p3.reinterpret_as_int()) ^
+      t3.unsafe_get(b4.reinterpret_as_int()) ^
+      t2.unsafe_get(b5.reinterpret_as_int()) ^
+      t1.unsafe_get(b6.reinterpret_as_int()) ^
+      t0.unsafe_get(b7.reinterpret_as_int())
     i += 8
   }
   while i < len {
     let index = (self.crc ^ data[i].to_uint()) & 0xFF_U
-    self.crc = t0[index.reinterpret_as_int()] ^ (self.crc >> 8)
+    self.crc = t0.unsafe_get(index.reinterpret_as_int()) ^ (self.crc >> 8)
     i += 1
   }
 }

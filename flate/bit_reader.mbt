@@ -21,8 +21,9 @@ fn BitReader::fill(self : BitReader) -> Unit {
   let mut pos = self.pos
   let mut buf = self.buf
   let mut count = self.count
+  // Safety: pos < data_len checked before each access
   while count <= 56 && pos < data_len {
-    buf = buf | (data[pos].to_uint64() << count)
+    buf = buf | (data.unsafe_get(pos).to_uint64() << count)
     count += 8
     pos += 1
   }
@@ -43,7 +44,8 @@ fn BitReader::ensure(self : BitReader, n : Int) -> Unit raise CompressError {
     if pos >= data_len {
       raise CompressError::UnexpectedEOF
     }
-    buf = buf | (data[pos].to_uint64() << count)
+    // Safety: pos < data_len checked above
+    buf = buf | (data.unsafe_get(pos).to_uint64() << count)
     count += 8
     pos += 1
   }

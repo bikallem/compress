@@ -113,7 +113,8 @@ fn decode_huffman_block(
     // Fill bit buffer
     br.fill()
     // Inline Huffman decode for literal/length
-    let entry = lit_chunks[(br.buf & chunk_mask).to_int()]
+    // Safety: chunk_mask bounds index to table size
+    let entry = lit_chunks.unsafe_get((br.buf & chunk_mask).to_int())
     let sym = if (entry & 0x80U) == 0U &&
       br.count >= (entry & 0xFFU).reinterpret_as_int() {
       // Direct chunk hit — most common path
@@ -125,10 +126,10 @@ fn decode_huffman_block(
     } else if (entry & 0x80U) != 0U {
       // Link table path — inlined to avoid function call
       let link_idx = (entry >> 8).reinterpret_as_int()
-      let link_table = lit_dec.links[link_idx]
+      let link_table = lit_dec.links.unsafe_get(link_idx)
       let suffix = (br.buf >> HUFFMAN_CHUNK_BITS).to_int() &
         ((1 << (lit_dec.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
-      let link_entry = link_table[suffix]
+      let link_entry = link_table.unsafe_get(suffix)
       let n = (link_entry & 0xFFU).reinterpret_as_int()
       let s = (link_entry >> 8).reinterpret_as_int()
       br.buf = br.buf >> n
@@ -139,7 +140,8 @@ fn decode_huffman_block(
       lit_dec.decode(br)
     }
     if sym < 256 {
-      hist[dd.wr_pos] = sym.to_byte()
+      // Safety: wr_pos < hist_len checked via flush at hist_len
+      hist.unsafe_set(dd.wr_pos, sym.to_byte())
       dd.wr_pos += 1
       if dd.wr_pos == hist_len {
         dd.read_flush(out)
@@ -166,7 +168,8 @@ fn decode_huffman_block(
       let length = length_base[length_code] + extra_val
       // Decode distance — fully inlined
       br.fill()
-      let dist_entry = dist_chunks[(br.buf & chunk_mask).to_int()]
+      // Safety: chunk_mask bounds index to table size
+      let dist_entry = dist_chunks.unsafe_get((br.buf & chunk_mask).to_int())
       let dist_sym = if (dist_entry & 0x80U) == 0U &&
         br.count >= (dist_entry & 0xFFU).reinterpret_as_int() {
         let n = (dist_entry & 0xFFU).reinterpret_as_int()
@@ -176,10 +179,10 @@ fn decode_huffman_block(
         s
       } else if (dist_entry & 0x80U) != 0U {
         let link_idx = (dist_entry >> 8).reinterpret_as_int()
-        let link_table = dist_dec.links[link_idx]
+        let link_table = dist_dec.links.unsafe_get(link_idx)
         let suffix = (br.buf >> HUFFMAN_CHUNK_BITS).to_int() &
           ((1 << (dist_dec.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
-        let link_entry = link_table[suffix]
+        let link_entry = link_table.unsafe_get(suffix)
         let n = (link_entry & 0xFFU).reinterpret_as_int()
         let s = (link_entry >> 8).reinterpret_as_int()
         br.buf = br.buf >> n

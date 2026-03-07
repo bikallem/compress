@@ -83,13 +83,17 @@ fn LzwDecompressState::process_code(
   let suffix = self.suffix
   let prefix = self.prefix
   let clear = self.clear
+  // Safety: all indices are bounded by LZW state machine invariants:
+  // - codes < 1<<MAX_WIDTH (table size)
+  // - self.o < 2*(1<<MAX_WIDTH) (output buffer, flushed at 1<<MAX_WIDTH)
+  // - self.hi < 1<<MAX_WIDTH (table high water mark)
   if code < clear {
     // Literal code
-    output[self.o] = code.to_byte()
+    output.unsafe_set(self.o, code.to_byte())
     self.o += 1
     if self.last != DECODER_INVALID_CODE {
-      suffix[self.hi] = code.to_byte()
-      prefix[self.hi] = self.last
+      suffix.unsafe_set(self.hi, code.to_byte())
+      prefix.unsafe_set(self.hi, self.last)
     }
   } else if code == clear {
     self.width = 1 + self.lit_width
@@ -107,18 +111,18 @@ fn LzwDecompressState::process_code(
     if code == self.hi && self.last != DECODER_INVALID_CODE {
       c = self.last
       while c >= clear {
-        c = prefix[c]
+        c = prefix.unsafe_get(c)
       }
-      output[i] = c.to_byte()
+      output.unsafe_set(i, c.to_byte())
       i -= 1
       c = self.last
     }
     while c >= clear {
-      output[i] = suffix[c]
+      output.unsafe_set(i, suffix.unsafe_get(c))
       i -= 1
-      c = prefix[c]
+      c = prefix.unsafe_get(c)
     }
-    output[i] = c.to_byte()
+    output.unsafe_set(i, c.to_byte())
     let decoded_len = out_len - i
     // Copy decoded bytes — use unsafe_blit for bulk copy
     if self.o != i {
@@ -126,8 +130,8 @@ fn LzwDecompressState::process_code(
     }
     self.o += decoded_len
     if self.last != DECODER_INVALID_CODE {
-      suffix[self.hi] = c.to_byte()
-      prefix[self.hi] = self.last
+      suffix.unsafe_set(self.hi, c.to_byte())
+      prefix.unsafe_set(self.hi, self.last)
     }
   } else {
     raise LzwError::InvalidCode("lzw: invalid code \{code}")

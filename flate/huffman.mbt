@@ -126,13 +126,14 @@ fn HuffmanDecoder::decode(
       }
       raise CompressError::UnexpectedEOF
     }
-    br.buf = br.buf | (br.data[br.pos].to_uint64() << br.count)
+    br.buf = br.buf | (br.data.unsafe_get(br.pos).to_uint64() << br.count)
     br.count += 8
     br.pos += 1
   }
   // Look up in chunks table
   let idx = (br.buf & ((1UL << HUFFMAN_CHUNK_BITS) - 1UL)).to_int()
-  let entry = self.chunks[idx]
+  // Safety: idx masked to chunk table size
+  let entry = self.chunks.unsafe_get(idx)
   if (entry & 0x80U) == 0U {
     // Direct hit
     let n = (entry & 0xFFU).reinterpret_as_int()
@@ -143,10 +144,10 @@ fn HuffmanDecoder::decode(
   }
   // Need link table
   let link_idx = (entry >> 8).reinterpret_as_int()
-  let link_table = self.links[link_idx]
+  let link_table = self.links.unsafe_get(link_idx)
   let suffix = (br.buf >> HUFFMAN_CHUNK_BITS).to_int() &
     ((1 << (self.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
-  let link_entry = link_table[suffix]
+  let link_entry = link_table.unsafe_get(suffix)
   if link_entry == 0U {
     raise CompressError::CorruptInput("invalid Huffman code")
   }

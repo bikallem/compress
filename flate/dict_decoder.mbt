@@ -46,7 +46,8 @@ fn DictDecoder::avail_write(self : DictDecoder) -> Int {
 ///|
 /// Writes a single byte.
 fn DictDecoder::write_byte(self : DictDecoder, b : Byte) -> Unit {
-  self.hist[self.wr_pos] = b
+  // Safety: caller ensures avail_write() > 0
+  self.hist.unsafe_set(self.wr_pos, b)
   self.wr_pos += 1
 }
 
@@ -71,9 +72,10 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     FixedArray::unsafe_blit(hist, dst_base, hist, src_pos, max_copy)
   } else if dist == 1 {
     // RLE: fill with single byte (very common)
-    let fill_byte = hist[src_pos]
+    // Safety: src_pos valid (checked above), i in [dst_base, dst_base+max_copy) < hist_len
+    let fill_byte = hist.unsafe_get(src_pos)
     for i in dst_base..<(dst_base + max_copy) {
-      hist[i] = fill_byte
+      hist.unsafe_set(i, fill_byte)
     }
   } else if src_pos < dst_base && src_pos + max_copy <= hist_len {
     // Overlapping forward copy, no wrap — copy in dist-sized chunks
@@ -97,8 +99,9 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     let mut dst_pos = dst_base
     let mut sp = src_pos
     let dst_end = dst_base + max_copy
+    // Safety: dst_pos < dst_end <= hist_len, sp wraps within [0, hist_len)
     while dst_pos < dst_end {
-      hist[dst_pos] = hist[sp]
+      hist.unsafe_set(dst_pos, hist.unsafe_get(sp))
       dst_pos += 1
       sp += 1
       if sp == hist_len {
