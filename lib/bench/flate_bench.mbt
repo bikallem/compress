@@ -54,3 +54,29 @@ test "bench flate compress random_10kb" (b : @bench.T) {
     b.keep(try! @flate.compress(data, level=BestSpeed))
   })
 }
+
+///|
+test "bench flate compress best_speed text_1kb" (b : @bench.T) {
+  let data = gen_text(1024)
+  b.bench(name="flate_compress_speed_1kb", fn() {
+    b.keep(try! @flate.compress(data, level=BestSpeed))
+  })
+}
+
+///|
+test "bench flate decompress text_1kb" (b : @bench.T) {
+  let data = gen_text(1024)
+  let compressed = @flate.compress(data)
+  b.bench(name="flate_decompress_1kb", fn() {
+    b.keep(try! @flate.decompress(compressed))
+  })
+}
+
+///|
+test "bench flate decompress zeros_10kb" (b : @bench.T) {
+  let data = gen_zeros(10240)
+  let compressed = @flate.compress(data)
+  b.bench(name="flate_decompress_zeros_10kb", fn() {
+    b.keep(try! @flate.decompress(compressed))
+  })
+}
