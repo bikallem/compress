@@ -154,7 +154,7 @@ fn decode_huffman_block(
       if length_code >= length_base.length() {
         raise CompressError::CorruptInput("invalid length code \{sym}")
       }
-      let extra = length_extra[length_code]
+      let extra = length_extra.unsafe_get(length_code)
       let extra_val = if extra > 0 {
         br.ensure(extra)
         let mask = (1UL << extra) - 1UL
@@ -165,7 +165,7 @@ fn decode_huffman_block(
       } else {
         0
       }
-      let length = length_base[length_code] + extra_val
+      let length = length_base.unsafe_get(length_code) + extra_val
       // Decode distance — fully inlined
       br.fill()
       // Safety: chunk_mask bounds index to table size
@@ -194,7 +194,7 @@ fn decode_huffman_block(
       if dist_sym >= dist_base.length() {
         raise CompressError::CorruptInput("invalid distance code \{dist_sym}")
       }
-      let dextra = dist_extra[dist_sym]
+      let dextra = dist_extra.unsafe_get(dist_sym)
       let dextra_val = if dextra > 0 {
         br.ensure(dextra)
         let mask = (1UL << dextra) - 1UL
@@ -205,7 +205,7 @@ fn decode_huffman_block(
       } else {
         0
       }
-      let dist = dist_base[dist_sym] + dextra_val
+      let dist = dist_base.unsafe_get(dist_sym) + dextra_val
       if dist > dd.hist_size() {
         raise CompressError::CorruptInput(
           "distance \{dist} exceeds history \{dd.hist_size()}",

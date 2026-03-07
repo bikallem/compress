@@ -56,7 +56,7 @@ fn deflate_stored(data : Bytes) -> Bytes {
 /// Precomputed reversed fixed Huffman literal codes.
 /// Entry format: (reversed_code << 4) | code_length
 /// For symbols 0-143: 8-bit codes, for 144-255: 9-bit codes
-let fixed_lit_codes : ReadOnlyArray[UInt] = {
+let fixed_lit_codes : FixedArray[UInt] = {
   let t = FixedArray::make(286, 0U)
   for sym in 0..<=143 {
     let code = sym + 0x30
@@ -76,24 +76,24 @@ let fixed_lit_codes : ReadOnlyArray[UInt] = {
     let code = sym - 280 + 0xC0
     t[sym] = (reverse_uint_8(code.reinterpret_as_uint()) << 4) | 8U
   }
-  ReadOnlyArray::from_array(t[:])
+  t
 }
 
 ///|
 /// Precomputed reversed 5-bit distance codes.
-let fixed_dist_codes : ReadOnlyArray[UInt] = {
+let fixed_dist_codes : FixedArray[UInt] = {
   let t = FixedArray::make(30, 0U)
   for i in 0..<30 {
     t[i] = reverse_uint_5(i.reinterpret_as_uint())
   }
-  ReadOnlyArray::from_array(t[:])
+  t
 }
 
 ///|
 /// Precomputed length encoding table.
 /// Entry format: (length_code, extra_bits, extra_value) packed into FixedArray
 /// Index: length - MIN_MATCH_LENGTH (0-255 for lengths 3-258)
-let length_encode_table : ReadOnlyArray[Int] = {
+let length_encode_table : FixedArray[Int] = {
   let size = MAX_MATCH_LENGTH - MIN_MATCH_LENGTH + 1
   let t = FixedArray::make(size * 3, 0)
   for length in MIN_MATCH_LENGTH..<=MAX_MATCH_LENGTH {
@@ -119,14 +119,14 @@ let length_encode_table : ReadOnlyArray[Int] = {
       t[idx * 3 + 2] = 0
     }
   }
-  ReadOnlyArray::from_array(t[:])
+  t
 }
 
 ///|
 /// Precomputed distance encoding table.
 /// For each distance 1-32768, stores (dist_code, extra_bits, extra_value)
 /// Uses binary search for O(1) lookup.
-let dist_encode_table : ReadOnlyArray[Int] = {
+let dist_encode_table : FixedArray[Int] = {
   // Store (dist_code, extra_bits) for each distance 1..32768
   // We only need dist_code for each distance; extra_value = dist - dist_base[code]
   let size = MAX_MATCH_OFFSET
@@ -145,7 +145,7 @@ let dist_encode_table : ReadOnlyArray[Int] = {
       }
     }
   }
-  ReadOnlyArray::from_array(t[:])
+  t
 }
 
 ///|
@@ -438,7 +438,7 @@ fn BitWriter::start_fixed_block(self : BitWriter, is_final : Bool) -> Unit {
 ///|
 /// Write a literal byte using precomputed table.
 fn BitWriter::write_literal_fast(self : BitWriter, b : Byte) -> Unit {
-  let entry = fixed_lit_codes[b.to_int()]
+  let entry = fixed_lit_codes.unsafe_get(b.to_int())
   let code = entry >> 4
   let n = (entry & 0xFU).reinterpret_as_int()
   self.write_bits_lsb(code, n)
@@ -447,7 +447,7 @@ fn BitWriter::write_literal_fast(self : BitWriter, b : Byte) -> Unit {
 ///|
 /// Write a fixed Huffman symbol (literal, length code, or end-of-block) using precomputed table.
 fn BitWriter::write_fixed_symbol(self : BitWriter, sym : Int) -> Unit {
-  let entry = fixed_lit_codes[sym]
+  let entry = fixed_lit_codes.unsafe_get(sym)
   let code = entry >> 4
   let n = (entry & 0xFU).reinterpret_as_int()
   // Write block header for end-of-block if needed
@@ -463,11 +463,11 @@ fn BitWriter::write_match_fast(
 ) -> Unit {
   // Encode length using precomputed table
   let lidx = (length - MIN_MATCH_LENGTH) * 3
-  let length_code = length_encode_table[lidx]
-  let length_extra_bits = length_encode_table[lidx + 1]
-  let length_extra_val = length_encode_table[lidx + 2]
+  let length_code = length_encode_table.unsafe_get(lidx)
+  let length_extra_bits = length_encode_table.unsafe_get(lidx + 1)
+  let length_extra_val = length_encode_table.unsafe_get(lidx + 2)
   // Write length code using precomputed reversed code
-  let lentry = fixed_lit_codes[length_code]
+  let lentry = fixed_lit_codes.unsafe_get(length_code)
   let lcode = lentry >> 4
   let ln = (lentry & 0xFU).reinterpret_as_int()
   self.write_bits_lsb(lcode, ln)
@@ -479,11 +479,11 @@ fn BitWriter::write_match_fast(
   }
   // Encode distance using precomputed table
   let didx = (offset - 1) * 2
-  let dist_code = dist_encode_table[didx]
-  let dist_extra_bits = dist_encode_table[didx + 1]
-  let dist_extra_val = offset - dist_base[dist_code]
+  let dist_code = dist_encode_table.unsafe_get(didx)
+  let dist_extra_bits = dist_encode_table.unsafe_get(didx + 1)
+  let dist_extra_val = offset - dist_base.unsafe_get(dist_code)
   // Write distance code using precomputed reversed code
-  self.write_bits_lsb(fixed_dist_codes[dist_code], 5)
+  self.write_bits_lsb(fixed_dist_codes.unsafe_get(dist_code), 5)
   if dist_extra_bits > 0 {
     self.write_bits_lsb(dist_extra_val.reinterpret_as_uint(), dist_extra_bits)
   }
@@ -566,17 +566,17 @@ fn reverse_uint(val : UInt, n : Int) -> UInt {
 fn _encode_length(length : Int) -> (Int, Int, Int) {
   let idx = (length - MIN_MATCH_LENGTH) * 3
   (
-    length_encode_table[idx],
-    length_encode_table[idx + 1],
-    length_encode_table[idx + 2],
+    length_encode_table.unsafe_get(idx),
+    length_encode_table.unsafe_get(idx + 1),
+    length_encode_table.unsafe_get(idx + 2),
   )
 }
 
 ///|
 fn _encode_distance(dist : Int) -> (Int, Int, Int) {
   let didx = (dist - 1) * 2
-  let dist_code = dist_encode_table[didx]
-  let dist_extra_bits = dist_encode_table[didx + 1]
-  let dist_extra_val = dist - dist_base[dist_code]
+  let dist_code = dist_encode_table.unsafe_get(didx)
+  let dist_extra_bits = dist_encode_table.unsafe_get(didx + 1)
+  let dist_extra_val = dist - dist_base.unsafe_get(dist_code)
   (dist_code, dist_extra_bits, dist_extra_val)
 }
