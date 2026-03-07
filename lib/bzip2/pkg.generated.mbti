@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "blem00/compress/bzip2"
+
+// Values
+pub fn decompress(Bytes) -> Bytes raise Bzip2Error
+
+// Errors
+pub suberror Bzip2Error {
+  InvalidHeader(String)
+  CorruptData(String)
+  ChecksumMismatch(expected~ : UInt, got~ : UInt)
+  UnexpectedEOF
+}
+pub impl Show for Bzip2Error
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+
