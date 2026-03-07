@@ -1,0 +1,9 @@
+import {
+  "blem00/compress/gzip",
+  "blem00/compress/gzip/sync" @gzip_sync,
+  "moonbitlang/core/buffer",
+}
+
+options(
+  "is-main": true,
+)

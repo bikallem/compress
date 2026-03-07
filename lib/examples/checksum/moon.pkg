@@ -1,0 +1,7 @@
+import {
+  "blem00/compress/checksum",
+}
+
+options(
+  "is-main": true,
+)

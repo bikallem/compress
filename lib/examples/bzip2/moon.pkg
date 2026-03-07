@@ -1,0 +1,7 @@
+import {
+  "blem00/compress/bzip2",
+}
+
+options(
+  "is-main": true,
+)
