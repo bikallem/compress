@@ -107,3 +107,44 @@ test "bench flate decompress text_10mb" (b : @bench.T) {
     b.keep(try! @flate.decompress(compressed))
   })
 }
+
+///|
+test "bench flate decompress text_100mb" (b : @bench.T) {
+  let data = gen_text(104857600)
+  let compressed = @flate.compress(data)
+  b.bench(name="flate_decompress_100mb", fn() {
+    b.keep(try! @flate.decompress(compressed))
+  })
+}
+
+///|
+test "bench flate compress default text_100kb" (b : @bench.T) {
+  let data = gen_text(102400)
+  b.bench(name="flate_compress_default_100kb", fn() {
+    b.keep(try! @flate.compress(data))
+  })
+}
+
+///|
+test "bench flate compress default text_1mb" (b : @bench.T) {
+  let data = gen_text(1048576)
+  b.bench(name="flate_compress_default_1mb", fn() {
+    b.keep(try! @flate.compress(data))
+  })
+}
+
+///|
+test "bench flate compress default text_10mb" (b : @bench.T) {
+  let data = gen_text(10485760)
+  b.bench(name="flate_compress_default_10mb", fn() {
+    b.keep(try! @flate.compress(data))
+  })
+}
+
+///|
+test "bench flate compress default text_100mb" (b : @bench.T) {
+  let data = gen_text(104857600)
+  b.bench(name="flate_compress_default_100mb", fn() {
+    b.keep(try! @flate.compress(data))
+  })
+}
