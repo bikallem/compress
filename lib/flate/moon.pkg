@@ -1,4 +1,4 @@
 import {
-  "blem00/compress/checksum",
+  "bikallem/compress/checksum",
   "moonbitlang/core/buffer",
 }

@@ -1,8 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/lzw/async"
+package "bikallem/compress/lzw/async"
 
 import {
-  "blem00/compress/lzw",
+  "bikallem/compress/lzw",
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",
 }

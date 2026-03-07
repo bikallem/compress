@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/lzw"
+package "bikallem/compress/lzw"
 
 // Values
 pub fn compress(Bytes, BitOrder, Int) -> Bytes raise LzwError

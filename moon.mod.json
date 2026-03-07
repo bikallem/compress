@@ -1,5 +1,5 @@
 {
-  "name": "blem00/compress",
+  "name": "bikallem/compress",
   "version": "0.1.0",
   "deps": {
     "moonbitlang/async": "0.16.7"

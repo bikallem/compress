@@ -1,6 +1,6 @@
 import {
-  "blem00/compress/flate",
-  "blem00/compress/zlib",
+  "bikallem/compress/flate",
+  "bikallem/compress/zlib",
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",

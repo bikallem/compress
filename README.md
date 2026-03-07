@@ -1,4 +1,4 @@
-# blem00/compress
+# bikallem/compress
 
 A pure MoonBit compression library implementing standard compression formats.
 
@@ -6,17 +6,17 @@ A pure MoonBit compression library implementing standard compression formats.
 
 | Package | Description |
 |---------|-------------|
-| `blem00/compress/flate` | DEFLATE compression/decompression (RFC 1951) |
-| `blem00/compress/gzip` | gzip format (RFC 1952) |
-| `blem00/compress/zlib` | zlib format (RFC 1950) |
-| `blem00/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
-| `blem00/compress/bzip2` | bzip2 decompression |
-| `blem00/compress/checksum` | CRC-32 and Adler-32 checksums |
+| `bikallem/compress/flate` | DEFLATE compression/decompression (RFC 1951) |
+| `bikallem/compress/gzip` | gzip format (RFC 1952) |
+| `bikallem/compress/zlib` | zlib format (RFC 1950) |
+| `bikallem/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
+| `bikallem/compress/bzip2` | bzip2 decompression |
+| `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
 
 ## Installation
 
 ```
-moon add blem00/compress
+moon add bikallem/compress
 ```
 
 ## Usage

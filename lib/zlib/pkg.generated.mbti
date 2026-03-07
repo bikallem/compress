@@ -1,8 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/zlib"
+package "bikallem/compress/zlib"
 
 import {
-  "blem00/compress/flate",
+  "bikallem/compress/flate",
 }
 
 // Values

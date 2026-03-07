@@ -1,7 +1,9 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/bzip2"
+package "bikallem/compress/bzip2"
 
 // Values
+pub fn compress(Bytes, level? : Int) -> Bytes raise Bzip2Error
+
 pub fn decompress(Bytes) -> Bytes raise Bzip2Error
 
 // Errors

@@ -1,8 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "blem00/compress/flate/async"
+package "bikallem/compress/flate/async"
 
 import {
-  "blem00/compress/flate",
+  "bikallem/compress/flate",
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",
 }

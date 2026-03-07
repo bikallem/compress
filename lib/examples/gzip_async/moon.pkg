@@ -1,6 +1,6 @@
 import {
-  "blem00/compress/gzip",
-  "blem00/compress/gzip/async" @gzip_async,
+  "bikallem/compress/gzip",
+  "bikallem/compress/gzip/async" @gzip_async,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",

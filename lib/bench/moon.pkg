@@ -1,9 +1,9 @@
 import {
-  "blem00/compress/checksum",
-  "blem00/compress/flate",
-  "blem00/compress/gzip",
-  "blem00/compress/lzw",
-  "blem00/compress/zlib",
+  "bikallem/compress/checksum",
+  "bikallem/compress/flate",
+  "bikallem/compress/gzip",
+  "bikallem/compress/lzw",
+  "bikallem/compress/zlib",
   "moonbitlang/core/bench",
   "moonbitlang/core/buffer",
 }

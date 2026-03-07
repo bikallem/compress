@@ -1,5 +1,5 @@
 import {
-  "blem00/compress/lzw/async" @lzw_async,
+  "bikallem/compress/lzw/async" @lzw_async,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",
