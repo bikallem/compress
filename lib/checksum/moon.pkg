@@ -1,1 +1,8 @@
-
+options(
+  "native-stub": [ "checksum_hw.c" ],
+  targets: {
+    "adler32_dispatch.mbt": [ "wasm", "wasm-gc", "js" ],
+    "checksum_hw.mbt": [ "native" ],
+    "crc32_dispatch.mbt": [ "wasm", "wasm-gc", "js" ],
+  },
+)

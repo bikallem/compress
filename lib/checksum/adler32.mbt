@@ -11,6 +11,10 @@ const ADLER32_NMAX : Int = 5552
 /// Computes Adler-32 checksum of the given bytes in one shot.
 /// Uses 16x loop unrolling within NMAX-bounded chunks.
 pub fn adler32(data : BytesView) -> UInt {
+  // Try hardware acceleration first
+  if adler32_try_hw(data) is Some(result) {
+    return result
+  }
   let mut s1 = 1U
   let mut s2 = 0U
   let mut offset = 0
