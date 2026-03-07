@@ -53,46 +53,152 @@ fn deflate_stored(data : Bytes) -> Bytes {
 }
 
 ///|
+/// Precomputed reversed fixed Huffman literal codes.
+/// Entry format: (reversed_code << 4) | code_length
+/// For symbols 0-143: 8-bit codes, for 144-255: 9-bit codes
+let fixed_lit_codes : FixedArray[UInt] = {
+  let t = FixedArray::make(286, 0U)
+  for sym in 0..<=143 {
+    let code = sym + 0x30
+    t[sym] = (reverse_uint_8(code.reinterpret_as_uint()) << 4) | 8U
+  }
+  for sym in 144..<=255 {
+    let code = sym - 144 + 0x190
+    t[sym] = (reverse_uint_9(code.reinterpret_as_uint()) << 4) | 9U
+  }
+  // Length codes 256-279: 7-bit codes
+  for sym in 256..<=279 {
+    let code = sym - 256
+    t[sym] = (reverse_uint_7(code.reinterpret_as_uint()) << 4) | 7U
+  }
+  // Length codes 280-285: 8-bit codes
+  for sym in 280..<=285 {
+    let code = sym - 280 + 0xC0
+    t[sym] = (reverse_uint_8(code.reinterpret_as_uint()) << 4) | 8U
+  }
+  t
+}
+
+///|
+/// Precomputed reversed 5-bit distance codes.
+let fixed_dist_codes : FixedArray[UInt] = {
+  let t = FixedArray::make(30, 0U)
+  for i in 0..<30 {
+    t[i] = reverse_uint_5(i.reinterpret_as_uint())
+  }
+  t
+}
+
+///|
+/// Precomputed length encoding table.
+/// Entry format: (length_code, extra_bits, extra_value) packed into FixedArray
+/// Index: length - MIN_MATCH_LENGTH (0-255 for lengths 3-258)
+let length_encode_table : FixedArray[Int] = {
+  let size = MAX_MATCH_LENGTH - MIN_MATCH_LENGTH + 1
+  let t = FixedArray::make(size * 3, 0)
+  for length in MIN_MATCH_LENGTH..<=MAX_MATCH_LENGTH {
+    let idx = length - MIN_MATCH_LENGTH
+    let mut found = false
+    for i in 0..<length_base.length() {
+      let next_base = if i + 1 < length_base.length() {
+        length_base[i + 1]
+      } else {
+        259
+      }
+      if length >= length_base[i] && length < next_base {
+        t[idx * 3] = 257 + i
+        t[idx * 3 + 1] = length_extra[i]
+        t[idx * 3 + 2] = length - length_base[i]
+        found = true
+        break
+      }
+    }
+    if not(found) {
+      t[idx * 3] = 285
+      t[idx * 3 + 1] = 0
+      t[idx * 3 + 2] = 0
+    }
+  }
+  t
+}
+
+///|
+/// Precomputed distance encoding table.
+/// For each distance 1-32768, stores (dist_code, extra_bits, extra_value)
+/// Uses binary search for O(1) lookup.
+let dist_encode_table : FixedArray[Int] = {
+  // Store (dist_code, extra_bits) for each distance 1..32768
+  // We only need dist_code for each distance; extra_value = dist - dist_base[code]
+  let size = MAX_MATCH_OFFSET
+  let t = FixedArray::make(size * 2, 0)
+  for d in 1..<=MAX_MATCH_OFFSET {
+    for i = 0; i < dist_base.length(); i = i + 1 {
+      let next_base = if i + 1 < dist_base.length() {
+        dist_base[i + 1]
+      } else {
+        32769
+      }
+      if d >= dist_base[i] && d < next_base {
+        t[(d - 1) * 2] = i
+        t[(d - 1) * 2 + 1] = dist_extra[i]
+        break
+      }
+    }
+  }
+  t
+}
+
+///|
 /// DEFLATE compression using LZ77 with fixed Huffman codes.
-fn deflate_lz77(data : Bytes, _level : Int) -> Bytes {
-  let w = DeflateWriter::new()
+fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
+  let w = DeflateWriter::new(size_hint=data.length())
   if data.length() == 0 {
-    // Empty: emit final empty fixed block
-    w.write_fixed_bits(END_BLOCK_MARKER, true)
+    // Empty: emit final block header + end-of-block marker
+    w.start_fixed_block(true)
+    w.write_fixed_symbol(END_BLOCK_MARKER)
     return w.finish()
   }
-  // For simplicity, emit a single final block with fixed Huffman encoding.
-  // Process data using LZ77 string matching with a hash table.
-  let window_bits = 15
-  let window_size = 1 << window_bits
+  let window_size = 1 << 15
   let window_mask = window_size - 1
-  let hash_bits = 15
-  let hash_size = 1 << hash_bits
+  let hash_size = 1 << 15
   let hash_mask = hash_size - 1
+  // Level-dependent chain length
+  let max_chain = match level {
+    1 => 4
+    2 => 8
+    3 => 16
+    4 => 32
+    5 => 64
+    6 => 128
+    7 => 256
+    8 => 512
+    _ => 1024
+  }
   // Hash chain arrays
-  let head = FixedArray::make(hash_size, -1) // hash -> most recent position
-  let prev = FixedArray::make(window_size, -1) // chain links
+  let head = FixedArray::make(hash_size, -1)
+  let prev = FixedArray::make(window_size, -1)
   // Start final block with fixed Huffman
   w.start_fixed_block(true)
+  let data_len = data.length()
   let mut i = 0
-  while i < data.length() {
-    if i + 2 < data.length() {
+  while i < data_len {
+    if i + 2 < data_len {
       // Compute hash of 3-byte sequence
-      let h = hash3(data, i) & hash_mask
+      let h = hash4(data, i) & hash_mask
       let match_head = head[h]
       prev[i & window_mask] = match_head
       head[h] = i
       // Try to find a match
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
         let (length, offset) = find_best_match(
-          data, i, match_head, prev, window_mask,
+          data, i, match_head, prev, window_mask, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
-          w.write_match(length, offset)
+          w.write_match_fast(length, offset)
           // Update hash chains for bytes in the match
           for j in 1..<length {
-            if i + j + 2 < data.length() {
-              let hj = hash3(data, i + j) & hash_mask
+            if i + j + 2 < data_len {
+              let hj = hash4(data, i + j) & hash_mask
               prev[(i + j) & window_mask] = head[hj]
               head[hj] = i + j
             }
@@ -102,20 +208,21 @@ fn deflate_lz77(data : Bytes, _level : Int) -> Bytes {
         }
       }
     }
-    // Emit literal
-    w.write_literal(data[i])
+    // Emit literal using precomputed table
+    w.write_literal_fast(data[i])
     i += 1
   }
-  w.write_fixed_bits(END_BLOCK_MARKER, false)
+  w.write_fixed_symbol(END_BLOCK_MARKER)
   w.finish()
 }
 
 ///|
-fn hash3(data : Bytes, i : Int) -> Int {
+/// Improved hash function using 4-byte input and multiplicative hashing.
+fn hash4(data : Bytes, i : Int) -> Int {
   let b0 = data[i].to_int()
   let b1 = data[i + 1].to_int()
   let b2 = data[i + 2].to_int()
-  (b0 | (b1 << 8) | (b2 << 16)) * 0x1e35a7bd
+  (b0 | (b1 << 8) | (b2 << 16)) ^ (b2 * 0x1e35a7bd)
 }
 
 ///|
@@ -125,18 +232,29 @@ fn find_best_match(
   match_head : Int,
   prev : FixedArray[Int],
   window_mask : Int,
+  max_chain : Int,
 ) -> (Int, Int) {
   let mut best_len = MIN_MATCH_LENGTH - 1
   let mut best_offset = 0
   let mut pos = match_head
-  let max_chain = 128
   let mut chain_count = 0
-  let max_len = if data.length() - cur < MAX_MATCH_LENGTH {
-    data.length() - cur
+  let data_len = data.length()
+  let max_len = if data_len - cur < MAX_MATCH_LENGTH {
+    data_len - cur
   } else {
     MAX_MATCH_LENGTH
   }
   while pos >= 0 && cur - pos <= MAX_MATCH_OFFSET && chain_count < max_chain {
+    // Quick rejection: check last byte of best match first
+    if best_len > 0 && data[pos + best_len] != data[cur + best_len] {
+      let next = prev[pos & window_mask]
+      if next >= pos {
+        break
+      }
+      pos = next
+      chain_count += 1
+      continue
+    }
     // Count matching bytes
     let mut length = 0
     while length < max_len && data[cur + length] == data[pos + length] {
@@ -151,7 +269,7 @@ fn find_best_match(
     }
     let next = prev[pos & window_mask]
     if next >= pos {
-      break // avoid infinite loops
+      break
     }
     pos = next
     chain_count += 1
@@ -172,8 +290,8 @@ priv struct DeflateWriter {
 }
 
 ///|
-fn DeflateWriter::new() -> DeflateWriter {
-  { buf: @buffer.new(size_hint=256), bits: 0UL, n_bits: 0 }
+fn DeflateWriter::new(size_hint? : Int = 256) -> DeflateWriter {
+  { buf: @buffer.new(size_hint~), bits: 0UL, n_bits: 0 }
 }
 
 ///|
@@ -196,72 +314,59 @@ fn DeflateWriter::start_fixed_block(
   self : DeflateWriter,
   is_final : Bool,
 ) -> Unit {
-  // BFINAL (1 bit) + BTYPE=01 (2 bits) = fixed Huffman
   let header = if is_final { 0b011U } else { 0b010U }
   self.write_bits_lsb(header, 3)
 }
 
 ///|
-fn DeflateWriter::write_literal(self : DeflateWriter, b : Byte) -> Unit {
-  let sym = b.to_int()
-  // Fixed Huffman: literals 0-143 are 8-bit codes starting at 0b00110000 (reversed)
-  // literals 144-255 are 9-bit codes starting at 0b110010000 (reversed)
-  if sym <= 143 {
-    // 8-bit code: value = sym + 0x30, bit-reversed
-    let code = sym + 0x30
-    self.write_bits_lsb(reverse_uint(code.reinterpret_as_uint(), 8), 8)
-  } else {
-    // 9-bit code: value = sym - 144 + 0x190, bit-reversed
-    let code = sym - 144 + 0x190
-    self.write_bits_lsb(reverse_uint(code.reinterpret_as_uint(), 9), 9)
-  }
+/// Write a literal byte using precomputed table.
+fn DeflateWriter::write_literal_fast(self : DeflateWriter, b : Byte) -> Unit {
+  let entry = fixed_lit_codes[b.to_int()]
+  let code = entry >> 4
+  let n = (entry & 0xFU).reinterpret_as_int()
+  self.write_bits_lsb(code, n)
 }
 
 ///|
-fn DeflateWriter::write_fixed_bits(
-  self : DeflateWriter,
-  sym : Int,
-  is_end_with_header : Bool,
-) -> Unit {
-  if is_end_with_header {
-    // Write final block header + end marker together
-    // BFINAL=1, BTYPE=01 (fixed)
-    self.write_bits_lsb(0b011U, 3)
-  }
-  if sym == END_BLOCK_MARKER {
-    // Fixed Huffman: symbol 256 is 7-bit code 0b0000000
-    // Codes 256-279: 7-bit starting at 0
-    let code = sym - 256
-    self.write_bits_lsb(reverse_uint(code.reinterpret_as_uint(), 7), 7)
-  }
+/// Write a fixed Huffman symbol (literal, length code, or end-of-block) using precomputed table.
+fn DeflateWriter::write_fixed_symbol(self : DeflateWriter, sym : Int) -> Unit {
+  let entry = fixed_lit_codes[sym]
+  let code = entry >> 4
+  let n = (entry & 0xFU).reinterpret_as_int()
+  // Write block header for end-of-block if needed
+  self.write_bits_lsb(code, n)
 }
 
 ///|
-fn DeflateWriter::write_match(
+/// Write a match using precomputed tables.
+fn DeflateWriter::write_match_fast(
   self : DeflateWriter,
   length : Int,
   offset : Int,
 ) -> Unit {
-  // Encode length
-  let (length_code, length_extra_bits, length_extra_val) = encode_length(length)
-  // Length codes 257-279: 7-bit fixed Huffman codes (0..23)
-  // Length codes 280-285: 8-bit fixed Huffman codes
-  if length_code <= 279 {
-    let code = length_code - 256
-    self.write_bits_lsb(reverse_uint(code.reinterpret_as_uint(), 7), 7)
-  } else {
-    let code = length_code - 280 + 0xC0
-    self.write_bits_lsb(reverse_uint(code.reinterpret_as_uint(), 8), 8)
-  }
+  // Encode length using precomputed table
+  let lidx = (length - MIN_MATCH_LENGTH) * 3
+  let length_code = length_encode_table[lidx]
+  let length_extra_bits = length_encode_table[lidx + 1]
+  let length_extra_val = length_encode_table[lidx + 2]
+  // Write length code using precomputed reversed code
+  let lentry = fixed_lit_codes[length_code]
+  let lcode = lentry >> 4
+  let ln = (lentry & 0xFU).reinterpret_as_int()
+  self.write_bits_lsb(lcode, ln)
   if length_extra_bits > 0 {
     self.write_bits_lsb(
       length_extra_val.reinterpret_as_uint(),
       length_extra_bits,
     )
   }
-  // Encode distance (5-bit fixed codes + extra bits)
-  let (dist_code, dist_extra_bits, dist_extra_val) = encode_distance(offset)
-  self.write_bits_lsb(reverse_uint(dist_code.reinterpret_as_uint(), 5), 5)
+  // Encode distance using precomputed table
+  let didx = (offset - 1) * 2
+  let dist_code = dist_encode_table[didx]
+  let dist_extra_bits = dist_encode_table[didx + 1]
+  let dist_extra_val = offset - dist_base[dist_code]
+  // Write distance code using precomputed reversed code
+  self.write_bits_lsb(fixed_dist_codes[dist_code], 5)
   if dist_extra_bits > 0 {
     self.write_bits_lsb(dist_extra_val.reinterpret_as_uint(), dist_extra_bits)
   }
@@ -269,11 +374,64 @@ fn DeflateWriter::write_match(
 
 ///|
 fn DeflateWriter::finish(self : DeflateWriter) -> Bytes {
-  // Flush remaining bits
   if self.n_bits > 0 {
     self.buf.write_byte((self.bits & 0xFFUL).to_byte())
   }
   self.buf.to_bytes()
+}
+
+///|
+/// Reverse lowest 5 bits.
+fn reverse_uint_5(val : UInt) -> UInt {
+  let mut result = 0U
+  let mut v = val
+  result = (result << 1) | (v & 1U)
+  v = v >> 1
+  result = (result << 1) | (v & 1U)
+  v = v >> 1
+  result = (result << 1) | (v & 1U)
+  v = v >> 1
+  result = (result << 1) | (v & 1U)
+  v = v >> 1
+  result = (result << 1) | (v & 1U)
+  ignore(v)
+  result
+}
+
+///|
+/// Reverse lowest 7 bits.
+fn reverse_uint_7(val : UInt) -> UInt {
+  let mut result = 0U
+  let mut v = val
+  for _ in 0..<7 {
+    result = (result << 1) | (v & 1U)
+    v = v >> 1
+  }
+  result
+}
+
+///|
+/// Reverse lowest 8 bits.
+fn reverse_uint_8(val : UInt) -> UInt {
+  let mut result = 0U
+  let mut v = val
+  for _ in 0..<8 {
+    result = (result << 1) | (v & 1U)
+    v = v >> 1
+  }
+  result
+}
+
+///|
+/// Reverse lowest 9 bits.
+fn reverse_uint_9(val : UInt) -> UInt {
+  let mut result = 0U
+  let mut v = val
+  for _ in 0..<9 {
+    result = (result << 1) | (v & 1U)
+    v = v >> 1
+  }
+  result
 }
 
 ///|
@@ -289,33 +447,19 @@ fn reverse_uint(val : UInt, n : Int) -> UInt {
 
 ///|
 fn encode_length(length : Int) -> (Int, Int, Int) {
-  // Returns (length_code, extra_bits, extra_value)
-  for i in 0..<length_base.length() {
-    let next_base = if i + 1 < length_base.length() {
-      length_base[i + 1]
-    } else {
-      259
-    }
-    if length >= length_base[i] && length < next_base {
-      return (257 + i, length_extra[i], length - length_base[i])
-    }
-  }
-  // Should not reach here for valid lengths
-  (285, 0, 0)
+  let idx = (length - MIN_MATCH_LENGTH) * 3
+  (
+    length_encode_table[idx],
+    length_encode_table[idx + 1],
+    length_encode_table[idx + 2],
+  )
 }
 
 ///|
 fn encode_distance(dist : Int) -> (Int, Int, Int) {
-  // Returns (dist_code, extra_bits, extra_value)
-  for i in 0..<dist_base.length() {
-    let next_base = if i + 1 < dist_base.length() {
-      dist_base[i + 1]
-    } else {
-      32769
-    }
-    if dist >= dist_base[i] && dist < next_base {
-      return (i, dist_extra[i], dist - dist_base[i])
-    }
-  }
-  (29, 13, dist - dist_base[29])
+  let didx = (dist - 1) * 2
+  let dist_code = dist_encode_table[didx]
+  let dist_extra_bits = dist_encode_table[didx + 1]
+  let dist_extra_val = dist - dist_base[dist_code]
+  (dist_code, dist_extra_bits, dist_extra_val)
 }
