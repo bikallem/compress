@@ -32,6 +32,9 @@
 {"issue_id":"compress-claude-nqn","label":"quality"}
 {"issue_id":"compress-claude-nqn","label":"testing"}
 {"issue_id":"compress-claude-nwp","label":"docs"}
+{"issue_id":"compress-claude-o05","label":"benchmarks"}
+{"issue_id":"compress-claude-o05","label":"ci"}
+{"issue_id":"compress-claude-o05","label":"testing"}
 {"issue_id":"compress-claude-rcx","label":"lzw"}
 {"issue_id":"compress-claude-rcx","label":"performance"}
 {"issue_id":"compress-claude-rfg","label":"cleanup"}
