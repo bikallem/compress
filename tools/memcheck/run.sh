@@ -18,9 +18,19 @@ echo "=== Valgrind massif ==="
 MASSIF_OUT=$(mktemp)
 valgrind --tool=massif --massif-out-file="$MASSIF_OUT" "$BIN"
 PEAK=$(grep "mem_heap_B" "$MASSIF_OUT" | sort -t= -k2 -n | tail -1 | cut -d= -f2)
-echo "Peak heap: ${PEAK} bytes (threshold: ${THRESHOLD})"
+fmt_bytes() {
+  local b=$1
+  if [ "$b" -ge 1048576 ]; then
+    echo "$(awk "BEGIN {printf \"%.2f\", $b/1048576}") MB"
+  elif [ "$b" -ge 1024 ]; then
+    echo "$(awk "BEGIN {printf \"%.2f\", $b/1024}") KB"
+  else
+    echo "${b} B"
+  fi
+}
+echo "Peak heap: $(fmt_bytes "$PEAK") (threshold: $(fmt_bytes "$THRESHOLD"))"
 if [ "$PEAK" -gt "$THRESHOLD" ]; then
-  echo "FAIL: peak heap ${PEAK} exceeds ${THRESHOLD} byte threshold"
+  echo "FAIL: peak heap $(fmt_bytes "$PEAK") exceeds $(fmt_bytes "$THRESHOLD") threshold"
   rm -f "$MASSIF_OUT"
   exit 1
 fi
