@@ -410,15 +410,34 @@ fn find_best_match(
 
 ///|
 /// Internal bit writer for DEFLATE output.
+/// Uses a pre-allocated FixedArray[Byte] instead of Buffer to avoid
+/// per-byte capacity checks (Buffer::write_byte + grow_if_necessary
+/// was 48% of compress time).
 priv struct BitWriter {
-  buf : @buffer.Buffer
+  mut buf : FixedArray[Byte]
+  mut pos : Int
   mut bits : UInt64
   mut n_bits : Int
 }
 
 ///|
 fn BitWriter::new(size_hint? : Int = 256) -> BitWriter {
-  { buf: @buffer.new(size_hint~), bits: 0UL, n_bits: 0 }
+  let cap = if size_hint > 256 { size_hint } else { 256 }
+  { buf: FixedArray::make(cap, b'\x00'), pos: 0, bits: 0UL, n_bits: 0 }
+}
+
+///|
+fn BitWriter::ensure_capacity(self : BitWriter, needed : Int) -> Unit {
+  if self.pos + needed > self.buf.length() {
+    let new_cap = if self.buf.length() * 2 > self.pos + needed {
+      self.buf.length() * 2
+    } else {
+      self.pos + needed
+    }
+    let new_buf = FixedArray::make(new_cap, b'\x00')
+    @blit.blit_bytes(new_buf, 0, self.buf, 0, self.pos)
+    self.buf = new_buf
+  }
 }
 
 ///|
@@ -426,7 +445,11 @@ fn BitWriter::write_bits_lsb(self : BitWriter, val : UInt, n : Int) -> Unit {
   self.bits = self.bits | (val.to_uint64() << self.n_bits)
   self.n_bits += n
   while self.n_bits >= 8 {
-    self.buf.write_byte((self.bits & 0xFFUL).to_byte())
+    if self.pos == self.buf.length() {
+      self.ensure_capacity(1)
+    }
+    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_byte())
+    self.pos += 1
     self.bits = self.bits >> 8
     self.n_bits -= 8
   }
@@ -495,9 +518,18 @@ fn BitWriter::write_match_fast(
 ///|
 fn BitWriter::finish(self : BitWriter) -> Bytes {
   if self.n_bits > 0 {
-    self.buf.write_byte((self.bits & 0xFFUL).to_byte())
+    if self.pos == self.buf.length() {
+      self.ensure_capacity(1)
+    }
+    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_byte())
+    self.pos += 1
   }
-  self.buf.to_bytes()
+  if self.pos == self.buf.length() {
+    return self.buf.unsafe_reinterpret_as_bytes()
+  }
+  let result = @blit.make_uninit(self.pos)
+  @blit.blit_bytes(result, 0, self.buf, 0, self.pos)
+  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|

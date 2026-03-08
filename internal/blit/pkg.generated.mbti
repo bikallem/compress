@@ -6,6 +6,8 @@ pub fn blit_bytes(FixedArray[Byte], Int, FixedArray[Byte], Int, Int) -> Unit
 
 pub fn fill_bytes(FixedArray[Byte], Int, Int, Int) -> Unit
 
+pub fn make_uninit(Int) -> FixedArray[Byte]
+
 // Errors
 
 // Types and methods

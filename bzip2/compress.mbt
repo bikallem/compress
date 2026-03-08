@@ -495,14 +495,30 @@ fn bzip2_crc32_range(data : Bytes, start : Int, end : Int) -> UInt {
 ///|
 /// Bit writer for bzip2 (MSB-first).
 priv struct Bzip2BitWriter {
-  buf : @buffer.Buffer
+  mut buf : FixedArray[Byte]
+  mut pos : Int
   mut bits : UInt
   mut n_bits : Int
 }
 
 ///|
 fn Bzip2BitWriter::new(size_hint? : Int = 256) -> Bzip2BitWriter {
-  { buf: @buffer.new(size_hint~), bits: 0U, n_bits: 0 }
+  let cap = if size_hint > 256 { size_hint } else { 256 }
+  { buf: FixedArray::make(cap, b'\x00'), pos: 0, bits: 0U, n_bits: 0 }
+}
+
+///|
+fn Bzip2BitWriter::ensure_capacity(self : Bzip2BitWriter, needed : Int) -> Unit {
+  if self.pos + needed > self.buf.length() {
+    let new_cap = if self.buf.length() * 2 > self.pos + needed {
+      self.buf.length() * 2
+    } else {
+      self.pos + needed
+    }
+    let new_buf = FixedArray::make(new_cap, b'\x00')
+    @blit.blit_bytes(new_buf, 0, self.buf, 0, self.pos)
+    self.buf = new_buf
+  }
 }
 
 ///|
@@ -520,7 +536,11 @@ fn Bzip2BitWriter::write_bits(
       self.bits = (self.bits << space) | (v >> (remaining - space))
       v = v & ((1U << (remaining - space)) - 1U)
       remaining -= space
-      self.buf.write_byte(self.bits.to_byte())
+      if self.pos == self.buf.length() {
+        self.ensure_capacity(1)
+      }
+      self.buf.unsafe_set(self.pos, self.bits.to_byte())
+      self.pos += 1
       self.bits = 0U
       self.n_bits = 0
     } else {
@@ -540,7 +560,11 @@ fn Bzip2BitWriter::write_byte(self : Bzip2BitWriter, b : Byte) -> Unit {
 fn Bzip2BitWriter::flush(self : Bzip2BitWriter) -> Unit {
   if self.n_bits > 0 {
     self.bits = self.bits << (8 - self.n_bits)
-    self.buf.write_byte(self.bits.to_byte())
+    if self.pos == self.buf.length() {
+      self.ensure_capacity(1)
+    }
+    self.buf.unsafe_set(self.pos, self.bits.to_byte())
+    self.pos += 1
     self.bits = 0U
     self.n_bits = 0
   }
@@ -548,5 +572,10 @@ fn Bzip2BitWriter::flush(self : Bzip2BitWriter) -> Unit {
 
 ///|
 fn Bzip2BitWriter::to_bytes(self : Bzip2BitWriter) -> Bytes {
-  self.buf.to_bytes()
+  if self.pos == self.buf.length() {
+    return self.buf.unsafe_reinterpret_as_bytes()
+  }
+  let result = @blit.make_uninit(self.pos)
+  @blit.blit_bytes(result, 0, self.buf, 0, self.pos)
+  result.unsafe_reinterpret_as_bytes()
 }
