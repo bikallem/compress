@@ -37,3 +37,17 @@ test "BytesReader chunks never exceed slice_length" {
     assert_true(chunk.length() <= slice_length)
   }
 }
+
+///|
+test "read_all drains reader" {
+  let reader = @stream.BytesReader::new(b"hello world", slice_length=3)
+  let result = @stream.read_all(reader)
+  assert_eq(result, b"hello world")
+}
+
+///|
+test "read_all empty reader" {
+  let reader = @stream.BytesReader::new(b"")
+  let result = @stream.read_all(reader)
+  assert_eq(result, b"")
+}
