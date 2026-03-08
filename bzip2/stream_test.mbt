@@ -40,5 +40,5 @@ test "Bzip2Reader round-trip via pipe" {
   let reader = @bzip2.Bzip2Reader::new(@stream.BytesReader::new(compressed))
   let dest = @stream.BytesWriter::new()
   @stream.pipe(reader, dest)
-  assert_eq(dest.to_bytes(), original)
+  assert_eq(dest.content(), original)
 }

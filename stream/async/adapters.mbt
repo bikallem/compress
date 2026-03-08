@@ -61,7 +61,7 @@ pub async fn pipe_async(
   // Signal eod to flush the filter chain
   filtered.write(b""[:])
   // Write collected output to async dest
-  let output = sink.to_bytes()
+  let output = sink.content()
   let mut offset = 0
   while offset < output.length() {
     let n = dest.write_once(output, offset~, len=output.length() - offset)

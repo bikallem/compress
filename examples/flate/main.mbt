@@ -56,7 +56,7 @@ fn run() -> Unit raise {
   let dest = @stream.BytesWriter::new()
   let writer = @deflate.DeflateWriter::new(dest, level=DefaultCompression)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=4096), writer)
-  let stream_compressed = dest.to_bytes()
+  let stream_compressed = dest.content()
   let reader = @deflate.InflateReader::new(
     @stream.BytesReader::new(stream_compressed),
   )

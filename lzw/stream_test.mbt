@@ -50,7 +50,7 @@ test "LzwStreamWriter compresses data LSB" {
   writer.write(original[0:10])
   writer.write(original[10:])
   writer.write(b""[:])
-  let compressed = dest_buf.to_bytes()
+  let compressed = dest_buf.content()
   let decompressed = @lzw.decompress(compressed, LSB, 8)
   assert_eq(decompressed, original)
 }
@@ -61,7 +61,7 @@ test "LzwReader + LzwStreamWriter round-trip via pipe" {
   let compress_dest = @stream.BytesWriter::new()
   let lzw_writer = @lzw.LzwStreamWriter::new(compress_dest, LSB, 8)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=500), lzw_writer)
-  let compressed = compress_dest.to_bytes()
+  let compressed = compress_dest.content()
   let reader = @lzw.LzwReader::new(@stream.BytesReader::new(compressed), LSB, 8)
   let result = @stream.read_all(reader)
   assert_eq(result, original)

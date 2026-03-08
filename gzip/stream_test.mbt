@@ -60,7 +60,7 @@ test "GzipStreamWriter compresses data" {
   writer.write(original[0:20])
   writer.write(original[20:])
   writer.write(b""[:])
-  let compressed = dest_buf.to_bytes()
+  let compressed = dest_buf.content()
   let (decompressed, _) = @gzip.decompress(compressed)
   assert_eq(decompressed, original)
 }
@@ -79,7 +79,7 @@ test "GzipStreamWriter with header" {
   let writer = @gzip.GzipStreamWriter::new(dest_buf, header~)
   writer.write(original[:])
   writer.write(b""[:])
-  let (decompressed, got_header) = @gzip.decompress(dest_buf.to_bytes())
+  let (decompressed, got_header) = @gzip.decompress(dest_buf.content())
   assert_eq(decompressed, original)
   assert_eq(got_header.name, "out.txt")
 }
@@ -93,7 +93,7 @@ test "GzipReader + GzipStreamWriter round-trip via pipe" {
     @stream.BytesReader::new(original, slice_length=500),
     gzip_writer,
   )
-  let compressed = compress_dest.to_bytes()
+  let compressed = compress_dest.content()
   let reader = @gzip.GzipReader::new(@stream.BytesReader::new(compressed))
   let result = @stream.read_all(reader)
   assert_eq(result, original)

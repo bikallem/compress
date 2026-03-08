@@ -40,7 +40,7 @@ fn run() -> Unit raise {
     @stream.BytesReader::new(original, slice_length=4096),
     zlib_writer,
   )
-  let stream_compressed = dest.to_bytes()
+  let stream_compressed = dest.content()
   let reader = @zliblib.ZlibReader::new(
     @stream.BytesReader::new(stream_compressed),
   )

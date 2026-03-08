@@ -43,7 +43,7 @@ test "DeflateWriter compresses data" {
   writer.write(original[20:40])
   writer.write(original[40:])
   writer.write(b""[:]) // eod triggers compression
-  let compressed = dest_buf.to_bytes()
+  let compressed = dest_buf.content()
   // Verify by decompressing
   let decompressed = @flate.decompress(compressed)
   assert_eq(decompressed, original)
@@ -56,7 +56,7 @@ test "InflateReader + DeflateWriter round-trip via pipe" {
   let compress_dest = @stream.BytesWriter::new()
   let deflater = @flate.DeflateWriter::new(compress_dest)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=500), deflater)
-  let compressed = compress_dest.to_bytes()
+  let compressed = compress_dest.content()
   // Decompress
   let inflater = @flate.InflateReader::new(@stream.BytesReader::new(compressed))
   let result = @stream.read_all(inflater)
@@ -71,13 +71,13 @@ test "DeflateWriter with compression levels" {
   let writer = @flate.DeflateWriter::new(dest, level=NoCompression)
   writer.write(original[:])
   writer.write(b""[:])
-  let decompressed = @flate.decompress(dest.to_bytes())
+  let decompressed = @flate.decompress(dest.content())
   assert_eq(decompressed, original)
   // Test BestSpeed
   let dest2 = @stream.BytesWriter::new()
   let writer2 = @flate.DeflateWriter::new(dest2, level=BestSpeed)
   writer2.write(original[:])
   writer2.write(b""[:])
-  let decompressed2 = @flate.decompress(dest2.to_bytes())
+  let decompressed2 = @flate.decompress(dest2.content())
   assert_eq(decompressed2, original)
 }

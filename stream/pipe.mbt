@@ -15,5 +15,5 @@ pub fn pipe(reader : &Reader, writer : &Writer) -> Unit raise StreamError {
 pub fn read_all(reader : &Reader) -> Bytes raise StreamError {
   let w = BytesWriter::new()
   pipe(reader, w)
-  w.to_bytes()
+  w.content()
 }

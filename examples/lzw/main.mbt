@@ -34,7 +34,7 @@ fn run() -> Unit raise {
   let dest = @stream.BytesWriter::new()
   let lzw_writer = @lzwlib.LzwStreamWriter::new(dest, LSB, 8)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=256), lzw_writer)
-  let stream_compressed = dest.to_bytes()
+  let stream_compressed = dest.content()
   let reader = @lzwlib.LzwReader::new(
     @stream.BytesReader::new(stream_compressed),
     LSB,

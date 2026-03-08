@@ -50,7 +50,7 @@ fn run() -> Unit raise {
     @stream.BytesReader::new(original, slice_length=4096),
     gzip_writer,
   )
-  let stream_compressed = dest.to_bytes()
+  let stream_compressed = dest.content()
   let reader = @gz.GzipReader::new(@stream.BytesReader::new(stream_compressed))
   let stream_restored = @stream.read_all(reader)
   assert_eq(stream_restored, original)
