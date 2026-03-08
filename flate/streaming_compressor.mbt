@@ -12,7 +12,7 @@ const MAX_BLOCK_TOKENS : Int = 16384
 /// sliding window, emitting compressed blocks to a @stream.Writer.
 /// Memory: ~450KB constant regardless of input size.
 priv struct StreamingCompressor {
-  w : StreamingBitWriter
+  w : BufferedBitWriter
   level : Int
   // Double-sized window for lookback
   window : FixedArray[Byte]
@@ -39,7 +39,7 @@ fn StreamingCompressor::new(
 ) -> StreamingCompressor {
   let hash_size = 1 << 15
   {
-    w: StreamingBitWriter::new(dest),
+    w: BufferedBitWriter::new(dest),
     level,
     window: FixedArray::make(2 * WINDOW_SIZE, b'\x00'),
     window_end: 0,

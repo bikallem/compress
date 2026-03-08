@@ -1,7 +1,7 @@
 ///|
 /// Bit writer that flushes compressed bytes to a `@stream.Writer` dest
 /// instead of accumulating in a growable buffer.
-priv struct StreamingBitWriter {
+priv struct BufferedBitWriter {
   dest : &@stream.Writer
   buf : FixedArray[Byte]
   mut pos : Int
@@ -10,10 +10,10 @@ priv struct StreamingBitWriter {
 }
 
 ///|
-fn StreamingBitWriter::new(
+fn BufferedBitWriter::new(
   dest : &@stream.Writer,
   buf_size? : Int = 8192,
-) -> StreamingBitWriter {
+) -> BufferedBitWriter {
   {
     dest,
     buf: FixedArray::make(buf_size, b'\x00'),
@@ -25,8 +25,8 @@ fn StreamingBitWriter::new(
 
 ///|
 /// Flush accumulated bytes to dest writer.
-fn StreamingBitWriter::flush(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::flush(
+  self : BufferedBitWriter,
 ) -> Unit raise @stream.StreamError {
   if self.pos > 0 {
     self.dest.write(self.buf.unsafe_reinterpret_as_bytes()[:self.pos])
@@ -35,8 +35,8 @@ fn StreamingBitWriter::flush(
 }
 
 ///|
-fn StreamingBitWriter::write_bits_lsb(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_bits_lsb(
+  self : BufferedBitWriter,
   val : UInt,
   n : Int,
 ) -> Unit raise @stream.StreamError {
@@ -54,8 +54,8 @@ fn StreamingBitWriter::write_bits_lsb(
 }
 
 ///|
-fn StreamingBitWriter::start_fixed_block(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::start_fixed_block(
+  self : BufferedBitWriter,
   is_final : Bool,
 ) -> Unit raise @stream.StreamError {
   let header = if is_final { 0b011U } else { 0b010U }
@@ -63,8 +63,8 @@ fn StreamingBitWriter::start_fixed_block(
 }
 
 ///|
-fn StreamingBitWriter::write_literal_fast(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_literal_fast(
+  self : BufferedBitWriter,
   b : Byte,
 ) -> Unit raise @stream.StreamError {
   let entry = fixed_lit_codes.unsafe_get(b.to_int())
@@ -72,8 +72,8 @@ fn StreamingBitWriter::write_literal_fast(
 }
 
 ///|
-fn StreamingBitWriter::write_fixed_symbol(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_fixed_symbol(
+  self : BufferedBitWriter,
   sym : Int,
 ) -> Unit raise @stream.StreamError {
   let entry = fixed_lit_codes.unsafe_get(sym)
@@ -81,8 +81,8 @@ fn StreamingBitWriter::write_fixed_symbol(
 }
 
 ///|
-fn StreamingBitWriter::write_match_fast(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_match_fast(
+  self : BufferedBitWriter,
   length : Int,
   offset : Int,
 ) -> Unit raise @stream.StreamError {
@@ -110,8 +110,8 @@ fn StreamingBitWriter::write_match_fast(
 
 ///|
 /// Write a dynamic Huffman block from tokens.
-fn StreamingBitWriter::write_dynamic_block(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_dynamic_block(
+  self : BufferedBitWriter,
   tokens : Array[Token],
   is_final : Bool,
 ) -> Unit raise @stream.StreamError {
@@ -197,8 +197,8 @@ fn StreamingBitWriter::write_dynamic_block(
 }
 
 ///|
-fn StreamingBitWriter::write_dynamic_header(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_dynamic_header(
+  self : BufferedBitWriter,
   lit_codes : HuffmanCode,
   dist_codes : HuffmanCode,
   is_final : Bool,
@@ -292,8 +292,8 @@ fn StreamingBitWriter::write_dynamic_header(
 
 ///|
 /// Write stored block header.
-fn StreamingBitWriter::write_stored_header(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_stored_header(
+  self : BufferedBitWriter,
   len : Int,
   is_final : Bool,
 ) -> Unit raise @stream.StreamError {
@@ -336,8 +336,8 @@ fn StreamingBitWriter::write_stored_header(
 
 ///|
 /// Write raw stored block data from window.
-fn StreamingBitWriter::write_stored_data(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::write_stored_data(
+  self : BufferedBitWriter,
   data : FixedArray[Byte],
   offset : Int,
   len : Int,
@@ -357,8 +357,8 @@ fn StreamingBitWriter::write_stored_data(
 
 ///|
 /// Finish: flush remaining bits and bytes to dest.
-fn StreamingBitWriter::finish(
-  self : StreamingBitWriter,
+fn BufferedBitWriter::finish(
+  self : BufferedBitWriter,
 ) -> Unit raise @stream.StreamError {
   if self.n_bits > 0 {
     self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_byte())
