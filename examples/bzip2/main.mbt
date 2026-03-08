@@ -13,7 +13,7 @@ fn run() -> Unit raise {
 
   // --- Streaming API ---
   let reader = @bz2.Bzip2Reader::new(
-    @stream.SliceReader::new(compressed, slice_length=16),
+    @stream.BytesReader::new(compressed, slice_length=16),
   )
   let stream_result = @stream.read_all(reader)
   assert_eq(stream_result, b"Hello")
@@ -22,7 +22,7 @@ fn run() -> Unit raise {
   // --- Round-trip ---
   let original = b"Hello, bzip2 streaming!"
   let rt_compressed = @bz2.compress(original)
-  let rt_reader = @bz2.Bzip2Reader::new(@stream.SliceReader::new(rt_compressed))
+  let rt_reader = @bz2.Bzip2Reader::new(@stream.BytesReader::new(rt_compressed))
   let rt_result = @stream.read_all(rt_reader)
   assert_eq(rt_result, original)
   println("Round-trip: OK (\{rt_compressed.length()} bytes)")

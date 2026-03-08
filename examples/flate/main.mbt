@@ -55,10 +55,10 @@ fn run() -> Unit raise {
   // --- Streaming API ---
   let dest = @stream.BufferWriter::new()
   let writer = @deflate.DeflateWriter::new(dest, level=DefaultCompression)
-  @stream.pipe(@stream.SliceReader::new(original, slice_length=4096), writer)
+  @stream.pipe(@stream.BytesReader::new(original, slice_length=4096), writer)
   let stream_compressed = dest.to_bytes()
   let reader = @deflate.InflateReader::new(
-    @stream.SliceReader::new(stream_compressed),
+    @stream.BytesReader::new(stream_compressed),
   )
   let stream_restored = @stream.read_all(reader)
   assert_eq(stream_restored, original)

@@ -1,7 +1,7 @@
 ///|
-test "SliceReader yields chunks of slice_length" {
+test "BytesReader yields chunks of slice_length" {
   let data = Bytes::makei(100, fn(i) { i.to_byte() })
-  let reader = @stream.SliceReader::new(data, slice_length=30)
+  let reader = @stream.BytesReader::new(data, slice_length=30)
   let c1 = reader.read()
   inspect(c1.length(), content="30")
   let c2 = reader.read()
@@ -18,8 +18,8 @@ test "SliceReader yields chunks of slice_length" {
 }
 
 ///|
-test "SliceReader empty input" {
-  let reader = @stream.SliceReader::new(b"")
+test "BytesReader empty input" {
+  let reader = @stream.BytesReader::new(b"")
   let c = reader.read()
   assert_true(c.is_empty())
 }
@@ -76,7 +76,7 @@ test "FnWriter callback" {
 
 ///|
 test "Buffered push_back" {
-  let reader = @stream.SliceReader::new(b"hello world", slice_length=5)
+  let reader = @stream.BytesReader::new(b"hello world", slice_length=5)
   let buffered = @stream.Buffered::new(reader)
   let c1 = buffered.read()
   inspect(c1.length(), content="5") // "hello"
@@ -91,7 +91,7 @@ test "Buffered push_back" {
 
 ///|
 test "LimitReader truncates" {
-  let reader = @stream.SliceReader::new(b"hello world", slice_length=100)
+  let reader = @stream.BytesReader::new(b"hello world", slice_length=100)
   let limited = @stream.LimitReader::new(reader, 5)
   let c1 = limited.read()
   inspect(c1.length(), content="5")
@@ -102,7 +102,7 @@ test "LimitReader truncates" {
 
 ///|
 test "LimitReader with smaller chunks" {
-  let reader = @stream.SliceReader::new(b"abcdefghij", slice_length=3)
+  let reader = @stream.BytesReader::new(b"abcdefghij", slice_length=3)
   let limited = @stream.LimitReader::new(reader, 7)
   let c1 = limited.read()
   inspect(c1.length(), content="3") // "abc"
@@ -116,8 +116,8 @@ test "LimitReader with smaller chunks" {
 
 ///|
 test "AppendReader concatenates" {
-  let r1 = @stream.SliceReader::new(b"abc", slice_length=100)
-  let r2 = @stream.SliceReader::new(b"def", slice_length=100)
+  let r1 = @stream.BytesReader::new(b"abc", slice_length=100)
+  let r2 = @stream.BytesReader::new(b"def", slice_length=100)
   let appended = @stream.AppendReader::new(r1, r2)
   let c1 = appended.read()
   assert_eq(c1, b"abc"[:])
@@ -130,7 +130,7 @@ test "AppendReader concatenates" {
 ///|
 test "TapReader observes without transforming" {
   let mut total = 0
-  let reader = @stream.SliceReader::new(b"hello", slice_length=100)
+  let reader = @stream.BytesReader::new(b"hello", slice_length=100)
   let tapped = @stream.TapReader::new(reader, fn(chunk) {
     total += chunk.length()
   })
@@ -158,7 +158,7 @@ test "TapWriter observes without transforming" {
 
 ///|
 test "CountedReader tracks position" {
-  let reader = @stream.SliceReader::new(b"abcdefghij", slice_length=4)
+  let reader = @stream.BytesReader::new(b"abcdefghij", slice_length=4)
   let counted = @stream.CountedReader::new(reader)
   inspect(counted.position(), content="0")
   let _ = counted.read()
@@ -184,7 +184,7 @@ test "CountedWriter tracks position" {
 
 ///|
 test "pipe reader to writer" {
-  let reader = @stream.SliceReader::new(b"hello world", slice_length=4)
+  let reader = @stream.BytesReader::new(b"hello world", slice_length=4)
   let writer = @stream.BufferWriter::new()
   @stream.pipe(reader, writer)
   assert_eq(writer.to_bytes(), b"hello world")
@@ -192,14 +192,14 @@ test "pipe reader to writer" {
 
 ///|
 test "read_all drains reader" {
-  let reader = @stream.SliceReader::new(b"hello world", slice_length=3)
+  let reader = @stream.BytesReader::new(b"hello world", slice_length=3)
   let result = @stream.read_all(reader)
   assert_eq(result, b"hello world")
 }
 
 ///|
 test "read_all empty reader" {
-  let reader = @stream.SliceReader::new(b"")
+  let reader = @stream.BytesReader::new(b"")
   let result = @stream.read_all(reader)
   assert_eq(result, b"")
 }
@@ -207,7 +207,7 @@ test "read_all empty reader" {
 ///|
 test "pipe through TapReader for checksum" {
   let data = Bytes::makei(256, fn(i) { i.to_byte() })
-  let reader = @stream.SliceReader::new(data, slice_length=50)
+  let reader = @stream.BytesReader::new(data, slice_length=50)
   let mut byte_sum = 0
   let tapped = @stream.TapReader::new(reader, fn(chunk) {
     for i in 0..<chunk.length() {
@@ -223,7 +223,7 @@ test "pipe through TapReader for checksum" {
 ///|
 test "composition: limit + tap + counted" {
   let data = Bytes::makei(100, fn(i) { i.to_byte() })
-  let reader = @stream.SliceReader::new(data, slice_length=20)
+  let reader = @stream.BytesReader::new(data, slice_length=20)
   let limited = @stream.LimitReader::new(reader, 50)
   let mut observed = 0
   let tapped = @stream.TapReader::new(limited, fn(chunk) {
@@ -299,10 +299,10 @@ test "large stream bounded memory: 10MB pipe with running checksum" {
 }
 
 ///|
-test "SliceReader chunks never exceed slice_length" {
+test "BytesReader chunks never exceed slice_length" {
   let data = Bytes::makei(1000, fn(i) { i.to_byte() })
   let slice_length = 64
-  let reader = @stream.SliceReader::new(data, slice_length~)
+  let reader = @stream.BytesReader::new(data, slice_length~)
   while true {
     let chunk = reader.read()
     if chunk.is_empty() {

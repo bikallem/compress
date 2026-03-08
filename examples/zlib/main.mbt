@@ -37,12 +37,12 @@ fn run() -> Unit raise {
   let dest = @stream.BufferWriter::new()
   let zlib_writer = @zliblib.ZlibStreamWriter::new(dest)
   @stream.pipe(
-    @stream.SliceReader::new(original, slice_length=4096),
+    @stream.BytesReader::new(original, slice_length=4096),
     zlib_writer,
   )
   let stream_compressed = dest.to_bytes()
   let reader = @zliblib.ZlibReader::new(
-    @stream.SliceReader::new(stream_compressed),
+    @stream.BytesReader::new(stream_compressed),
   )
   let stream_restored = @stream.read_all(reader)
   assert_eq(stream_restored, original)

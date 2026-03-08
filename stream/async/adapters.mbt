@@ -1,14 +1,14 @@
 ///|
-/// Reads all data from an `@io.Reader` into a `@stream.SliceReader`.
+/// Reads all data from an `@io.Reader` into a `@stream.BytesReader`.
 ///
 /// This buffers the entire input — use when the async source must be
 /// fully consumed before sync processing can begin.
 pub async fn reader_of_io(
   source : &@io.Reader,
   slice_length? : Int = 65536,
-) -> @stream.SliceReader {
+) -> @stream.BytesReader {
   let data = source.read_all().binary()
-  @stream.SliceReader::new(data, slice_length~)
+  @stream.BytesReader::new(data, slice_length~)
 }
 
 ///|

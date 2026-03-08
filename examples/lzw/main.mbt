@@ -33,10 +33,10 @@ fn run() -> Unit raise {
   // --- Streaming API ---
   let dest = @stream.BufferWriter::new()
   let lzw_writer = @lzwlib.LzwStreamWriter::new(dest, LSB, 8)
-  @stream.pipe(@stream.SliceReader::new(original, slice_length=256), lzw_writer)
+  @stream.pipe(@stream.BytesReader::new(original, slice_length=256), lzw_writer)
   let stream_compressed = dest.to_bytes()
   let reader = @lzwlib.LzwReader::new(
-    @stream.SliceReader::new(stream_compressed),
+    @stream.BytesReader::new(stream_compressed),
     LSB,
     8,
   )

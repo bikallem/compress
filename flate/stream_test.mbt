@@ -3,7 +3,7 @@ test "InflateReader decompresses DEFLATE data" {
   let original = b"Hello, World! This is a test of DEFLATE streaming compression."
   let compressed = @flate.compress(original)
   let reader = @flate.InflateReader::new(
-    @stream.SliceReader::new(compressed, slice_length=16),
+    @stream.BytesReader::new(compressed, slice_length=16),
   )
   let result = @stream.read_all(reader)
   assert_eq(result, original)
@@ -14,7 +14,7 @@ test "InflateReader yields bounded chunks" {
   let original = Bytes::makei(10000, fn(i) { (i % 256).to_byte() })
   let compressed = @flate.compress(original)
   let reader = @flate.InflateReader::new(
-    @stream.SliceReader::new(compressed),
+    @stream.BytesReader::new(compressed),
     slice_length=1000,
   )
   let mut max_chunk = 0
@@ -55,10 +55,10 @@ test "InflateReader + DeflateWriter round-trip via pipe" {
   // Compress
   let compress_dest = @stream.BufferWriter::new()
   let deflater = @flate.DeflateWriter::new(compress_dest)
-  @stream.pipe(@stream.SliceReader::new(original, slice_length=500), deflater)
+  @stream.pipe(@stream.BytesReader::new(original, slice_length=500), deflater)
   let compressed = compress_dest.to_bytes()
   // Decompress
-  let inflater = @flate.InflateReader::new(@stream.SliceReader::new(compressed))
+  let inflater = @flate.InflateReader::new(@stream.BytesReader::new(compressed))
   let result = @stream.read_all(inflater)
   assert_eq(result, original)
 }

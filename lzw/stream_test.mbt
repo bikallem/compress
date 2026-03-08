@@ -2,7 +2,7 @@
 test "LzwReader decompresses LZW data LSB" {
   let original = b"TOBEORNOTTOBEORTOBEORNOT"
   let compressed = @lzw.compress(original, LSB, 8)
-  let reader = @lzw.LzwReader::new(@stream.SliceReader::new(compressed), LSB, 8)
+  let reader = @lzw.LzwReader::new(@stream.BytesReader::new(compressed), LSB, 8)
   let result = @stream.read_all(reader)
   assert_eq(result, original)
 }
@@ -11,7 +11,7 @@ test "LzwReader decompresses LZW data LSB" {
 test "LzwReader decompresses LZW data MSB" {
   let original = b"TOBEORNOTTOBEORTOBEORNOT"
   let compressed = @lzw.compress(original, MSB, 8)
-  let reader = @lzw.LzwReader::new(@stream.SliceReader::new(compressed), MSB, 8)
+  let reader = @lzw.LzwReader::new(@stream.BytesReader::new(compressed), MSB, 8)
   let result = @stream.read_all(reader)
   assert_eq(result, original)
 }
@@ -21,7 +21,7 @@ test "LzwReader yields bounded chunks" {
   let original = Bytes::makei(5000, fn(i) { (i % 256).to_byte() })
   let compressed = @lzw.compress(original, LSB, 8)
   let reader = @lzw.LzwReader::new(
-    @stream.SliceReader::new(compressed),
+    @stream.BytesReader::new(compressed),
     LSB,
     8,
     slice_length=1000,
@@ -60,9 +60,9 @@ test "LzwReader + LzwStreamWriter round-trip via pipe" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   let compress_dest = @stream.BufferWriter::new()
   let lzw_writer = @lzw.LzwStreamWriter::new(compress_dest, LSB, 8)
-  @stream.pipe(@stream.SliceReader::new(original, slice_length=500), lzw_writer)
+  @stream.pipe(@stream.BytesReader::new(original, slice_length=500), lzw_writer)
   let compressed = compress_dest.to_bytes()
-  let reader = @lzw.LzwReader::new(@stream.SliceReader::new(compressed), LSB, 8)
+  let reader = @lzw.LzwReader::new(@stream.BytesReader::new(compressed), LSB, 8)
   let result = @stream.read_all(reader)
   assert_eq(result, original)
 }

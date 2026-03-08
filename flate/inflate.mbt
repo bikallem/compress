@@ -1,7 +1,7 @@
 ///|
 /// Decompresses DEFLATE-encoded data (RFC 1951).
 pub fn decompress(data : Bytes) -> Bytes raise CompressError {
-  decompress_reader(@stream.SliceReader::new(data), Bytes::default()).0
+  decompress_reader(@stream.BytesReader::new(data), Bytes::default()).0
 }
 
 ///|
@@ -10,7 +10,7 @@ pub fn decompress_with_dict(
   data : Bytes,
   dict : Bytes,
 ) -> Bytes raise CompressError {
-  decompress_reader(@stream.SliceReader::new(data), dict).0
+  decompress_reader(@stream.BytesReader::new(data), dict).0
 }
 
 ///|

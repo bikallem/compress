@@ -3,7 +3,7 @@ test "ZlibReader decompresses zlib data" {
   let original = b"Hello, World! This is a test of zlib streaming."
   let compressed = @zlib.compress(original)
   let reader = @zlib.ZlibReader::new(
-    @stream.SliceReader::new(compressed, slice_length=16),
+    @stream.BytesReader::new(compressed, slice_length=16),
   )
   let result = @stream.read_all(reader)
   assert_eq(result, original)
@@ -14,7 +14,7 @@ test "ZlibReader yields bounded chunks" {
   let original = Bytes::makei(5000, fn(i) { (i % 256).to_byte() })
   let compressed = @zlib.compress(original)
   let reader = @zlib.ZlibReader::new(
-    @stream.SliceReader::new(compressed),
+    @stream.BytesReader::new(compressed),
     slice_length=1000,
   )
   let mut max_chunk = 0
@@ -63,11 +63,11 @@ test "ZlibReader + ZlibStreamWriter round-trip via pipe" {
   let compress_dest = @stream.BufferWriter::new()
   let zlib_writer = @zlib.ZlibStreamWriter::new(compress_dest)
   @stream.pipe(
-    @stream.SliceReader::new(original, slice_length=500),
+    @stream.BytesReader::new(original, slice_length=500),
     zlib_writer,
   )
   let compressed = compress_dest.to_bytes()
-  let reader = @zlib.ZlibReader::new(@stream.SliceReader::new(compressed))
+  let reader = @zlib.ZlibReader::new(@stream.BytesReader::new(compressed))
   let result = @stream.read_all(reader)
   assert_eq(result, original)
 }

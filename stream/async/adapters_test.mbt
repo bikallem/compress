@@ -1,5 +1,5 @@
 ///|
-async test "reader_of_io buffers async reader into SliceReader" {
+async test "reader_of_io buffers async reader into BytesReader" {
   let (reader, writer) = @io.pipe()
   @moonasync.with_task_group(root => {
     root.spawn_bg(() => {
@@ -15,7 +15,7 @@ async test "reader_of_io buffers async reader into SliceReader" {
 ///|
 async test "write_to_io drains stream reader to async writer" {
   let original = b"Hello, async world!"
-  let stream_reader = @stream.SliceReader::new(original, slice_length=8)
+  let stream_reader = @stream.BytesReader::new(original, slice_length=8)
   let (reader, writer) = @io.pipe()
   @moonasync.with_task_group(root => {
     root.spawn_bg(() => {

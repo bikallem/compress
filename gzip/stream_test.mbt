@@ -3,7 +3,7 @@ test "GzipReader decompresses gzip data" {
   let original = b"Hello, World! This is a test of gzip streaming."
   let compressed = @gzip.compress(original)
   let reader = @gzip.GzipReader::new(
-    @stream.SliceReader::new(compressed, slice_length=16),
+    @stream.BytesReader::new(compressed, slice_length=16),
   )
   let result = @stream.read_all(reader)
   assert_eq(result, original)
@@ -20,7 +20,7 @@ test "GzipReader exposes header" {
     os: b'\xFF',
   }
   let compressed = @gzip.compress(original, header~)
-  let reader = @gzip.GzipReader::new(@stream.SliceReader::new(compressed))
+  let reader = @gzip.GzipReader::new(@stream.BytesReader::new(compressed))
   let result = @stream.read_all(reader)
   assert_eq(result, original)
   assert_eq(reader.header().name, "test.txt")
@@ -33,7 +33,7 @@ test "GzipReader yields bounded chunks" {
   let original = Bytes::makei(5000, fn(i) { (i % 256).to_byte() })
   let compressed = @gzip.compress(original)
   let reader = @gzip.GzipReader::new(
-    @stream.SliceReader::new(compressed),
+    @stream.BytesReader::new(compressed),
     slice_length=1000,
   )
   let mut max_chunk = 0
@@ -90,11 +90,11 @@ test "GzipReader + GzipStreamWriter round-trip via pipe" {
   let compress_dest = @stream.BufferWriter::new()
   let gzip_writer = @gzip.GzipStreamWriter::new(compress_dest)
   @stream.pipe(
-    @stream.SliceReader::new(original, slice_length=500),
+    @stream.BytesReader::new(original, slice_length=500),
     gzip_writer,
   )
   let compressed = compress_dest.to_bytes()
-  let reader = @gzip.GzipReader::new(@stream.SliceReader::new(compressed))
+  let reader = @gzip.GzipReader::new(@stream.BytesReader::new(compressed))
   let result = @stream.read_all(reader)
   assert_eq(result, original)
 }

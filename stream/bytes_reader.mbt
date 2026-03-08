@@ -3,22 +3,22 @@ const DEFAULT_SLICE_LENGTH : Int = 65536
 
 ///|
 /// Reads from a `Bytes` source, yielding `slice_length`-bounded chunks.
-struct SliceReader {
+struct BytesReader {
   data : Bytes
   mut offset : Int
   slice_length : Int
 }
 
 ///|
-pub fn SliceReader::new(
+pub fn BytesReader::new(
   data : Bytes,
   slice_length? : Int = DEFAULT_SLICE_LENGTH,
-) -> SliceReader {
+) -> BytesReader {
   { data, offset: 0, slice_length }
 }
 
 ///|
-pub impl Reader for SliceReader with read(self) {
+pub impl Reader for BytesReader with read(self) -> BytesView {
   if self.offset >= self.data.length() {
     return b""[:]
   }

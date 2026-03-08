@@ -23,7 +23,7 @@ fn main {
 
     // --- write_to_io: stream reader -> async writer ---
     let bz2_reader2 = @bz2.Bzip2Reader::new(
-      @stream.SliceReader::new(compressed),
+      @stream.BytesReader::new(compressed),
     )
     let (out_read, out_write) = @io.pipe()
     @moonasync.with_task_group(root => {
