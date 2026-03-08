@@ -23,6 +23,7 @@ type GoldenEntry struct {
 	OutputFile string `json:"output_file"`
 	InputSize  int    `json:"input_size"`
 	OutputSize int    `json:"output_size"`
+	DictFile   string `json:"dict_file,omitempty"`
 }
 
 func main() {
@@ -117,6 +118,51 @@ func main() {
 		})
 	}
 
+	// Generate DEFLATE with dictionary compressed files
+	dict := []byte("the quick brown fox jumps over the lazy dog abcdefghijklmnop")
+	os.WriteFile(filepath.Join(dir, "dict.bin"), dict, 0o644)
+	// Use inputs that benefit from the dictionary
+	dictInputs := map[string][]byte{
+		"repeated": inputs["repeated"],
+		"mixed_1k": inputs["mixed_1k"],
+	}
+	for name, data := range dictInputs {
+		for _, level := range []int{1, 6, 9} {
+			outName := fmt.Sprintf("deflate_dict_%s_level%d.bin", name, level)
+			compressed := deflateDictCompress(data, dict, level)
+			os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+			entries = append(entries, GoldenEntry{
+				Name:       fmt.Sprintf("deflate_dict/%s/level%d", name, level),
+				Algorithm:  "deflate_dict",
+				Level:      level,
+				InputFile:  name + ".bin",
+				OutputFile: outName,
+				InputSize:  len(data),
+				OutputSize: len(compressed),
+				DictFile:   "dict.bin",
+			})
+		}
+	}
+
+	// Generate zlib with dictionary compressed files
+	for name, data := range dictInputs {
+		for _, level := range []int{1, 6, 9} {
+			outName := fmt.Sprintf("zlib_dict_%s_level%d.bin", name, level)
+			compressed := zlibDictCompress(data, dict, level)
+			os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+			entries = append(entries, GoldenEntry{
+				Name:       fmt.Sprintf("zlib_dict/%s/level%d", name, level),
+				Algorithm:  "zlib_dict",
+				Level:      level,
+				InputFile:  name + ".bin",
+				OutputFile: outName,
+				InputSize:  len(data),
+				OutputSize: len(compressed),
+				DictFile:   "dict.bin",
+			})
+		}
+	}
+
 	// Write manifest
 	manifest, _ := json.MarshalIndent(entries, "", "  ")
 	os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o644)
@@ -153,6 +199,22 @@ func gzipCompress(data []byte, level int) []byte {
 func zlibCompress(data []byte, level int) []byte {
 	var buf bytes.Buffer
 	w, _ := zlib.NewWriterLevel(&buf, level)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func deflateDictCompress(data, dict []byte, level int) []byte {
+	var buf bytes.Buffer
+	w, _ := flate.NewWriterDict(&buf, level, dict)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func zlibDictCompress(data, dict []byte, level int) []byte {
+	var buf bytes.Buffer
+	w, _ := zlib.NewWriterLevelDict(&buf, level, dict)
 	w.Write(data)
 	w.Close()
 	return buf.Bytes()

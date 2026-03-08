@@ -165,6 +165,47 @@ test "golden: decompress Go-deflate repeated 4k" {
 }
 
 ///|
+test "golden: decompress Go-deflate-dict repeated 4k level6" {
+  // Go compress/flate NewWriterDict level 6: "abcdefghijklmnop" * 256
+  // dict = "the quick brown fox jumps over the lazy dog abcdefghijklmnop"
+  let dict : Bytes = b"the quick brown fox jumps over the lazy dog abcdefghijklmnop"
+  let compressed = hex_to_bytes(
+    "ecc7310d00000080a0feadede13861666666666666e6bf0b0000ffff",
+  )
+  let decompressed = @flate.decompress_with_dict(compressed, dict)
+  inspect(decompressed.length(), content="4096")
+  let expected : Bytes = b"abcdefghijklmnop"
+  let mut matches = true
+  for i in 0..<16 {
+    if decompressed[i] != expected[i] {
+      matches = false
+      break
+    }
+  }
+  inspect(matches, content="true")
+}
+
+///|
+test "golden: decompress Go-deflate-dict repeated 4k level1" {
+  // Go compress/flate NewWriterDict level 1: "abcdefghijklmnop" * 256
+  let dict : Bytes = b"the quick brown fox jumps over the lazy dog abcdefghijklmnop"
+  let compressed = hex_to_bytes(
+    "ecd6b71100310804c05adfc8dbfe23f5a1d9909481bb7ddeef0f31e5525b1f736db37db807ff200fe4a13ed0873cc0033cc0033cc0033c709f074e000000ffff",
+  )
+  let decompressed = @flate.decompress_with_dict(compressed, dict)
+  inspect(decompressed.length(), content="4096")
+  let expected : Bytes = b"abcdefghijklmnop"
+  let mut matches = true
+  for i in 0..<16 {
+    if decompressed[i] != expected[i] {
+      matches = false
+      break
+    }
+  }
+  inspect(matches, content="true")
+}
+
+///|
 test "compress Level(-1) is default" {
   let original : Bytes = b"Hello, World! Hello, World! Hello, World!"
   let default_compressed = @flate.compress(original)

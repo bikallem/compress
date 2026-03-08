@@ -87,6 +87,27 @@ test "golden: decompress Go-zlib hello" {
 }
 
 ///|
+test "golden: decompress Go-zlib-dict repeated 4k level6" {
+  // Go compress/zlib NewWriterLevelDict level 6: "abcdefghijklmnop" * 256
+  // dict = "the quick brown fox jumps over the lazy dog abcdefghijklmnop"
+  let dict : Bytes = b"the quick brown fox jumps over the lazy dog abcdefghijklmnop"
+  let compressed = zlib_hex_to_bytes(
+    "78bba93516a2ecc7310d00000080a0feadede13861666666666666e6bf0b0000ffff100b885b",
+  )
+  let decompressed = @zlib.decompress_with_dict(compressed, dict)
+  inspect(decompressed.length(), content="4096")
+  let expected : Bytes = b"abcdefghijklmnop"
+  let mut matches = true
+  for i in 0..<16 {
+    if decompressed[i] != expected[i] {
+      matches = false
+      break
+    }
+  }
+  inspect(matches, content="true")
+}
+
+///|
 test "zlib header validation - bad checksum" {
   // Valid zlib header is 0x78 0x9C (default compression)
   // Corrupt the FLG byte to break FCHECK

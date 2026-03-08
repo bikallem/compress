@@ -21,6 +21,7 @@ type GoldenEntry struct {
 	OutputFile string `json:"output_file"`
 	InputSize  int    `json:"input_size"`
 	OutputSize int    `json:"output_size"`
+	DictFile   string `json:"dict_file,omitempty"`
 }
 
 func loadManifest(t *testing.T) []GoldenEntry {
@@ -51,10 +52,22 @@ func TestGoDecompressGolden(t *testing.T) {
 				t.Fatalf("Failed to read compressed: %v", err)
 			}
 
+			var dict []byte
+			if e.DictFile != "" {
+				dict, err = os.ReadFile(filepath.Join(goldenDir, e.DictFile))
+				if err != nil {
+					t.Fatalf("Failed to read dict: %v", err)
+				}
+			}
+
 			var decompressed []byte
 			switch e.Algorithm {
 			case "deflate":
 				r := flate.NewReader(bytes.NewReader(compressed))
+				decompressed, err = io.ReadAll(r)
+				r.Close()
+			case "deflate_dict":
+				r := flate.NewReaderDict(bytes.NewReader(compressed), dict)
 				decompressed, err = io.ReadAll(r)
 				r.Close()
 			case "gzip":
@@ -68,6 +81,13 @@ func TestGoDecompressGolden(t *testing.T) {
 				r, zerr := zlib.NewReader(bytes.NewReader(compressed))
 				if zerr != nil {
 					t.Fatalf("zlib.NewReader: %v", zerr)
+				}
+				decompressed, err = io.ReadAll(r)
+				r.Close()
+			case "zlib_dict":
+				r, zerr := zlib.NewReaderDict(bytes.NewReader(compressed), dict)
+				if zerr != nil {
+					t.Fatalf("zlib.NewReaderDict: %v", zerr)
 				}
 				decompressed, err = io.ReadAll(r)
 				r.Close()
