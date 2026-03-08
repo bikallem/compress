@@ -1,7 +1,7 @@
 ///|
 /// Decompresses bzip2-encoded data.
 pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
-  let br = Bzip2BitReader::new(data)
+  let br = Bzip2BitReader::new(@stream.SliceReader::new(data))
   let out = @buffer.new(size_hint=data.length() * 4)
   // Read stream header: 'B' 'Z' 'h' blockSize
   let m1 = br.read_bits(8)
@@ -51,9 +51,7 @@ pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
     }
     // Update stream CRC
     stream_crc = ((stream_crc << 1) | (stream_crc >> 31)) ^ actual_crc
-    for i in 0..<block_data.length() {
-      out.write_byte(block_data[i])
-    }
+    out.write_bytes(block_data)
   }
   out.to_bytes()
 }

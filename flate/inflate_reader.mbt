@@ -2,7 +2,7 @@
 /// InflateReader decompresses DEFLATE data from a source `@stream.Reader`.
 ///
 /// Implements `@stream.Reader` — pull-based, returns BytesView chunks.
-/// Currently buffers input internally; output is yielded in bounded chunks.
+/// Decompresses incrementally from the source stream.
 pub struct InflateReader {
   priv source : &@stream.Reader
   priv dict : Bytes
@@ -41,10 +41,9 @@ pub impl @stream.Reader for InflateReader with read(self) {
   if self.done {
     return b""[:]
   }
-  // Lazy decompression: decompress all on first read
+  // Lazy decompression: decompress on first read
   if self.output.length() == 0 && self.output_offset == 0 {
-    let input = @stream.read_all(self.source)
-    let (decompressed, rem) = decompress_core(input, self.dict) catch {
+    let (decompressed, rem) = decompress_reader(self.source, self.dict) catch {
       e => raise @stream.StreamError::Format(e.to_string())
     }
     self.output = decompressed

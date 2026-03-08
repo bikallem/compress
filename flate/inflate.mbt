@@ -1,7 +1,7 @@
 ///|
 /// Decompresses DEFLATE-encoded data (RFC 1951).
 pub fn decompress(data : Bytes) -> Bytes raise CompressError {
-  decompress_core(data, Bytes::default()).0
+  decompress_reader(@stream.SliceReader::new(data), Bytes::default()).0
 }
 
 ///|
@@ -10,23 +10,23 @@ pub fn decompress_with_dict(
   data : Bytes,
   dict : Bytes,
 ) -> Bytes raise CompressError {
-  decompress_core(data, dict).0
+  decompress_reader(@stream.SliceReader::new(data), dict).0
 }
 
 ///|
-/// Core decompression returning both result and unconsumed input bytes.
-/// The remaining bytes are useful for wrapper formats (gzip, zlib) that
-/// need to read a footer after the DEFLATE stream.
-fn decompress_core(
-  data : Bytes,
+/// Core decompression from a stream reader, returning both result and
+/// unconsumed input bytes. The remaining bytes are useful for wrapper
+/// formats (gzip, zlib) that need to read a footer after the DEFLATE stream.
+fn decompress_reader(
+  reader : &@stream.Reader,
   dict : Bytes,
 ) -> (Bytes, Bytes) raise CompressError {
-  let out = OutputBuffer::new(data.length() * 4)
+  let out = OutputBuffer::new(65536)
   let dd = DictDecoder::new()
   if dict.length() > 0 {
     dd.init_dict(dict)
   }
-  let br = BitReader::new(data)
+  let br = BitReader::new(reader)
   let mut final_block = false
   while not(final_block) {
     br.ensure(3)
@@ -79,16 +79,17 @@ fn decode_stored_block(
       dd.read_flush(out)
     }
   }
-  // Bulk copy remaining directly from input data
+  // Bulk copy remaining from stream chunks
   while remaining > 0 {
     let avail = dd.avail_write()
-    let n = if remaining < avail { remaining } else { avail }
+    let max = if remaining < avail { remaining } else { avail }
+    let chunk = br.next_chunk(max)
+    let n = chunk.length()
     let hist = dd.hist
     for i in 0..<n {
-      hist[dd.wr_pos + i] = br.data[br.pos + i]
+      hist[dd.wr_pos + i] = chunk[i]
     }
     dd.wr_pos += n
-    br.pos += n
     remaining -= n
     if dd.avail_write() == 0 {
       dd.read_flush(out)

@@ -118,17 +118,21 @@ fn HuffmanDecoder::decode(
   self : HuffmanDecoder,
   br : BitReader,
 ) -> Int raise CompressError {
-  // Ensure enough bits
+  // Ensure enough bits — try filling from the stream
   while br.count < self.max_bits {
-    if br.pos >= br.data.length() {
-      if br.count >= self.min_bits {
-        break
+    let b = try? br.next_byte()
+    match b {
+      Err(_) =>
+        if br.count >= self.min_bits {
+          break
+        } else {
+          raise CompressError::UnexpectedEOF
+        }
+      Ok(byte) => {
+        br.buf = br.buf | (byte.to_uint64() << br.count)
+        br.count += 8
       }
-      raise CompressError::UnexpectedEOF
     }
-    br.buf = br.buf | (br.data.unsafe_get(br.pos).to_uint64() << br.count)
-    br.count += 8
-    br.pos += 1
   }
   // Look up in chunks table
   let idx = (br.buf & ((1UL << HUFFMAN_CHUNK_BITS) - 1UL)).to_int()
