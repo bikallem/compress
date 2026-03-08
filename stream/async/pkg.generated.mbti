@@ -1,7 +1,17 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "bikallem/compress/stream/async"
 
+import {
+  "bikallem/compress/stream",
+  "moonbitlang/async/io",
+}
+
 // Values
+pub async fn pipe_async(&@io.Reader, &@io.Writer, (&@stream.Writer) -> &@stream.Writer, slice_length? : Int) -> Unit
+
+pub async fn reader_of_io(&@io.Reader, slice_length? : Int) -> @stream.SliceReader
+
+pub async fn write_to_io(&@stream.Reader, &@io.Writer) -> Unit
 
 // Errors
 
