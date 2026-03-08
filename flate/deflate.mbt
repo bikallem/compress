@@ -180,8 +180,9 @@ fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
   w.start_fixed_block(true)
   let mut i = 0
   while i < data_len {
-    if i + 2 < data_len {
-      let h = hash4(data, i) & hash_mask
+    if i + 3 < data_len {
+      let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
+      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
       let match_pos = head[h]
       head[h] = i
       if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
@@ -193,10 +194,28 @@ fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
         let length = match_len(data, i, match_pos, max_len)
         if length >= MIN_MATCH_LENGTH {
           w.write_match_fast(length, i - match_pos)
-          if i + 1 + 2 < data_len {
-            let h1 = hash4(data, i + 1) & hash_mask
+          if i + 4 < data_len {
+            let v1 = data.unsafe_read_uint32_le(i + 1).reinterpret_as_int()
+            let h1 = ((v1 & 0xFFFFFF) ^ (((v1 >> 16) & 0xFF) * 0x1e35a7bd)) &
+              hash_mask
+            head[h1] = i + 1
+          } else if i + 3 < data_len {
+            let h1 = hash4_slow(data, i + 1) & hash_mask
             head[h1] = i + 1
           }
+          i += length
+          continue
+        }
+      }
+    } else if i + 2 < data_len {
+      let h = hash4_slow(data, i) & hash_mask
+      let match_pos = head[h]
+      head[h] = i
+      if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
+        let max_len = data_len - i
+        let length = match_len(data, i, match_pos, max_len)
+        if length >= MIN_MATCH_LENGTH {
+          w.write_match_fast(length, i - match_pos)
           i += length
           continue
         }
@@ -224,8 +243,9 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
   let prev = FixedArray::make(window_size, -1)
   let mut i = 0
   while i < data_len {
-    if i + 2 < data_len {
-      let h = hash4(data, i) & hash_mask
+    if i + 3 < data_len {
+      let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
+      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
       let match_head = head[h]
       prev[i & window_mask] = match_head
       head[h] = i
@@ -236,12 +256,34 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
         if length >= MIN_MATCH_LENGTH {
           tokens.push(Token::match_(length, offset))
           for j in 1..<length {
-            if i + j + 2 < data_len {
-              let hj = hash4(data, i + j) & hash_mask
-              prev[(i + j) & window_mask] = head[hj]
-              head[hj] = i + j
+            let pos = i + j
+            if pos + 3 < data_len {
+              let vj = data.unsafe_read_uint32_le(pos).reinterpret_as_int()
+              let hj = ((vj & 0xFFFFFF) ^ (((vj >> 16) & 0xFF) * 0x1e35a7bd)) &
+                hash_mask
+              prev[pos & window_mask] = head[hj]
+              head[hj] = pos
+            } else if pos + 2 < data_len {
+              let hj = hash4_slow(data, pos) & hash_mask
+              prev[pos & window_mask] = head[hj]
+              head[hj] = pos
             }
           }
+          i += length
+          continue
+        }
+      }
+    } else if i + 2 < data_len {
+      let h = hash4_slow(data, i) & hash_mask
+      let match_head = head[h]
+      prev[i & window_mask] = match_head
+      head[h] = i
+      if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
+        let (length, offset) = find_best_match(
+          data, i, match_head, prev, window_mask, max_chain,
+        )
+        if length >= MIN_MATCH_LENGTH {
+          tokens.push(Token::match_(length, offset))
           i += length
           continue
         }
@@ -281,8 +323,23 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
   while i < data_len {
     let mut cur_len = 0
     let mut cur_dist = 0
-    if i + 2 < data_len {
-      let h = hash4(data, i) & hash_mask
+    if i + 3 < data_len {
+      let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
+      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+      let match_head = head[h]
+      prev[i & window_mask] = match_head
+      head[h] = i
+      if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
+        let (length, offset) = find_best_match(
+          data, i, match_head, prev, window_mask, max_chain,
+        )
+        if length >= MIN_MATCH_LENGTH {
+          cur_len = length
+          cur_dist = offset
+        }
+      }
+    } else if i + 2 < data_len {
+      let h = hash4_slow(data, i) & hash_mask
       let match_head = head[h]
       prev[i & window_mask] = match_head
       head[h] = i
@@ -308,12 +365,18 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
       } else {
         // Previous match is good enough — emit it
         tokens.push(Token::match_(prev_match_len, prev_match_dist))
-        // Update hash chains for skipped bytes (starting from byte after prev literal)
+        // Update hash chains for skipped bytes
         let start = i
         let end = start + prev_match_len - 1 // -1 because we already hashed position i
         for j in start..<end {
-          if j + 2 < data_len {
-            let hj = hash4(data, j) & hash_mask
+          if j + 3 < data_len {
+            let vj = data.unsafe_read_uint32_le(j).reinterpret_as_int()
+            let hj = ((vj & 0xFFFFFF) ^ (((vj >> 16) & 0xFF) * 0x1e35a7bd)) &
+              hash_mask
+            prev[j & window_mask] = head[hj]
+            head[hj] = j
+          } else if j + 2 < data_len {
+            let hj = hash4_slow(data, j) & hash_mask
             prev[j & window_mask] = head[hj]
             head[hj] = j
           }
@@ -343,9 +406,8 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
 }
 
 ///|
-/// Hash function using 3-byte input and multiplicative hashing.
-fn hash4(data : Bytes, i : Int) -> Int {
-  // Safety: callers guard i + 2 < data_len
+/// Hash function slow path for last 3 bytes where 32-bit read would go OOB.
+fn hash4_slow(data : Bytes, i : Int) -> Int {
   let b0 = data.unsafe_get(i).to_int()
   let b1 = data.unsafe_get(i + 1).to_int()
   let b2 = data.unsafe_get(i + 2).to_int()
