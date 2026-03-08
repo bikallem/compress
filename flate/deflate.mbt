@@ -202,7 +202,8 @@ fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
         }
       }
     }
-    w.write_literal_fast(data[i])
+    // Safety: i < data_len
+    w.write_literal_fast(data.unsafe_get(i))
     i += 1
   }
   w.write_fixed_symbol(END_BLOCK_MARKER)
@@ -246,7 +247,8 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
         }
       }
     }
-    tokens.push(Token::literal(data[i]))
+    // Safety: i < data_len
+    tokens.push(Token::literal(data.unsafe_get(i)))
     i += 1
   }
   tokens
@@ -300,7 +302,8 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
         tokens.push(Token::literal(prev_literal))
         prev_match_len = cur_len
         prev_match_dist = cur_dist
-        prev_literal = data[i]
+        // Safety: i < data_len
+        prev_literal = data.unsafe_get(i)
         i += 1
       } else {
         // Previous match is good enough — emit it
@@ -323,10 +326,12 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
       has_prev = true
       prev_match_len = cur_len
       prev_match_dist = cur_dist
-      prev_literal = data[i]
+      // Safety: i < data_len
+      prev_literal = data.unsafe_get(i)
       i += 1
     } else {
-      tokens.push(Token::literal(data[i]))
+      // Safety: i < data_len
+      tokens.push(Token::literal(data.unsafe_get(i)))
       i += 1
     }
   }
@@ -340,9 +345,10 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
 ///|
 /// Hash function using 3-byte input and multiplicative hashing.
 fn hash4(data : Bytes, i : Int) -> Int {
-  let b0 = data[i].to_int()
-  let b1 = data[i + 1].to_int()
-  let b2 = data[i + 2].to_int()
+  // Safety: callers guard i + 2 < data_len
+  let b0 = data.unsafe_get(i).to_int()
+  let b1 = data.unsafe_get(i + 1).to_int()
+  let b2 = data.unsafe_get(i + 2).to_int()
   (b0 | (b1 << 8) | (b2 << 16)) ^ (b2 * 0x1e35a7bd)
 }
 
@@ -367,7 +373,10 @@ fn find_best_match(
   }
   while pos >= 0 && cur - pos <= MAX_MATCH_OFFSET && chain_count < max_chain {
     // Quick rejection: check last byte of best match first
-    if best_len > 0 && data[pos + best_len] != data[cur + best_len] {
+    // Safety: pos + best_len < data_len and cur + best_len < data_len
+    // guaranteed by max_len = min(data_len - cur, MAX_MATCH_LENGTH)
+    if best_len > 0 &&
+      data.unsafe_get(pos + best_len) != data.unsafe_get(cur + best_len) {
       let next = prev[pos & window_mask]
       if next >= pos {
         break
