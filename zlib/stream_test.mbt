@@ -36,7 +36,7 @@ test "ZlibReader yields bounded chunks" {
 ///|
 test "ZlibStreamWriter compresses data" {
   let original = b"Hello, World! This is zlib streaming compression."
-  let dest_buf = @stream.BufferWriter::new()
+  let dest_buf = @stream.BytesWriter::new()
   let writer = @zlib.ZlibStreamWriter::new(dest_buf)
   writer.write(original[0:20])
   writer.write(original[20:])
@@ -49,7 +49,7 @@ test "ZlibStreamWriter compresses data" {
 ///|
 test "ZlibStreamWriter with compression levels" {
   let original = Bytes::makei(1000, fn(i) { (i % 26 + 65).to_byte() })
-  let dest = @stream.BufferWriter::new()
+  let dest = @stream.BytesWriter::new()
   let writer = @zlib.ZlibStreamWriter::new(dest, level=NoCompression)
   writer.write(original[:])
   writer.write(b""[:])
@@ -60,7 +60,7 @@ test "ZlibStreamWriter with compression levels" {
 ///|
 test "ZlibReader + ZlibStreamWriter round-trip via pipe" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
-  let compress_dest = @stream.BufferWriter::new()
+  let compress_dest = @stream.BytesWriter::new()
   let zlib_writer = @zlib.ZlibStreamWriter::new(compress_dest)
   @stream.pipe(
     @stream.BytesReader::new(original, slice_length=500),

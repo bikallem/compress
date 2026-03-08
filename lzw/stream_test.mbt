@@ -45,7 +45,7 @@ test "LzwReader yields bounded chunks" {
 ///|
 test "LzwStreamWriter compresses data LSB" {
   let original = b"TOBEORNOTTOBEORTOBEORNOT"
-  let dest_buf = @stream.BufferWriter::new()
+  let dest_buf = @stream.BytesWriter::new()
   let writer = @lzw.LzwStreamWriter::new(dest_buf, LSB, 8)
   writer.write(original[0:10])
   writer.write(original[10:])
@@ -58,7 +58,7 @@ test "LzwStreamWriter compresses data LSB" {
 ///|
 test "LzwReader + LzwStreamWriter round-trip via pipe" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
-  let compress_dest = @stream.BufferWriter::new()
+  let compress_dest = @stream.BytesWriter::new()
   let lzw_writer = @lzw.LzwStreamWriter::new(compress_dest, LSB, 8)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=500), lzw_writer)
   let compressed = compress_dest.to_bytes()

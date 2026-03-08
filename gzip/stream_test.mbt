@@ -55,7 +55,7 @@ test "GzipReader yields bounded chunks" {
 ///|
 test "GzipStreamWriter compresses data" {
   let original = b"Hello, World! This is gzip streaming compression."
-  let dest_buf = @stream.BufferWriter::new()
+  let dest_buf = @stream.BytesWriter::new()
   let writer = @gzip.GzipStreamWriter::new(dest_buf)
   writer.write(original[0:20])
   writer.write(original[20:])
@@ -75,7 +75,7 @@ test "GzipStreamWriter with header" {
     mod_time: 0U,
     os: b'\xFF',
   }
-  let dest_buf = @stream.BufferWriter::new()
+  let dest_buf = @stream.BytesWriter::new()
   let writer = @gzip.GzipStreamWriter::new(dest_buf, header~)
   writer.write(original[:])
   writer.write(b""[:])
@@ -87,7 +87,7 @@ test "GzipStreamWriter with header" {
 ///|
 test "GzipReader + GzipStreamWriter round-trip via pipe" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
-  let compress_dest = @stream.BufferWriter::new()
+  let compress_dest = @stream.BytesWriter::new()
   let gzip_writer = @gzip.GzipStreamWriter::new(compress_dest)
   @stream.pipe(
     @stream.BytesReader::new(original, slice_length=500),

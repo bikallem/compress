@@ -44,7 +44,7 @@ fn run() -> Unit raise {
   println("BestCompression: \{best.length()} bytes")
 
   // --- Streaming API ---
-  let dest = @stream.BufferWriter::new()
+  let dest = @stream.BytesWriter::new()
   let gzip_writer = @gz.GzipStreamWriter::new(dest)
   @stream.pipe(
     @stream.BytesReader::new(original, slice_length=4096),

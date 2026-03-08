@@ -58,7 +58,7 @@ async test "pipe_async round-trip with stream filter" {
     })
     root.spawn_bg(() => {
       @async.pipe_async(source_read, compressed_write, fn(sink) {
-        @stream.BufferWriter::new()
+        @stream.BytesWriter::new()
       })
       compressed_write.close()
     })

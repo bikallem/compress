@@ -36,7 +36,7 @@ test "InflateReader yields bounded chunks" {
 ///|
 test "DeflateWriter compresses data" {
   let original = b"Hello, World! This is a test of DEFLATE streaming compression."
-  let dest_buf = @stream.BufferWriter::new()
+  let dest_buf = @stream.BytesWriter::new()
   let writer = @flate.DeflateWriter::new(dest_buf)
   // Write in small chunks
   writer.write(original[0:20])
@@ -53,7 +53,7 @@ test "DeflateWriter compresses data" {
 test "InflateReader + DeflateWriter round-trip via pipe" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   // Compress
-  let compress_dest = @stream.BufferWriter::new()
+  let compress_dest = @stream.BytesWriter::new()
   let deflater = @flate.DeflateWriter::new(compress_dest)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=500), deflater)
   let compressed = compress_dest.to_bytes()
@@ -67,14 +67,14 @@ test "InflateReader + DeflateWriter round-trip via pipe" {
 test "DeflateWriter with compression levels" {
   let original = Bytes::makei(1000, fn(i) { (i % 26 + 65).to_byte() })
   // Test NoCompression
-  let dest = @stream.BufferWriter::new()
+  let dest = @stream.BytesWriter::new()
   let writer = @flate.DeflateWriter::new(dest, level=NoCompression)
   writer.write(original[:])
   writer.write(b""[:])
   let decompressed = @flate.decompress(dest.to_bytes())
   assert_eq(decompressed, original)
   // Test BestSpeed
-  let dest2 = @stream.BufferWriter::new()
+  let dest2 = @stream.BytesWriter::new()
   let writer2 = @flate.DeflateWriter::new(dest2, level=BestSpeed)
   writer2.write(original[:])
   writer2.write(b""[:])

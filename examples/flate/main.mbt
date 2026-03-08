@@ -53,7 +53,7 @@ fn run() -> Unit raise {
   )
 
   // --- Streaming API ---
-  let dest = @stream.BufferWriter::new()
+  let dest = @stream.BytesWriter::new()
   let writer = @deflate.DeflateWriter::new(dest, level=DefaultCompression)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=4096), writer)
   let stream_compressed = dest.to_bytes()

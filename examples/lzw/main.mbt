@@ -31,7 +31,7 @@ fn run() -> Unit raise {
   println("LZW litWidth=2: \{small.length()} -> \{compressed_2.length()} bytes")
 
   // --- Streaming API ---
-  let dest = @stream.BufferWriter::new()
+  let dest = @stream.BytesWriter::new()
   let lzw_writer = @lzwlib.LzwStreamWriter::new(dest, LSB, 8)
   @stream.pipe(@stream.BytesReader::new(original, slice_length=256), lzw_writer)
   let stream_compressed = dest.to_bytes()

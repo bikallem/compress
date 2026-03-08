@@ -52,8 +52,8 @@ test "FnReader buffer reuse pattern" {
 }
 
 ///|
-test "BufferWriter collects output" {
-  let writer = @stream.BufferWriter::new()
+test "BytesWriter collects output" {
+  let writer = @stream.BytesWriter::new()
   writer.write(b"hello"[:])
   writer.write(b" world"[:])
   writer.write(b""[:]) // eod
@@ -145,7 +145,7 @@ test "TapReader observes without transforming" {
 ///|
 test "TapWriter observes without transforming" {
   let mut total = 0
-  let inner = @stream.BufferWriter::new()
+  let inner = @stream.BytesWriter::new()
   let tapped = @stream.TapWriter::new(inner, fn(chunk) {
     total += chunk.length()
   })
@@ -173,7 +173,7 @@ test "CountedReader tracks position" {
 
 ///|
 test "CountedWriter tracks position" {
-  let inner = @stream.BufferWriter::new()
+  let inner = @stream.BytesWriter::new()
   let counted = @stream.CountedWriter::new(inner)
   inspect(counted.position(), content="0")
   counted.write(b"hello"[:])
@@ -185,7 +185,7 @@ test "CountedWriter tracks position" {
 ///|
 test "pipe reader to writer" {
   let reader = @stream.BytesReader::new(b"hello world", slice_length=4)
-  let writer = @stream.BufferWriter::new()
+  let writer = @stream.BytesWriter::new()
   @stream.pipe(reader, writer)
   assert_eq(writer.to_bytes(), b"hello world")
 }
@@ -361,7 +361,7 @@ test "pipe preserves data integrity for large stream" {
     n
   })
   // Pipe through CountedWriter to verify total bytes
-  let inner = @stream.BufferWriter::new()
+  let inner = @stream.BytesWriter::new()
   let counted_w = @stream.CountedWriter::new(inner)
   @stream.pipe(reader, counted_w)
   inspect(counted_w.position(), content="1048576")

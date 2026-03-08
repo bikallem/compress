@@ -1,3 +1,7 @@
 import {
-  "moonbitlang/core/buffer",
+  "bikallem/compress/internal/blit",
 }
+
+import {
+  "moonbitlang/core/buffer",
+} for "test"

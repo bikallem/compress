@@ -34,7 +34,7 @@ pub async fn write_to_io(reader : &@stream.Reader, dest : &@io.Writer) -> Unit {
 /// Reads from an `@io.Reader`, pushes through a sync `@stream.Writer` filter,
 /// and writes the filtered output to an `@io.Writer`.
 ///
-/// The `filter` receives a `BufferWriter` sink and returns a `@stream.Writer`
+/// The `filter` receives a `BytesWriter` sink and returns a `@stream.Writer`
 /// that transforms data before forwarding to the sink. After all data is
 /// processed, the sink's contents are written to `dest`.
 ///
@@ -48,7 +48,7 @@ pub async fn pipe_async(
   filter : (&@stream.Writer) -> &@stream.Writer,
   slice_length? : Int = 65536,
 ) -> Unit {
-  let sink = @stream.BufferWriter::new()
+  let sink = @stream.BytesWriter::new()
   let filtered = filter(sink)
   let buf = FixedArray::make(slice_length, b'\x00')
   while true {

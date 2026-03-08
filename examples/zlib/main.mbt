@@ -34,7 +34,7 @@ fn run() -> Unit raise {
   println("With dict: \{compressed_d.length()} bytes")
 
   // --- Streaming API ---
-  let dest = @stream.BufferWriter::new()
+  let dest = @stream.BytesWriter::new()
   let zlib_writer = @zliblib.ZlibStreamWriter::new(dest)
   @stream.pipe(
     @stream.BytesReader::new(original, slice_length=4096),
