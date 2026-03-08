@@ -10,12 +10,7 @@ priv struct OutputBuffer {
 ///|
 fn OutputBuffer::new(size_hint : Int) -> OutputBuffer {
   let chunk_size = if size_hint > 32768 { size_hint } else { 32768 }
-  {
-    chunks: [],
-    current: @blit.make_uninit(chunk_size),
-    pos: 0,
-    total: 0,
-  }
+  { chunks: [], current: @blit.make_uninit(chunk_size), pos: 0, total: 0 }
 }
 
 ///|

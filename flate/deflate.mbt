@@ -190,10 +190,7 @@ fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
         } else {
           MAX_MATCH_LENGTH
         }
-        let mut length = 0
-        while length < max_len && data[i + length] == data[match_pos + length] {
-          length += 1
-        }
+        let length = match_len(data, i, match_pos, max_len)
         if length >= MIN_MATCH_LENGTH {
           w.write_match_fast(length, i - match_pos)
           if i + 1 + 2 < data_len {
@@ -341,7 +338,7 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
 }
 
 ///|
-/// Improved hash function using 4-byte input and multiplicative hashing.
+/// Hash function using 3-byte input and multiplicative hashing.
 fn hash4(data : Bytes, i : Int) -> Int {
   let b0 = data[i].to_int()
   let b1 = data[i + 1].to_int()
@@ -379,11 +376,8 @@ fn find_best_match(
       chain_count += 1
       continue
     }
-    // Count matching bytes
-    let mut length = 0
-    while length < max_len && data[cur + length] == data[pos + length] {
-      length += 1
-    }
+    // Count matching bytes — 8-at-a-time on native
+    let length = match_len(data, cur, pos, max_len)
     if length > best_len {
       best_len = length
       best_offset = cur - pos

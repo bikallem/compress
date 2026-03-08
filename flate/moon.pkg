@@ -7,3 +7,11 @@ import {
 import {
   "bikallem/compress/stream",
 } for "test"
+
+options(
+  "native-stub": [ "deflate_fast_stub.c" ],
+  targets: {
+    "deflate_fast_native.mbt": [ "native" ],
+    "deflate_fast_non_native.mbt": [ "wasm", "wasm-gc", "js" ],
+  },
+)
