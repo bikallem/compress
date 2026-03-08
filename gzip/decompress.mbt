@@ -36,11 +36,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
     if pos + xlen > data.length() {
       raise GzipError::UnexpectedEOF
     }
-    let extra_buf = @buffer.new(size_hint=xlen)
-    for i in pos..<(pos + xlen) {
-      extra_buf.write_byte(data[i])
-    }
-    extra = extra_buf.to_bytes()
+    extra = data[pos:pos + xlen].to_bytes()
     pos += xlen
   }
   // FNAME
@@ -95,11 +91,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   if pos >= footer_start {
     raise GzipError::UnexpectedEOF
   }
-  let deflate_buf = @buffer.new(size_hint=footer_start - pos)
-  for i in pos..<footer_start {
-    deflate_buf.write_byte(data[i])
-  }
-  let deflate_data = deflate_buf.to_bytes()
+  let deflate_data = data[pos:footer_start].to_bytes()
   // Decompress DEFLATE data
   let decompressed = @flate.decompress(deflate_data) catch {
     e => raise GzipError::DeflateError(e.to_string())

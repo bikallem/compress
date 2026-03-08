@@ -58,12 +58,7 @@ pub fn decompress_with_dict(
   if data_start >= deflate_end {
     raise ZlibError::UnexpectedEOF
   }
-  // Build deflate data bytes
-  let deflate_data_buf = @buffer.new(size_hint=deflate_end - data_start)
-  for i in data_start..<deflate_end {
-    deflate_data_buf.write_byte(data[i])
-  }
-  let deflate_data = deflate_data_buf.to_bytes()
+  let deflate_data = data[data_start:deflate_end].to_bytes()
   // Decompress DEFLATE data
   let decompressed = try {
     if dict.length() > 0 {

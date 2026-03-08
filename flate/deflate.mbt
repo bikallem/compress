@@ -65,9 +65,7 @@ fn deflate_stored(data : Bytes) -> Bytes {
     buf.write_byte((nlen & 0xFF).to_byte())
     buf.write_byte((nlen >> 8).to_byte())
     // Data
-    for i in offset..<(offset + block_len) {
-      buf.write_byte(data[i])
-    }
+    buf.write_bytesview(data[offset:offset + block_len])
     offset += block_len
     if data.length() == 0 {
       break

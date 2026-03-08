@@ -19,9 +19,7 @@ pub fn read_all(reader : &Reader) -> Bytes raise StreamError {
     if chunk.is_empty() {
       break
     }
-    for i in 0..<chunk.length() {
-      buf.write_byte(chunk[i])
-    }
+    buf.write_bytesview(chunk)
   }
   buf.to_bytes()
 }

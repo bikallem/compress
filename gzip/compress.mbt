@@ -42,9 +42,7 @@ pub fn compress(
     let xlen = header.extra.length()
     buf.write_byte((xlen & 0xFF).to_byte())
     buf.write_byte((xlen >> 8).to_byte())
-    for i in 0..<xlen {
-      buf.write_byte(header.extra[i])
-    }
+    buf.write_bytes(header.extra)
   }
   // FNAME
   if header.name.length() > 0 {
@@ -65,9 +63,7 @@ pub fn compress(
     e => raise GzipError::DeflateError(e.to_string())
   }
   // Write compressed data
-  for i in 0..<compressed.length() {
-    buf.write_byte(compressed[i])
-  }
+  buf.write_bytes(compressed)
   // CRC-32 (4 bytes LE)
   let crc = @checksum.crc32(data[:])
   buf.write_byte((crc & 0xFFU).to_byte())

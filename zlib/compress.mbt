@@ -54,9 +54,7 @@ pub fn compress_with_dict(
     e => raise ZlibError::DeflateError(e.to_string())
   }
   // Write compressed data
-  for i in 0..<compressed.length() {
-    buf.write_byte(compressed[i])
-  }
+  buf.write_bytes(compressed)
   // Write Adler-32 checksum of original data (big-endian)
   let checksum = @checksum.adler32(data[:])
   buf.write_byte(((checksum >> 24) & 0xFFU).to_byte())

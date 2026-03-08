@@ -46,7 +46,5 @@ pub impl @stream.Writer for ZlibStreamWriter with write(self, data) {
     }
     return
   }
-  for i in 0..<data.length() {
-    self.buf.write_byte(data[i])
-  }
+  self.buf.write_bytesview(data)
 }

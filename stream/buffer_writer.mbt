@@ -21,7 +21,5 @@ pub impl Writer for BufferWriter with write(self, data) {
   if data.is_empty() {
     return
   }
-  for i in 0..<data.length() {
-    self.buf.write_byte(data[i])
-  }
+  self.buf.write_bytesview(data)
 }
