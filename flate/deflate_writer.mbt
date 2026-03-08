@@ -2,14 +2,10 @@
 /// DeflateWriter compresses data using DEFLATE and pushes to a dest `@stream.Writer`.
 ///
 /// Implements `@stream.Writer` — push-based, accepts BytesView chunks.
-/// Compression happens on eod (empty write). Currently buffers input
-/// internally; compressed output is pushed to dest in bounded chunks.
+/// True streaming: processes input incrementally with constant memory (~450KB).
 pub struct DeflateWriter {
-  priv dest : &@stream.Writer
-  priv level : CompressionLevel
-  priv dict : Bytes
-  priv slice_length : Int
-  priv buf : @buffer.Buffer
+  priv compressor : StreamingCompressor
+  priv forward_eod : Bool
   priv mut closed : Bool
 }
 
@@ -18,43 +14,62 @@ pub fn DeflateWriter::new(
   dest : &@stream.Writer,
   level? : CompressionLevel = DefaultCompression,
   dict? : Bytes = Bytes::default(),
-  slice_length? : Int = 65536,
+  forward_eod? : Bool = true,
 ) -> DeflateWriter {
-  { dest, level, dict, slice_length, buf: @buffer.new(), closed: false }
+  let lvl = level.to_int()
+  let c = StreamingCompressor::new(dest, lvl)
+  // Preload dictionary into window if provided
+  if dict.length() > 0 {
+    let dict_len = if dict.length() > WINDOW_SIZE {
+      WINDOW_SIZE
+    } else {
+      dict.length()
+    }
+    let dict_start = dict.length() - dict_len
+    for i in 0..<dict_len {
+      c.window[i] = dict[dict_start + i]
+    }
+    c.window_end = dict_len
+    c.index = dict_len
+    c.block_start = dict_len
+    // Hash the dictionary so matches can reference it
+    if lvl >= 1 {
+      let head = c.head
+      let prev = c.prev
+      let hash_mask = head.length() - 1
+      let window = c.window
+      for i in 0..<(dict_len - 3) {
+        let b0 = window[i].to_int()
+        let b1 = window[i + 1].to_int()
+        let b2 = window[i + 2].to_int()
+        let b3 = window[i + 3].to_int()
+        let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+        let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+        prev[i & WINDOW_MASK] = head[h]
+        head[h] = i
+      }
+    }
+  }
+  { compressor: c, forward_eod, closed: false }
 }
 
 ///|
 pub impl @stream.Writer for DeflateWriter with write(self, data) {
   if data.is_empty() {
-    // eod: compress buffered data and push to dest
     if not(self.closed) {
       self.closed = true
-      let input = self.buf.to_bytes()
-      let compressed = try {
-        if self.dict.length() > 0 {
-          compress_with_dict(input, self.dict, level=self.level)
-        } else {
-          compress(input, level=self.level)
-        }
-      } catch {
-        e => raise @stream.StreamError::Format(e.to_string())
+      self.compressor.finish()
+      if self.forward_eod {
+        self.compressor.w.dest.write(b""[:])
       }
-      // Push compressed output in bounded chunks
-      let mut offset = 0
-      while offset < compressed.length() {
-        let avail = compressed.length() - offset
-        let n = if avail < self.slice_length {
-          avail
-        } else {
-          self.slice_length
-        }
-        self.dest.write(compressed[offset:offset + n])
-        offset += n
-      }
-      // Forward eod to dest
-      self.dest.write(b""[:])
     }
     return
   }
-  self.buf.write_bytesview(data)
+  // Feed data incrementally
+  let mut offset = 0
+  while offset < data.length() {
+    let consumed = self.compressor.fill(data[offset:])
+    offset += consumed
+    self.compressor.step()
+  }
 }

@@ -35,7 +35,7 @@ pub impl @stream.Reader for ZlibReader
 pub struct ZlibStreamWriter {
   // private fields
 }
-pub fn ZlibStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, dict? : Bytes, slice_length? : Int) -> Self
+pub fn ZlibStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, dict? : Bytes) -> Self
 pub impl @stream.Writer for ZlibStreamWriter
 
 // Type aliases

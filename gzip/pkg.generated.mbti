@@ -32,7 +32,7 @@ pub impl @stream.Reader for GzipReader
 pub struct GzipStreamWriter {
   // private fields
 }
-pub fn GzipStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, header? : Header, slice_length? : Int) -> Self
+pub fn GzipStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, header? : Header) -> Self
 pub impl @stream.Writer for GzipStreamWriter
 
 pub(all) struct Header {

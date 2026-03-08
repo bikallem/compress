@@ -37,7 +37,7 @@ pub impl Show for CompressionLevel
 pub struct DeflateWriter {
   // private fields
 }
-pub fn DeflateWriter::new(&@stream.Writer, level? : CompressionLevel, dict? : Bytes, slice_length? : Int) -> Self
+pub fn DeflateWriter::new(&@stream.Writer, level? : CompressionLevel, dict? : Bytes, forward_eod? : Bool) -> Self
 pub impl @stream.Writer for DeflateWriter
 
 pub struct InflateReader {

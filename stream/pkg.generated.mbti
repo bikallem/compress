@@ -19,15 +19,19 @@ type AppendReader
 pub fn AppendReader::new(&Reader, &Reader) -> Self
 pub impl Reader for AppendReader
 
-type BufferWriter
-pub fn BufferWriter::new(size_hint? : Int) -> Self
-pub fn BufferWriter::to_bytes(Self) -> Bytes
-pub impl Writer for BufferWriter
-
 type Buffered
 pub fn Buffered::new(&Reader) -> Self
 pub fn Buffered::push_back(Self, BytesView) -> Unit
 pub impl Reader for Buffered
+
+type BytesReader
+pub fn BytesReader::new(Bytes, slice_length? : Int) -> Self
+pub impl Reader for BytesReader
+
+type BytesWriter
+pub fn BytesWriter::content(Self) -> Bytes
+pub fn BytesWriter::new(size_hint? : Int) -> Self
+pub impl Writer for BytesWriter
 
 type CountedReader
 pub fn CountedReader::new(&Reader) -> Self
@@ -50,10 +54,6 @@ pub impl Writer for FnWriter
 type LimitReader
 pub fn LimitReader::new(&Reader, Int) -> Self
 pub impl Reader for LimitReader
-
-type SliceReader
-pub fn SliceReader::new(Bytes, slice_length? : Int) -> Self
-pub impl Reader for SliceReader
 
 type TapReader
 pub fn TapReader::new(&Reader, (BytesView) -> Unit) -> Self
