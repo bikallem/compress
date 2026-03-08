@@ -148,3 +148,21 @@ test "bench flate compress default text_100mb" (b : @bench.T) {
     b.keep(try! @flate.compress(data))
   })
 }
+
+///|
+test "bench flate compress dict text_10kb" (b : @bench.T) {
+  let dict : Bytes = b"The quick brown fox jumps over the lazy dog. "
+  let data = gen_text(10240)
+  b.bench(name="flate_compress_dict_10kb", fn() {
+    b.keep(try! @flate.compress_with_dict(data, dict))
+  })
+}
+
+///|
+test "bench flate compress dict text_100kb" (b : @bench.T) {
+  let dict : Bytes = b"The quick brown fox jumps over the lazy dog. "
+  let data = gen_text(102400)
+  b.bench(name="flate_compress_dict_100kb", fn() {
+    b.keep(try! @flate.compress_with_dict(data, dict))
+  })
+}

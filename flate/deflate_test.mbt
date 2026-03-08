@@ -206,6 +206,25 @@ test "golden: decompress Go-deflate-dict repeated 4k level1" {
 }
 
 ///|
+test "compress_with_dict should produce smaller output than compress" {
+  // Data that heavily matches the dictionary should compress better with dict
+  let dict : Bytes = b"the quick brown fox jumps over the lazy dog abcdefghijklmnop"
+  let buf = @buffer.new(size_hint=4096)
+  for _ in 0..<256 {
+    buf.write_bytes(b"abcdefghijklmnop")
+  }
+  let original = buf.to_bytes()
+  let without_dict = @flate.compress(original)
+  let with_dict = @flate.compress_with_dict(original, dict)
+  // Dict-compressed output should be smaller since the compressor can
+  // reference dict content for the first match window
+  inspect(with_dict.length() < without_dict.length(), content="true")
+  // Round-trip: dict-compressed data must decompress correctly with same dict
+  let decompressed = @flate.decompress_with_dict(with_dict, dict)
+  assert_eq(decompressed, original)
+}
+
+///|
 test "compress Level(-1) is default" {
   let original : Bytes = b"Hello, World! Hello, World! Hello, World!"
   let default_compressed = @flate.compress(original)

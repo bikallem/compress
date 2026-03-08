@@ -815,5 +815,31 @@ func BenchmarkLzwCompressLSB_100mb(b *testing.B) {
 	}
 }
 
+// --- Dict benchmarks ---
+
+func BenchmarkFlateCompressDict10KB(b *testing.B) {
+	dict := []byte("The quick brown fox jumps over the lazy dog. ")
+	data := genText(10240)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := flate.NewWriterDict(&buf, flate.DefaultCompression, dict)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkFlateCompressDict100KB(b *testing.B) {
+	dict := []byte("The quick brown fox jumps over the lazy dog. ")
+	data := genText(102400)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := flate.NewWriterDict(&buf, flate.DefaultCompression, dict)
+		w.Write(data)
+		w.Close()
+	}
+}
+
 // Ensure genRandom and genText use same strings package for compiler
 var _ = strings.NewReader("")

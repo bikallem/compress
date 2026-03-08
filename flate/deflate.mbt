@@ -4,7 +4,12 @@ pub fn compress(
   data : Bytes,
   level? : CompressionLevel = DefaultCompression,
 ) -> Bytes raise CompressError {
-  compress_with_dict(data, Bytes::default(), level~)
+  let lvl = level.to_int()
+  guard lvl >= -2 && lvl <= 9 else { raise CompressError::InvalidLevel(lvl) }
+  if lvl == 0 {
+    return deflate_stored(data)
+  }
+  deflate_lz77(data, lvl)
 }
 
 ///|
@@ -19,7 +24,26 @@ pub fn compress_with_dict(
   if lvl == 0 {
     return deflate_stored(data)
   }
-  deflate_lz77(data, lvl)
+  if dict.length() == 0 {
+    return deflate_lz77(data, lvl, dict_len=0)
+  }
+  // Truncate dict to window size and prepend to data so LZ77 can
+  // reference dict bytes as if they were prior input
+  let window_size = 1 << 15 // 32KB
+  let dict_start = if dict.length() > window_size {
+    dict.length() - window_size
+  } else {
+    0
+  }
+  let effective_dict_len = dict.length() - dict_start
+  let combined = Bytes::makei(effective_dict_len + data.length(), fn(i) {
+    if i < effective_dict_len {
+      dict[dict_start + i]
+    } else {
+      data[i - effective_dict_len]
+    }
+  })
+  deflate_lz77(combined, lvl, dict_len=effective_dict_len)
 }
 
 ///|
@@ -150,21 +174,24 @@ let dist_encode_table : FixedArray[Int] = {
 
 ///|
 /// DEFLATE compression using LZ77 with optimal Huffman coding.
-fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
-  let w = BitWriter::new(size_hint=data.length())
-  if data.length() == 0 {
+/// dict_len is the number of prepended dictionary bytes in data to skip
+/// when emitting output (but use for hash/match references).
+fn deflate_lz77(data : Bytes, level : Int, dict_len? : Int = 0) -> Bytes {
+  let actual_len = data.length() - dict_len
+  let w = BitWriter::new(size_hint=actual_len)
+  if actual_len == 0 {
     w.start_fixed_block(true)
     w.write_fixed_symbol(END_BLOCK_MARKER)
     return w.finish()
   }
   if level <= 1 {
     // Single-pass: write fixed Huffman directly, no token collection
-    return deflate_fast_direct(data, w)
+    return deflate_fast_direct(data, w, dict_len~)
   }
   let tokens = if level <= 3 {
-    deflate_greedy_tokens(data, level)
+    deflate_greedy_tokens(data, level, dict_len~)
   } else {
-    deflate_lazy_tokens(data, level)
+    deflate_lazy_tokens(data, level, dict_len~)
   }
   w.write_dynamic_block(tokens, true)
   w.finish()
@@ -172,13 +199,28 @@ fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
 
 ///|
 /// Single-pass level 1: hash, match, and emit fixed Huffman codes in one pass.
-fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
+fn deflate_fast_direct(
+  data : Bytes,
+  w : BitWriter,
+  dict_len? : Int = 0,
+) -> Bytes {
   let data_len = data.length()
   let hash_size = 1 << 15
   let hash_mask = hash_size - 1
   let head = FixedArray::make(hash_size, -1)
+  // Seed hash table with dictionary positions
+  for di in 0..<dict_len {
+    if di + 3 < data_len {
+      let v = data.unsafe_read_uint32_le(di).reinterpret_as_int()
+      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+      head[h] = di
+    } else if di + 2 < data_len {
+      let h = hash4_slow(data, di) & hash_mask
+      head[h] = di
+    }
+  }
   w.start_fixed_block(true)
-  let mut i = 0
+  let mut i = dict_len
   while i < data_len {
     if i + 3 < data_len {
       let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
@@ -231,7 +273,11 @@ fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
 
 ///|
 /// Greedy encoder for levels 2-3: hash chains, take first good match.
-fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
+fn deflate_greedy_tokens(
+  data : Bytes,
+  level : Int,
+  dict_len? : Int = 0,
+) -> Array[Token] {
   let tokens : Array[Token] = []
   let data_len = data.length()
   let window_size = 1 << 15
@@ -241,7 +287,20 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
   let max_chain = if level == 2 { 8 } else { 16 }
   let head = FixedArray::make(hash_size, -1)
   let prev = FixedArray::make(window_size, -1)
-  let mut i = 0
+  // Seed hash table and chain with dictionary positions
+  for di in 0..<dict_len {
+    if di + 3 < data_len {
+      let v = data.unsafe_read_uint32_le(di).reinterpret_as_int()
+      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+      prev[di & window_mask] = head[h]
+      head[h] = di
+    } else if di + 2 < data_len {
+      let h = hash4_slow(data, di) & hash_mask
+      prev[di & window_mask] = head[h]
+      head[h] = di
+    }
+  }
+  let mut i = dict_len
   while i < data_len {
     if i + 3 < data_len {
       let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
@@ -298,7 +357,11 @@ fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
 
 ///|
 /// Lazy matching encoder for levels 4+: tries next position before committing.
-fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
+fn deflate_lazy_tokens(
+  data : Bytes,
+  level : Int,
+  dict_len? : Int = 0,
+) -> Array[Token] {
   let tokens : Array[Token] = []
   let data_len = data.length()
   let window_size = 1 << 15
@@ -315,7 +378,20 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
   }
   let head = FixedArray::make(hash_size, -1)
   let prev = FixedArray::make(window_size, -1)
-  let mut i = 0
+  // Seed hash table and chain with dictionary positions
+  for di in 0..<dict_len {
+    if di + 3 < data_len {
+      let v = data.unsafe_read_uint32_le(di).reinterpret_as_int()
+      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+      prev[di & window_mask] = head[h]
+      head[h] = di
+    } else if di + 2 < data_len {
+      let h = hash4_slow(data, di) & hash_mask
+      prev[di & window_mask] = head[h]
+      head[h] = di
+    }
+  }
+  let mut i = dict_len
   let mut prev_match_len = 0
   let mut prev_match_dist = 0
   let mut prev_literal : Byte = b'\x00'
