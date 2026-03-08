@@ -3,10 +3,10 @@
 pub fn pipe(reader : &Reader, writer : &Writer) -> Unit raise StreamError {
   while true {
     let chunk = reader.read()
+    writer.write(chunk)
     if chunk.is_empty() {
       break
     }
-    writer.write(chunk)
   }
 }
 
