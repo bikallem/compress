@@ -111,7 +111,6 @@ priv struct LzwEncoder {
   mut saved_code : Int
   mut bits : UInt
   mut n_bits : Int
-  scratch : FixedArray[Byte]
 }
 ```
 
@@ -119,20 +118,18 @@ Notes:
 
 - `table` is already fixed-size (`TABLE_SIZE = 16384`), so dictionary memory is constant.
 - `saved_code`, `bits`, and `n_bits` are the only cross-chunk carry state needed.
-- `scratch` is not an output buffer. It is only a reusable 1-byte view so the encoder can hand completed bytes to `Writer::write()` immediately.
 
-### 2. Encoder Emits Bytes Directly to the Writer
+### 2. Encoder Emits Bytes Directly via `write_byte()`
 
 Refactor `write_code()` so that it emits completed bytes as soon as they exist:
 
 ```moonbit
-fn LzwEncoder::emit_byte(
+async fn LzwEncoder::emit_byte(
   self : LzwEncoder,
   dst : &@io.Writer,
   b : Byte,
 ) -> Unit raise LzwError {
-  self.scratch[0] = b
-  dst.write(self.scratch[:1])
+  dst.write_byte(b)
 }
 ```
 
@@ -140,12 +137,12 @@ fn LzwEncoder::emit_byte(
 
 That satisfies the design constraint that `compress()` itself does not choose a buffering strategy. If the caller wants fewer downstream writes, they should pass a buffered writer implementation.
 
-### 3. Encoder Chunk Processing Stays Stateless With Respect to Input Ownership
+### 3. Encoder Processes One Input Byte At A Time
 
 ```moonbit
-async fn LzwEncoder::write_chunk(
+fn LzwEncoder::write_byte(
   self : LzwEncoder,
-  data : Bytes,
+  b : Byte,
   dst : &@io.Writer,
 ) -> Unit raise LzwError
 
@@ -156,13 +153,13 @@ async fn LzwEncoder::finish(
 ) -> Unit raise LzwError
 ```
 
-`write_chunk()` is almost the same algorithm as the existing `LzwCompressState::write()`:
+`write_byte()` is almost the same algorithm as the existing `LzwCompressState::write()` once that loop is viewed as one byte at a time:
 
-- on the first non-empty chunk, emit `clear`
-- update `saved_code` across chunk boundaries
+- on the first input byte, emit `clear`
+- update `saved_code` across byte boundaries
 - probe/insert into the fixed dictionary
 - emit codes as phrases close
-- never keep ownership of the caller's chunk beyond the call
+- never keep ownership of caller input beyond the current byte
 
 `finish()`:
 
@@ -179,15 +176,13 @@ The top-level streaming function becomes a simple transform driver:
 pub async fn compress(...) -> Unit raise LzwError {
   validate_lit_width_or_raise_format(...)
   let encoder = LzwEncoder::new(order, lit_width)
-  while true {
-    match src.read_some() {
-      Some(chunk) => encoder.write_chunk(chunk, dst)
-      None => {
-        encoder.finish(dst, forward_eod)
-        break
-      }
+  loop {
+    let b = src.read_byte() catch {
+      ReaderClosed => break
     }
+    encoder.write_byte(b, dst)
   }
+  encoder.finish(dst, forward_eod)
 }
 ```
 
@@ -206,6 +201,7 @@ This is the right ownership boundary:
 - keep only decoder tables, bit-reader residue, and bounded phrase/output scratch
 - never call `read_all()`
 - never accumulate the full decoded result before writing
+- obtain compressed input bytes with `read_byte()` as the bit reader needs them
 
 The decoder state can be derived from the current `LzwDecompressState`, but its output management needs to change:
 
@@ -256,38 +252,39 @@ That gives decompression the same boundary as compression:
 - the destination writer decides whether to batch, buffer, or forward immediately
 - codec memory stays bounded regardless of decoded size
 
-### 7. Decoder Chunk Processing Must Preserve Bit Residue Across Reads
+### 7. Decoder Reads Compressed Input With `read_byte()`
 
-The decoder needs one extra detail that compression does not: partial codes may straddle input chunk boundaries. So `decompress()` must carry `bits` and `n_bits` across `Reader::read()` calls and continue reading codes as bytes arrive.
+The decoder needs one extra detail that compression does not: partial codes may straddle byte boundaries. So the decoder should own a bit reader that pulls compressed bytes from `src.read_byte()` and carries only `bits` and `n_bits` between code reads.
 
 Recommended shape:
 
 ```moonbit
-async fn LzwDecoder::write_chunk(
+async fn LzwDecoder::read_code(
   self : LzwDecoder,
-  data : Bytes,
-  dst : &@io.Writer,
-) -> Unit raise LzwError
+  src : &@io.Reader,
+) -> Int raise LzwError
 
-async fn LzwDecoder::finish(
+async fn LzwDecoder::run(
   self : LzwDecoder,
+  src : &@io.Reader,
   dst : &@io.Writer,
   forward_eod : Bool,
 ) -> Unit raise LzwError
 ```
 
-`write_chunk()`:
+`read_code()`:
 
-- consumes as many full codes as exist in the current input plus carried residue
-- calls the existing code-processing logic
+- calls `src.read_byte()` until enough bits are available for the next code
+- preserves any partial-code residue in `bits`/`n_bits` between calls
+- raises `UnexpectedEOF` if the compressed stream ends before enough bits exist for a required code
+
+`run()`:
+
+- repeatedly calls `read_code()`
+- feeds the existing code-processing logic
 - flushes bounded decoded output to `dst` as scratch fills
-- preserves any partial-code residue in `bits`/`n_bits` for the next reader chunk
-
-`finish()`:
-
 - verifies that the decoder reached `eof`
 - flushes any remaining decoded bytes
-- raises `UnexpectedEOF` if the compressed stream ends before a full valid terminator sequence
 - optionally forwards the empty end-of-data marker to `dst`
 
 ### 8. `decompress()` Is Also Just a Reader/Writer Loop
@@ -296,15 +293,7 @@ async fn LzwDecoder::finish(
 pub async fn decompress(...) -> Unit raise LzwError {
   validate_lit_width_or_raise_format(...)
   let decoder = LzwDecoder::new(order, lit_width)
-  while true {
-    match src.read_some() {
-      Some(chunk) => decoder.write_chunk(chunk, dst)
-      None => {
-        decoder.finish(dst, forward_eod)
-        break
-      }
-    }
-  }
+  decoder.run(src, dst, forward_eod)
 }
 ```
 
@@ -349,7 +338,6 @@ For compression, heap use is bounded by:
 
 - dictionary/hash table: `TABLE_SIZE * sizeof(UInt)`
 - encoder scalar state: `width`, `hi`, `saved_code`, `bits`, `n_bits`
-- 1-byte scratch view for `Writer::write()`
 
 No term scales with input size.
 
@@ -361,7 +349,7 @@ For decompression, heap use is bounded by:
 
 Again, no term scales with the total input size or total decoded size.
 
-The current code already proves the algorithm does not need the whole input: compression only needs the current phrase (`saved_code`) and the fixed dictionary; decompression only needs the decoder tables, bit residue, and bounded phrase scratch. The existing `@buffer.Buffer`, `read_all()`, and whole-output accumulation are API artifacts, not algorithm requirements.
+The current code already proves the algorithm does not need the whole input: compression only needs the current phrase (`saved_code`) and the fixed dictionary; decompression only needs the decoder tables, bit residue, and bounded phrase scratch. The existing `@buffer.Buffer`, `read_all()`, whole-output accumulation, and one-byte wrapper scratch are API artifacts, not algorithm requirements.
 
 ## Important Performance Consequence
 
@@ -384,10 +372,10 @@ This keeps the LZW redesign focused on codec errors instead of reintroducing a s
 
 ## Migration Plan
 
-1. Add `LzwEncoder` and move the current compression logic into `write_chunk()` and `finish()`.
+1. Add `LzwEncoder` and move the current compression logic into `write_byte()` and `finish()`.
 2. Introduce streaming `compress(src, dst, ...)` as the new primary entrypoint.
 3. Rename the current bytes API to `compress_bytes()`.
-4. Add `LzwDecoder` and move the current decompression logic into `write_chunk()` and `finish()`.
+4. Add `LzwDecoder` and move the current decompression logic into `read_code()` and `run()`.
 5. Introduce streaming `decompress(src, dst, ...)` and rename the current bytes API to `decompress_bytes()`.
 6. Replace the current whole-output decompression path with direct writes to `dst`.
 7. Delete `lzw/lzw_writer.mbt` and `lzw/lzw_reader.mbt` from the final API surface.
@@ -398,10 +386,11 @@ This keeps the LZW redesign focused on codec errors instead of reintroducing a s
 - compress round-trip with chunk boundaries at every byte position
 - end-to-end compression using `@io.Reader` / `@io.Writer` pairs
 - verify that `compress(src, dst, ...)` produces output incrementally instead of waiting for full input materialization
+- verify that encoder output uses `write_byte()` directly with no one-byte wrapper buffer
 - decompress round-trip with compressed input split at every byte position
 - end-to-end decompression using `@io.Reader` / `@io.Writer` pairs
 - verify that `decompress(src, dst, ...)` forwards decoded bytes before end-of-input
-- reader-side partial-code boundary tests for both `LSB` and `MSB`
+- `read_byte()`-driven partial-code boundary tests for both `LSB` and `MSB`
 - decompressor `UnexpectedEOF` behavior when the final code is truncated across chunk boundaries
 - writer error propagation from the middle of code emission
 - writer error propagation from the middle of decoded output flush

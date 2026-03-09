@@ -46,12 +46,14 @@ moonbitlang/async (already exists):
 ```moonbit
 pub(open) trait Reader {
   async read(Self, FixedArray[Byte], offset? : Int, max_len? : Int) -> Int
+  async read_byte(Self) -> Byte raise ReaderClosed
   async read_exactly(Self, Int) -> Bytes raise ReaderClosed
   async read_some(Self, max_len? : Int) -> Bytes?
   async read_all(Self) -> &Data
 }
 
 pub(open) trait Writer {
+  async write_byte(Self, Byte) -> Unit
   async write_once(Self, Bytes, offset~ : Int, len~ : Int) -> Int
   async write(Self, &Data) -> Unit
 }
@@ -99,7 +101,7 @@ Go reuses compressor/decompressor state via `Reset()`. In MoonBit, create a fres
 
 | Go | MoonBit |
 |----|---------|
-| `io.EOF` | `read_some()` returns `None` / `read_exactly()` raises `ReaderClosed` |
+| `io.EOF` | `read_some()` returns `None` / `read_byte()` or `read_exactly()` raises `ReaderClosed` |
 | `io.ErrUnexpectedEOF` | `raise CompressError::UnexpectedEOF` |
 | `flate.CorruptInputError` | `raise CompressError::CorruptInput(msg)` |
 | `gzip.ErrChecksum` | `raise CompressError::ChecksumMismatch(expected~, got~)` |
