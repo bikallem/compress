@@ -16,7 +16,7 @@ pub fn BytesWriter::content(self : BytesWriter) -> Bytes {
 }
 
 ///|
-pub fn BytesWriter::ensure_space(self : BytesWriter, len : Int) -> Unit {
+fn BytesWriter::ensure_space(self : BytesWriter, len : Int) -> Unit {
   let buf_len = self.buf.length()
   let need = self.data_len + len
   if need > buf_len {
