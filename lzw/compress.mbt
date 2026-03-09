@@ -12,11 +12,12 @@ pub async fn compress(
     raise LzwError::InvalidLitWidth(lit_width)
   }
   let enc = LzwEncoder::new(order, lit_width)
+  let reader = BufReader::new(src)
   // Send clear code
   let clear = 1 << lit_width
   enc.write_code(clear)
   // Read first byte
-  let first = read_byte(src) catch {
+  let first = reader.read_byte() catch {
     _ => {
       // Empty input — emit EOF and flush
       enc.write_code(clear + 1)
@@ -28,7 +29,7 @@ pub async fn compress(
   enc.saved_code = first.to_int()
   // Process remaining bytes
   while true {
-    let b = read_byte(src) catch { _ => break }
+    let b = reader.read_byte() catch { _ => break }
     enc.process_byte(b)
     // Periodically flush buffer to writer to bound memory
     if enc.buf.length() >= 8192 {

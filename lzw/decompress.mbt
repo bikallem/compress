@@ -12,10 +12,11 @@ pub async fn decompress(
     raise LzwError::InvalidLitWidth(lit_width)
   }
   let dec = LzwDecoder::new(order, lit_width)
+  let reader = BufReader::new(src)
   while true {
     // Read code
     while dec.n_bits < dec.width {
-      let b = read_byte(src)
+      let b = reader.read_byte()
       dec.feed_byte(b)
     }
     let code = dec.extract_code()

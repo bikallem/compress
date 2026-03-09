@@ -1,13 +1,35 @@
 ///|
-/// Reads a single byte from an async io.Reader.
-/// Raises LzwError::UnexpectedEOF on end of stream.
-async fn read_byte(src : &@io.Reader) -> Byte raise LzwError {
-  let buf : FixedArray[Byte] = [0]
-  let n = src.read(buf, max_len=1) catch { _ => raise LzwError::UnexpectedEOF }
-  if n == 0 {
-    raise LzwError::UnexpectedEOF
+const READ_BUF_SIZE = 65536
+
+///|
+/// Buffered byte reader wrapping an async @io.Reader.
+/// Amortizes read() calls by reading chunks.
+priv struct BufReader {
+  src : &@io.Reader
+  buf : FixedArray[Byte]
+  mut pos : Int
+  mut len : Int
+}
+
+///|
+fn BufReader::new(src : &@io.Reader) -> BufReader {
+  { src, buf: FixedArray::make(READ_BUF_SIZE, b'\x00'), pos: 0, len: 0 }
+}
+
+///|
+/// Reads a single byte, refilling the buffer as needed.
+async fn BufReader::read_byte(self : BufReader) -> Byte raise LzwError {
+  if self.pos >= self.len {
+    let n = self.src.read(self.buf) catch { _ => raise LzwError::UnexpectedEOF }
+    if n == 0 {
+      raise LzwError::UnexpectedEOF
+    }
+    self.pos = 0
+    self.len = n
   }
-  buf[0]
+  let b = self.buf[self.pos]
+  self.pos += 1
+  b
 }
 
 ///|
