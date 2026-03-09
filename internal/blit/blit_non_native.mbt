@@ -1,4 +1,6 @@
 ///|
+/// Copy `length` bytes between FixedArray[Byte] buffers.
+/// Safe for overlapping regions within the same array.
 pub fn blit_fixed_array(
   dst : FixedArray[Byte],
   dst_offset : Int,
@@ -10,6 +12,7 @@ pub fn blit_fixed_array(
 }
 
 ///|
+/// Copy `length` bytes from `src` (Bytes) at `src_offset` into `dst` (FixedArray) at `dst_offset`.
 pub fn blit_bytes(
   dst : FixedArray[Byte],
   dst_offset : Int,
@@ -21,6 +24,7 @@ pub fn blit_bytes(
 }
 
 ///|
+/// Fill `length` bytes in `dst` starting at `dst_offset` with `value`.
 pub fn fill_bytes(
   dst : FixedArray[Byte],
   dst_offset : Int,
@@ -34,6 +38,8 @@ pub fn fill_bytes(
 }
 
 ///|
+/// Allocate a FixedArray[Byte] without zeroing memory.
+/// The caller MUST fully initialize the buffer before reading from it.
 pub fn make_uninit(len : Int) -> FixedArray[Byte] {
   FixedArray::make(len, b'\x00')
 }

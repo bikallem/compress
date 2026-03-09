@@ -11,6 +11,8 @@ pub extern "c" fn blit_fixed_array(
 ) -> Unit = "bikallem_compress_internal_blit_blit_fixed_array"
 
 ///|
+/// Copy `length` bytes from `src` (Bytes) at `src_offset` into `dst` (FixedArray) at `dst_offset`.
+/// Uses memmove on native backend, safe for overlapping regions.
 #borrow(dst, src)
 pub extern "c" fn blit_bytes(
   dst : FixedArray[Byte],
