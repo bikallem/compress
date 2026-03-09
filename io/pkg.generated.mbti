@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/io"
+
+// Values
+
+// Errors
+pub(all) suberror StreamError {
+  UnexpectedEod
+  Format(String)
+  Io(String)
+}
+pub impl Show for StreamError
+
+// Types and methods
+type BytesReader
+pub fn BytesReader::new(Bytes, slice_length? : Int) -> Self
+pub impl Reader for BytesReader
+
+type BytesWriter
+pub fn BytesWriter::content(Self) -> Bytes
+pub fn BytesWriter::new(size_hint? : Int) -> Self
+pub impl Writer for BytesWriter
+
+// Type aliases
+
+// Traits
+pub(open) trait Reader {
+  async read(Self) -> BytesView raise StreamError
+}
+
+pub(open) trait Writer {
+  async write(Self, BytesView) -> Unit raise StreamError
+}
+
