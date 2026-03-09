@@ -18,6 +18,7 @@ pub impl Reader for BytesReader
 
 type BytesWriter
 pub fn BytesWriter::content(Self) -> Bytes
+pub fn BytesWriter::ensure_space(Self, Int) -> Unit
 pub fn BytesWriter::new(size_hint? : Int) -> Self
 pub impl Writer for BytesWriter
 
@@ -26,9 +27,11 @@ pub impl Writer for BytesWriter
 // Traits
 pub(open) trait Reader {
   async read(Self) -> BytesView raise IoError
+  async read_byte(Self) -> Byte raise IoError
 }
 
 pub(open) trait Writer {
   async write(Self, BytesView) -> Unit raise IoError
+  async write_byte(Self, Byte) -> Unit raise IoError
 }
 

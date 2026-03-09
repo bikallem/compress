@@ -24,6 +24,7 @@ pub impl Show for IoError with output(self, logger) {
 /// An empty `BytesView` (length 0) signals end of data.
 pub(open) trait Reader {
   async read(Self) -> BytesView raise IoError
+  async read_byte(Self) -> Byte raise IoError
 }
 
 ///|

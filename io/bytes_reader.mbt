@@ -32,3 +32,11 @@ pub impl Reader for BytesReader with read(self) -> BytesView {
   self.offset += n
   view
 }
+
+///|
+pub impl Reader for BytesReader with read_byte(self) -> Byte {
+  guard self.offset < self.data.length() else { raise UnexpectedEod }
+  let b = self.data[self.offset]
+  self.offset += 1
+  b
+}

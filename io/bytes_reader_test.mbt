@@ -37,3 +37,29 @@ async test "BytesReader chunks never exceed slice_length" {
     assert_true(chunk.length() <= slice_length)
   }
 }
+
+///|
+async test "BytesReader.read_byte reads sequential bytes" {
+  let reader = @io.BytesReader::new(b"abc", slice_length=2)
+  assert_eq(reader.read_byte(), b'a')
+  assert_eq(reader.read_byte(), b'b')
+  assert_eq(reader.read_byte(), b'c')
+}
+
+///|
+async test "BytesReader.read_byte interops with read" {
+  let reader = @io.BytesReader::new(b"abcd", slice_length=2)
+  assert_eq(reader.read_byte(), b'a')
+  assert_eq(reader.read(), b"bc"[:])
+  assert_eq(reader.read_byte(), b'd')
+  assert_true(reader.read().is_empty())
+}
+
+///|
+async test "BytesReader.read_byte raises at eof" {
+  let reader = @io.BytesReader::new(b"a")
+  assert_eq(reader.read_byte(), b'a')
+  let result : Result[Byte, Error] = try? reader.read_byte()
+  guard result is Err(err) else { fail("expected eof error") }
+  assert_eq(err.to_string(), "IoError: unexpected end of data")
+}
