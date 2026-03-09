@@ -87,7 +87,13 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
       dst_pos += dist
     }
     if dst_pos < dst_end {
-      @blit.blit_fixed_array(hist, dst_pos, hist, dst_pos - dist, dst_end - dst_pos)
+      @blit.blit_fixed_array(
+        hist,
+        dst_pos,
+        hist,
+        dst_pos - dist,
+        dst_end - dst_pos,
+      )
     }
   } else {
     // General case: byte-at-a-time with wrap handling

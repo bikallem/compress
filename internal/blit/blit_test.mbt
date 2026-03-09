@@ -11,10 +11,7 @@ test "blit_fixed_array with offsets" {
   let src : FixedArray[Byte] = [b'a', b'b', b'c', b'd', b'e']
   let dst : FixedArray[Byte] = FixedArray::make(5, b'\x00')
   @blit.blit_fixed_array(dst, 1, src, 2, 3)
-  inspect(
-    dst,
-    content="[b'\\x00', b'\\x63', b'\\x64', b'\\x65', b'\\x00']",
-  )
+  inspect(dst, content="[b'\\x00', b'\\x63', b'\\x64', b'\\x65', b'\\x00']")
 }
 
 ///|
@@ -66,4 +63,36 @@ test "make_uninit returns array of correct length" {
 test "make_uninit zero length" {
   let arr = @blit.make_uninit(0)
   assert_eq(arr.length(), 0)
+}
+
+///|
+test "blit_bytesview copies bytes correctly" {
+  let src : Bytes = b"abcde"
+  let dst : FixedArray[Byte] = FixedArray::make(5, b'\x00')
+  @blit.blit_bytesview(dst, 0, src[:], 0, 5)
+  inspect(dst, content="[b'\\x61', b'\\x62', b'\\x63', b'\\x64', b'\\x65']")
+}
+
+///|
+test "blit_bytesview with offsets" {
+  let src : Bytes = b"abcde"
+  let dst : FixedArray[Byte] = FixedArray::make(5, b'\x00')
+  @blit.blit_bytesview(dst, 1, src[:], 2, 3)
+  inspect(dst, content="[b'\\x00', b'\\x63', b'\\x64', b'\\x65', b'\\x00']")
+}
+
+///|
+test "blit_bytesview with src_offset into view" {
+  let src : Bytes = b"abcde"
+  let dst : FixedArray[Byte] = FixedArray::make(3, b'\x00')
+  @blit.blit_bytesview(dst, 0, src[:], 2, 3)
+  inspect(dst, content="[b'\\x63', b'\\x64', b'\\x65']")
+}
+
+///|
+test "blit_bytesview zero length is no-op" {
+  let src : Bytes = b"ab"
+  let dst : FixedArray[Byte] = FixedArray::make(2, b'\x00')
+  @blit.blit_bytesview(dst, 0, src[:], 0, 0)
+  inspect(dst, content="[b'\\x00', b'\\x00']")
 }

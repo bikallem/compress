@@ -37,7 +37,13 @@ pub impl Writer for BytesWriter with write(self, data_chunk) {
   }
   let chunk_len = data_chunk.length()
   self.ensure_space(chunk_len)
-  @blit.blit_fixed_array(self.buf, self.data_len, data_chunk.to_fixedarray(), 0, 10)
+  @blit.blit_fixed_array(
+    self.buf,
+    self.data_len,
+    data_chunk.to_fixedarray(),
+    0,
+    10,
+  )
   self.buf.blit_from_bytesview(self.data_len, data_chunk)
   self.data_len += chunk_len
 }

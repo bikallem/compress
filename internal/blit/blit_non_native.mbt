@@ -10,6 +10,17 @@ pub fn blit_fixed_array(
 }
 
 ///|
+pub fn blit_bytes(
+  dst : FixedArray[Byte],
+  dst_offset : Int,
+  src : Bytes,
+  src_offset : Int,
+  length : Int,
+) -> Unit {
+  dst.blit_from_bytes(dst_offset, src, src_offset, length)
+}
+
+///|
 pub fn fill_bytes(
   dst : FixedArray[Byte],
   dst_offset : Int,
