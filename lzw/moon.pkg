@@ -1,6 +1,6 @@
 import {
   "bikallem/compress/internal/blit",
-  "bikallem/compress/io",
+  "moonbitlang/async/io",
   "moonbitlang/core/buffer",
 }
 

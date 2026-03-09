@@ -224,14 +224,33 @@ test "compress round-trip all 0xFF LSB 8" {
 ///|
 async test "streaming compress/decompress round-trip" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
-  let src = @io.BytesReader::new(original)
-  let compressed_dst = @io.BytesWriter::new()
-  @lzw.compress(src, compressed_dst, LSB)
-  let compressed = compressed_dst.content()
-  let src2 = @io.BytesReader::new(compressed)
-  let decompressed_dst = @io.BytesWriter::new()
-  @lzw.decompress(src2, decompressed_dst, LSB)
-  assert_eq(decompressed_dst.content(), original)
+  // Compress: feed original through pipe, collect compressed output
+  let (compress_src_r, compress_src_w) = @io.pipe()
+  let (compress_dst_r, compress_dst_w) = @io.pipe()
+  @async.with_task_group(root => {
+    root.spawn_bg(() => {
+      compress_src_w.write(original)
+      compress_src_w.close()
+    })
+    root.spawn_bg(() => {
+      @lzw.compress(compress_src_r, compress_dst_w, LSB)
+      compress_dst_w.close()
+    })
+    let compressed = compress_dst_r.read_all().binary()
+    // Decompress
+    let (decompress_src_r, decompress_src_w) = @io.pipe()
+    let (decompress_dst_r, decompress_dst_w) = @io.pipe()
+    root.spawn_bg(() => {
+      decompress_src_w.write(compressed)
+      decompress_src_w.close()
+    })
+    root.spawn_bg(() => {
+      @lzw.decompress(decompress_src_r, decompress_dst_w, LSB)
+      decompress_dst_w.close()
+    })
+    let restored = decompress_dst_r.read_all().binary()
+    assert_eq(restored, original)
+  })
 }
 
 ///|

@@ -1,7 +1,7 @@
 import {
-  "bikallem/compress/io" @lzwio,
   "bikallem/compress/lzw" @lzwlib,
   "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
   "moonbitlang/core/buffer",
 }
 

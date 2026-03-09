@@ -16,27 +16,27 @@ pub async fn compress(
   let clear = 1 << lit_width
   enc.write_code(clear)
   // Read first byte
-  let first = src.read_byte() catch {
+  let first = read_byte(src) catch {
     _ => {
       // Empty input — emit EOF and flush
       enc.write_code(clear + 1)
       enc.flush_remaining_bits()
-      enc.flush_to_writer(dst)
+      flush_buffer(dst, enc.buf)
       return
     }
   }
   enc.saved_code = first.to_int()
   // Process remaining bytes
   while true {
-    let b = src.read_byte() catch { _ => break }
+    let b = read_byte(src) catch { _ => break }
     enc.process_byte(b)
     // Periodically flush buffer to writer to bound memory
     if enc.buf.length() >= 8192 {
-      enc.flush_to_writer(dst)
+      flush_buffer(dst, enc.buf)
     }
   }
   enc.close()
-  enc.flush_to_writer(dst)
+  flush_buffer(dst, enc.buf)
 }
 
 ///|
@@ -239,19 +239,4 @@ fn LzwEncoder::close(self : LzwEncoder) -> Unit {
   let eof = (1 << self.lit_width) + 1
   self.write_code(eof)
   self.flush_remaining_bits()
-}
-
-///|
-/// Flushes the internal buffer to an async writer, then resets the buffer.
-async fn LzwEncoder::flush_to_writer(
-  self : LzwEncoder,
-  dst : &@io.Writer,
-) -> Unit raise LzwError {
-  let bytes = self.buf.to_bytes()
-  if bytes.length() > 0 {
-    dst.write(bytes[:]) catch {
-      _ => raise LzwError::InvalidCode("write error")
-    }
-    self.buf.reset()
-  }
 }

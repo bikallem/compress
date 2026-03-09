@@ -15,7 +15,7 @@ pub async fn decompress(
   while true {
     // Read code
     while dec.n_bits < dec.width {
-      let b = src.read_byte() catch { _ => raise LzwError::UnexpectedEOF }
+      let b = read_byte(src)
       dec.feed_byte(b)
     }
     let code = dec.extract_code()
@@ -25,11 +25,13 @@ pub async fn decompress(
     }
     // Flush output to writer when buffer is full
     if dec.o > 0 {
-      dec.flush_to_writer(dst)
+      dec.flush_output()
+      flush_buffer(dst, dec.flush_buf)
     }
   }
   // Final flush
-  dec.flush_to_writer(dst)
+  dec.flush_output()
+  flush_buffer(dst, dec.flush_buf)
 }
 
 ///|
@@ -208,23 +210,6 @@ fn LzwDecoder::flush_output(self : LzwDecoder) -> Unit {
       self.flush_buf.write_byte(self.output[i])
     }
     self.o = 0
-  }
-}
-
-///|
-/// Flushes the accumulated output to an async writer, then resets.
-async fn LzwDecoder::flush_to_writer(
-  self : LzwDecoder,
-  dst : &@io.Writer,
-) -> Unit raise LzwError {
-  // First flush any pending output scratch
-  self.flush_output()
-  if self.flush_buf.length() > 0 {
-    let bytes = self.flush_buf.to_bytes()
-    dst.write(bytes[:]) catch {
-      _ => raise LzwError::InvalidCode("write error")
-    }
-    self.flush_buf.reset()
   }
 }
 
