@@ -6,7 +6,6 @@ package "bikallem/compress/io"
 // Errors
 pub(all) suberror IoError {
   UnexpectedEod
-  Format(String)
   Io(String)
 }
 pub impl Show for IoError
