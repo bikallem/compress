@@ -1,18 +1,18 @@
 ///|
 /// Errors that can occur during stream operations.
-pub(all) suberror StreamError {
+pub(all) suberror IoError {
   UnexpectedEod
   Format(String)
   Io(String)
 }
 
 ///|
-pub impl Show for StreamError with output(self, logger) {
+///a
+pub impl Show for IoError with output(self, logger) {
   match self {
-    UnexpectedEod => logger.write_string("StreamError: unexpected end of data")
-    Format(message) =>
-      logger.write_string("StreamError: format error: \{message}")
-    Io(message) => logger.write_string("StreamError: io error: \{message}")
+    UnexpectedEod => logger.write_string("IoError: unexpected end of data")
+    Format(message) => logger.write_string("IoError: format error: \{message}")
+    Io(message) => logger.write_string("IoError: io error: \{message}")
   }
 }
 
@@ -23,7 +23,7 @@ pub impl Show for StreamError with output(self, logger) {
 /// is only valid until the next `read()` call (borrow-invalidate pattern).
 /// An empty `BytesView` (length 0) signals end of data.
 pub(open) trait Reader {
-  async read(Self) -> BytesView raise StreamError
+  async read(Self) -> BytesView raise IoError
 }
 
 ///|
@@ -32,5 +32,5 @@ pub(open) trait Reader {
 /// `write()` accepts a `BytesView` of data to process.
 /// An empty `BytesView` (length 0) signals end of data.
 pub(open) trait Writer {
-  async write(Self, BytesView) -> Unit raise StreamError
+  async write(Self, BytesView) -> Unit raise IoError
 }

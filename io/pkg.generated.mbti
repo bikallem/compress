@@ -4,12 +4,12 @@ package "bikallem/compress/io"
 // Values
 
 // Errors
-pub(all) suberror StreamError {
+pub(all) suberror IoError {
   UnexpectedEod
   Format(String)
   Io(String)
 }
-pub impl Show for StreamError
+pub impl Show for IoError
 
 // Types and methods
 type BytesReader
@@ -25,10 +25,10 @@ pub impl Writer for BytesWriter
 
 // Traits
 pub(open) trait Reader {
-  async read(Self) -> BytesView raise StreamError
+  async read(Self) -> BytesView raise IoError
 }
 
 pub(open) trait Writer {
-  async write(Self, BytesView) -> Unit raise StreamError
+  async write(Self, BytesView) -> Unit raise IoError
 }
 
