@@ -1,39 +1,50 @@
 ///|
-/// Decompresses LZW-encoded data.
-/// `order` specifies the bit packing order (LSB for GIF, MSB for TIFF/PDF).
-/// `lit_width` is the literal code width in bits (typically 8, range [2, 8]).
-pub fn decompress(
-  data : Bytes,
+/// Decompresses an LZW stream from `src` into `dst`.
+pub async fn decompress(
+  src : &@io.Reader,
+  dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int,
-) -> Bytes raise LzwError {
-  guard lit_width >= 2 && lit_width <= 8 else {
-    raise LzwError::InvalidLitWidth(lit_width)
-  }
-  match order {
-    LSB => decompress_lsb(data, lit_width)
-    MSB => decompress_msb(data, lit_width)
+) -> Unit raise LzwError {
+  validate_lit_width(lit_width)
+  let state = LzwDecompressState::new(lit_width)
+  while true {
+    let code = state.read_code(src, order)
+    if state.process_code(dst, code) {
+      return
+    }
   }
 }
 
 ///|
-/// Internal LZW decompression state machine.
+/// Convenience wrapper for in-memory decompression.
+pub async fn decompress_bytes(
+  data : Bytes,
+  order : BitOrder,
+  lit_width : Int,
+) -> Bytes raise LzwError {
+  let src = @ibytes.BytesReader::new(data)
+  let dst = @ibytes.BytesWriter::new()
+  decompress(src, dst, order, lit_width)
+  dst.content()
+}
+
+///|
 priv struct LzwDecompressState {
   lit_width : Int
   clear : Int
   eof : Int
   suffix : FixedArray[Byte]
   prefix : FixedArray[Int]
-  output : FixedArray[Byte]
+  stack : FixedArray[Byte]
+  in_scratch : FixedArray[Byte]
+  out_scratch : FixedArray[Byte]
   mut width : Int
   mut hi : Int
   mut overflow : Int
   mut last : Int
-  mut o : Int
-  // Bit reading state (initial values; locals used in hot loop)
-  bits : UInt
-  n_bits : Int
-  pos : Int
+  mut bits : UInt
+  mut n_bits : Int
 }
 
 ///|
@@ -47,95 +58,37 @@ fn LzwDecompressState::new(lit_width : Int) -> LzwDecompressState {
     eof,
     suffix: FixedArray::make(1 << MAX_WIDTH, b'\x00'),
     prefix: FixedArray::make(1 << MAX_WIDTH, 0),
-    output: FixedArray::make(2 * (1 << MAX_WIDTH), b'\x00'),
+    stack: FixedArray::make(1 << MAX_WIDTH, b'\x00'),
+    in_scratch: FixedArray::make(1, b'\x00'),
+    out_scratch: FixedArray::make(1, b'\x00'),
     width,
     hi: eof,
     overflow: 1 << width,
     last: DECODER_INVALID_CODE,
-    o: 0,
     bits: 0U,
     n_bits: 0,
-    pos: 0,
   }
 }
 
 ///|
-/// Flush output buffer to result.
-fn LzwDecompressState::flush(
+async fn LzwDecompressState::emit_byte(
   self : LzwDecompressState,
-  result : OutputBuffer,
-) -> Unit {
-  if self.o > 0 {
-    result.write_fixed(self.output, 0, self.o)
-  }
-  self.o = 0
+  dst : &@io.Writer,
+  byte : Byte,
+) -> Unit raise LzwError {
+  write_one_byte(dst, self.out_scratch, byte)
 }
 
 ///|
-/// Process a decoded code and update dictionary.
-fn LzwDecompressState::process_code(
-  self : LzwDecompressState,
-  code : Int,
-  result : OutputBuffer,
-) -> Bool raise LzwError {
-  let output = self.output
-  let suffix = self.suffix
-  let prefix = self.prefix
-  let clear = self.clear
-  // Safety: all indices are bounded by LZW state machine invariants:
-  // - codes < 1<<MAX_WIDTH (table size)
-  // - self.o < 2*(1<<MAX_WIDTH) (output buffer, flushed at 1<<MAX_WIDTH)
-  // - self.hi < 1<<MAX_WIDTH (table high water mark)
-  if code < clear {
-    // Literal code
-    output.unsafe_set(self.o, code.to_byte())
-    self.o += 1
-    if self.last != DECODER_INVALID_CODE {
-      suffix.unsafe_set(self.hi, code.to_byte())
-      prefix.unsafe_set(self.hi, self.last)
-    }
-  } else if code == clear {
-    self.width = 1 + self.lit_width
-    self.hi = self.eof
-    self.overflow = 1 << self.width
-    self.last = DECODER_INVALID_CODE
-    return false
-  } else if code == self.eof {
-    self.flush(result)
-    return true
-  } else if code <= self.hi {
-    let mut c = code
-    let out_len = output.length()
-    let mut i = out_len - 1
-    if code == self.hi && self.last != DECODER_INVALID_CODE {
-      c = self.last
-      while c >= clear {
-        c = prefix.unsafe_get(c)
-      }
-      output.unsafe_set(i, c.to_byte())
-      i -= 1
-      c = self.last
-    }
-    while c >= clear {
-      output.unsafe_set(i, suffix.unsafe_get(c))
-      i -= 1
-      c = prefix.unsafe_get(c)
-    }
-    output.unsafe_set(i, c.to_byte())
-    let decoded_len = out_len - i
-    // Copy decoded bytes — use unsafe_blit for bulk copy
-    if self.o != i {
-      @blit.blit_fixed_array(output, self.o, output, i, decoded_len)
-    }
-    self.o += decoded_len
-    if self.last != DECODER_INVALID_CODE {
-      suffix.unsafe_set(self.hi, c.to_byte())
-      prefix.unsafe_set(self.hi, self.last)
-    }
-  } else {
-    raise LzwError::InvalidCode("lzw: invalid code \{code}")
-  }
-  self.last = code
+fn LzwDecompressState::reset(self : LzwDecompressState) -> Unit {
+  self.width = 1 + self.lit_width
+  self.hi = self.eof
+  self.overflow = 1 << self.width
+  self.last = DECODER_INVALID_CODE
+}
+
+///|
+fn LzwDecompressState::advance_hi(self : LzwDecompressState) -> Unit {
   self.hi += 1
   if self.hi >= self.overflow {
     if self.hi > self.overflow {
@@ -149,68 +102,112 @@ fn LzwDecompressState::process_code(
       self.overflow = 1 << self.width
     }
   }
-  if self.o >= 1 << MAX_WIDTH {
-    self.flush(result)
+}
+
+///|
+fn LzwDecompressState::first_literal(
+  self : LzwDecompressState,
+  code : Int,
+) -> Byte {
+  let mut current = code
+  while current >= self.clear {
+    current = self.prefix.unsafe_get(current)
   }
+  current.to_byte()
+}
+
+///|
+async fn LzwDecompressState::read_code(
+  self : LzwDecompressState,
+  src : &@io.Reader,
+  order : BitOrder,
+) -> Int raise LzwError {
+  while self.n_bits < self.width {
+    match read_one_byte(src, self.in_scratch) {
+      Some(byte) => {
+        match order {
+          LSB => self.bits = self.bits | (byte.to_uint() << self.n_bits)
+          MSB => self.bits = self.bits | (byte.to_uint() << (24 - self.n_bits))
+        }
+        self.n_bits += 8
+      }
+      None => raise LzwError::UnexpectedEOF
+    }
+  }
+  match order {
+    LSB => {
+      let mask = (1U << self.width) - 1U
+      let code = (self.bits & mask).reinterpret_as_int()
+      self.bits = self.bits >> self.width
+      self.n_bits -= self.width
+      code
+    }
+    MSB => {
+      let code = (self.bits >> (32 - self.width)).reinterpret_as_int()
+      self.bits = self.bits << self.width
+      self.n_bits -= self.width
+      code
+    }
+  }
+}
+
+///|
+async fn LzwDecompressState::flush_stack(
+  self : LzwDecompressState,
+  dst : &@io.Writer,
+  start : Int,
+) -> Unit raise LzwError {
+  for i in start..<self.stack.length() {
+    self.emit_byte(dst, self.stack.unsafe_get(i))
+  }
+}
+
+///|
+async fn LzwDecompressState::process_code(
+  self : LzwDecompressState,
+  dst : &@io.Writer,
+  code : Int,
+) -> Bool raise LzwError {
+  if code < self.clear {
+    self.emit_byte(dst, code.to_byte())
+    if self.last != DECODER_INVALID_CODE {
+      self.suffix.unsafe_set(self.hi, code.to_byte())
+      self.prefix.unsafe_set(self.hi, self.last)
+    }
+    self.last = code
+    self.advance_hi()
+    return false
+  }
+  if code == self.clear {
+    self.reset()
+    return false
+  }
+  if code == self.eof {
+    return true
+  }
+  if code > self.hi || self.last == DECODER_INVALID_CODE {
+    raise LzwError::InvalidCode("lzw: invalid code \{code}")
+  }
+  let incode = code
+  let mut current = code
+  let mut top = self.stack.length()
+  if code == self.hi {
+    top -= 1
+    self.stack.unsafe_set(top, self.first_literal(self.last))
+    current = self.last
+  }
+  while current >= self.clear {
+    top -= 1
+    self.stack.unsafe_set(top, self.suffix.unsafe_get(current))
+    current = self.prefix.unsafe_get(current)
+  }
+  let first = current.to_byte()
+  top -= 1
+  self.stack.unsafe_set(top, first)
+  self.flush_stack(dst, top)
+  self.suffix.unsafe_set(self.hi, first)
+  self.prefix.unsafe_set(self.hi, self.last)
+  self.last = incode
+  self.advance_hi()
   false
-}
-
-///|
-/// LSB-specific decompression — avoids match on order in hot loop.
-fn decompress_lsb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
-  let state = LzwDecompressState::new(lit_width)
-  let result = OutputBuffer::new(data.length() * 4)
-  let data_len = data.length()
-  // Extract bit-reader state to locals for the hot loop
-  let mut bits = state.bits
-  let mut n_bits = state.n_bits
-  let mut pos = state.pos
-  while true {
-    // Read code (LSB) — inlined with locals
-    while n_bits < state.width {
-      if pos >= data_len {
-        raise LzwError::UnexpectedEOF
-      }
-      bits = bits | (data[pos].to_uint() << n_bits)
-      n_bits += 8
-      pos += 1
-    }
-    let mask = (1U << state.width) - 1U
-    let code = (bits & mask).reinterpret_as_int()
-    bits = bits >> state.width
-    n_bits -= state.width
-    if state.process_code(code, result) {
-      break
-    }
-  }
-  result.to_bytes()
-}
-
-///|
-/// MSB-specific decompression — avoids match on order in hot loop.
-fn decompress_msb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
-  let state = LzwDecompressState::new(lit_width)
-  let result = OutputBuffer::new(data.length() * 4)
-  let data_len = data.length()
-  let mut bits = state.bits
-  let mut n_bits = state.n_bits
-  let mut pos = state.pos
-  while true {
-    // Read code (MSB) — inlined with locals
-    while n_bits < state.width {
-      if pos >= data_len {
-        raise LzwError::UnexpectedEOF
-      }
-      bits = bits | (data[pos].to_uint() << (24 - n_bits))
-      n_bits += 8
-      pos += 1
-    }
-    let code = (bits >> (32 - state.width)).reinterpret_as_int()
-    bits = bits << state.width
-    n_bits -= state.width
-    if state.process_code(code, result) {
-      break
-    }
-  }
-  result.to_bytes()
 }

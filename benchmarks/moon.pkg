@@ -3,6 +3,7 @@ import {
   "bikallem/compress/flate",
   "bikallem/compress/gzip",
   "bikallem/compress/lzw",
+  "moonbitlang/async" @moonasync,
   "bikallem/compress/zlib",
   "moonbitlang/core/buffer",
   "moonbitlang/core/bench",

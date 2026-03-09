@@ -13,7 +13,7 @@ fn main {
   @moonasync.run_async_main(async fn() {
     let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
 
-    // --- Compress: pipe_async with LzwStreamWriter filter ---
+    // --- Compress: direct Reader -> Writer streaming ---
     let (compressed_read, compressed_write) = @io.pipe()
     let (source_read, source_write) = @io.pipe()
     @moonasync.with_task_group(root => {
@@ -22,9 +22,7 @@ fn main {
         source_write.close()
       })
       root.spawn_bg(() => {
-        @sa.pipe_async(source_read, compressed_write, fn(sink) {
-          @lzwlib.LzwStreamWriter::new(sink, LSB, 8)
-        })
+        @lzwlib.compress(source_read, compressed_write, @lzwlib.LSB, 8)
         compressed_write.close()
       })
       let compressed = compressed_read.read_all().binary()
@@ -32,15 +30,15 @@ fn main {
         "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
       )
 
-      // --- Decompress: reader_of_io + LzwReader ---
+      // --- Decompress: direct Reader -> Writer streaming ---
       let (pipe_read, pipe_write) = @io.pipe()
       root.spawn_bg(() => {
         pipe_write.write(compressed)
         pipe_write.close()
       })
-      let stream_reader = @sa.reader_of_io(pipe_read)
-      let lzw_reader = @lzwlib.LzwReader::new(stream_reader, LSB, 8)
-      let restored = @stream.read_all(lzw_reader)
+      let restored_dest = @ibytes.BytesWriter::new()
+      @lzwlib.decompress(pipe_read, restored_dest, @lzwlib.LSB, 8)
+      let restored = restored_dest.content()
       assert_eq(restored, original)
       println(
         "Async LZW decompress: round-trip OK (\{restored.length()} bytes)",

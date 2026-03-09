@@ -1,0 +1,32 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/internal/bytes"
+
+import {
+  "moonbitlang/async/io",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct BytesReader {
+  data : Bytes
+  mut offset : Int
+  read_buf : @io.ReaderBuffer
+}
+pub fn BytesReader::new(Bytes) -> Self
+pub impl @io.Reader for BytesReader
+
+pub struct BytesWriter {
+  mut buf : FixedArray[Byte]
+  mut data_len : Int
+}
+pub fn BytesWriter::content(Self) -> Bytes
+pub fn BytesWriter::new(size_hint? : Int) -> Self
+pub impl @io.Writer for BytesWriter
+
+// Type aliases
+
+// Traits
+

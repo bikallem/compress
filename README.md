@@ -48,8 +48,10 @@ let decompressed = @zlib.decompress(compressed)
 ### LZW
 
 ```moonbit
-let compressed = @lzw.compress(data, LSB, 8)
-let decompressed = @lzw.decompress(compressed, LSB, 8)
+@moonasync.run_async_main(async fn() {
+  let compressed = @lzw.compress_bytes(data, @lzw.LSB, 8)
+  let decompressed = @lzw.decompress_bytes(compressed, @lzw.LSB, 8)
+})
 ```
 
 ### bzip2 (decompress only)

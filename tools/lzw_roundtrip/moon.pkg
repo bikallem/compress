@@ -3,6 +3,7 @@ import {
   "bikallem/compress/lzw",
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/fs" @fs,
+  "moonbitlang/async/io",
   "moonbitlang/core/env",
   "moonbitlang/core/strconv",
 }

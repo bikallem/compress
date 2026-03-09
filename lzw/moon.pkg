@@ -1,9 +1,11 @@
 import {
-  "bikallem/compress/internal/blit",
-  "bikallem/compress/stream",
-  "moonbitlang/core/buffer",
+  "bikallem/compress/internal/bytes" @ibytes,
+  "moonbitlang/async/io",
 }
 
 import {
-  "bikallem/compress/stream",
+  "bikallem/compress/internal/bytes" @ibytes,
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
+  "moonbitlang/core/buffer",
 } for "test"

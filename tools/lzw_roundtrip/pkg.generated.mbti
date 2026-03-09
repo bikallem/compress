@@ -1,11 +1,17 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "bikallem/compress/tools/lzw_roundtrip"
 
+import {
+  "moonbitlang/async/io",
+}
+
 // Values
 
 // Errors
 
 // Types and methods
+type BufferedInputReader[R]
+pub impl[R : @io.Reader] @io.Reader for BufferedInputReader[R]
 
 // Type aliases
 

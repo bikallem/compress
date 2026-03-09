@@ -12,6 +12,7 @@ pub suberror LzwError {
   InvalidLitWidth(Int)
   InvalidCode(String)
   UnexpectedEOF
+  Io(String)
 } derive(Show)
 
 ///|

@@ -31,9 +31,7 @@ Options:
 
 Notes:
   - The input is created with `truncate`, so the source file is sparse.
-  - The current `tools/lzw_roundtrip` CLI still uses the in-memory bytes API.
-    The 50GB run is expected to fail until the streaming `lzw.compress(src,dst)`
-    and `lzw.decompress(src,dst)` entry points replace that implementation.
+  - The CLI streams file-to-file and applies buffering only at the file boundary.
   - `--massif` is practical for smaller runs. On a real 50GB pass it will be slow.
 USAGE
 }
@@ -212,7 +210,7 @@ echo "=== Building native lzw_roundtrip tool ==="
 moon -C "$PROJECT_DIR" build --target native tools/lzw_roundtrip
 
 echo
-printf '%s\n' 'NOTE: the current lzw file CLI is still bytes-based. The 50GB acceptance run is expected to fail until the streaming io redesign is implemented.'
+printf '%s\n' 'NOTE: the CLI streams file-to-file. The only buffering is the fixed-size file-boundary wrapper used to avoid one syscall per byte.'
 
 echo
 printf '%s\n' "Creating sparse input file: $INPUT ($SIZE logical size)"

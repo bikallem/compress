@@ -2,19 +2,24 @@
 package "bikallem/compress/lzw"
 
 import {
-  "bikallem/compress/stream",
+  "moonbitlang/async/io",
 }
 
 // Values
-pub fn compress(Bytes, BitOrder, Int) -> Bytes raise LzwError
+pub async fn compress(&@io.Reader, &@io.Writer, BitOrder, Int) -> Unit raise LzwError
 
-pub fn decompress(Bytes, BitOrder, Int) -> Bytes raise LzwError
+pub async fn compress_bytes(Bytes, BitOrder, Int) -> Bytes raise LzwError
+
+pub async fn decompress(&@io.Reader, &@io.Writer, BitOrder, Int) -> Unit raise LzwError
+
+pub async fn decompress_bytes(Bytes, BitOrder, Int) -> Bytes raise LzwError
 
 // Errors
 pub suberror LzwError {
   InvalidLitWidth(Int)
   InvalidCode(String)
   UnexpectedEOF
+  Io(String)
 }
 pub impl Show for LzwError
 
@@ -25,18 +30,6 @@ pub(all) enum BitOrder {
 }
 pub impl Eq for BitOrder
 pub impl Show for BitOrder
-
-pub struct LzwReader {
-  // private fields
-}
-pub fn LzwReader::new(&@stream.Reader, BitOrder, Int, slice_length? : Int) -> Self
-pub impl @stream.Reader for LzwReader
-
-pub struct LzwStreamWriter {
-  // private fields
-}
-pub fn LzwStreamWriter::new(&@stream.Writer, BitOrder, Int, slice_length? : Int) -> Self
-pub impl @stream.Writer for LzwStreamWriter
 
 // Type aliases
 

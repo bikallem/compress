@@ -1,27 +1,39 @@
 ///|
-/// Compresses data using the LZW algorithm.
-/// `order` specifies the bit packing order (LSB for GIF, MSB for TIFF/PDF).
-/// `lit_width` is the literal code width in bits (typically 8, range [2, 8]).
-pub fn compress(
+/// Compresses all bytes from `src` and writes the LZW stream into `dst`.
+pub async fn compress(
+  src : &@io.Reader,
+  dst : &@io.Writer,
+  order : BitOrder,
+  lit_width : Int,
+) -> Unit raise LzwError {
+  validate_lit_width(lit_width)
+  let state = LzwCompressState::new(order, lit_width)
+  let input_scratch = FixedArray::make(1, b'\x00')
+  while read_one_byte(src, input_scratch) is Some(byte) {
+    state.write_input_byte(dst, byte)
+  }
+  state.finish(dst)
+}
+
+///|
+/// Convenience wrapper for in-memory compression.
+pub async fn compress_bytes(
   data : Bytes,
   order : BitOrder,
   lit_width : Int,
 ) -> Bytes raise LzwError {
-  guard lit_width >= 2 && lit_width <= 8 else {
-    raise LzwError::InvalidLitWidth(lit_width)
-  }
-  let state = LzwCompressState::new(order, lit_width)
-  state.write(data)
-  state.close()
+  let src = @ibytes.BytesReader::new(data)
+  let dst = @ibytes.BytesWriter::new()
+  compress(src, dst, order, lit_width)
+  dst.content()
 }
 
 ///|
-/// Internal LZW compression state machine.
 priv struct LzwCompressState {
   order : BitOrder
   lit_width : Int
-  buf : @buffer.Buffer
   table : FixedArray[UInt]
+  out_scratch : FixedArray[Byte]
   mut width : Int
   mut hi : Int
   mut overflow : Int
@@ -36,8 +48,8 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
   {
     order,
     lit_width: lw,
-    buf: @buffer.new(size_hint=256),
     table: FixedArray::make(TABLE_SIZE, 0U),
+    out_scratch: FixedArray::make(1, b'\x00'),
     width: 1 + lw,
     hi: (1 << lw) + 1,
     overflow: 1 << (lw + 1),
@@ -48,14 +60,27 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
 }
 
 ///|
-fn LzwCompressState::write_code(self : LzwCompressState, code : Int) -> Unit {
+async fn LzwCompressState::emit_byte(
+  self : LzwCompressState,
+  dst : &@io.Writer,
+  byte : Byte,
+) -> Unit raise LzwError {
+  write_one_byte(dst, self.out_scratch, byte)
+}
+
+///|
+async fn LzwCompressState::write_code(
+  self : LzwCompressState,
+  dst : &@io.Writer,
+  code : Int,
+) -> Unit raise LzwError {
   let c = code.reinterpret_as_uint()
   match self.order {
     LSB => {
       self.bits = self.bits | (c << self.n_bits)
       self.n_bits += self.width
       while self.n_bits >= 8 {
-        self.buf.write_byte((self.bits & 0xFFU).to_byte())
+        self.emit_byte(dst, (self.bits & 0xFFU).to_byte())
         self.bits = self.bits >> 8
         self.n_bits -= 8
       }
@@ -64,7 +89,7 @@ fn LzwCompressState::write_code(self : LzwCompressState, code : Int) -> Unit {
       self.bits = self.bits | (c << (32 - self.width - self.n_bits))
       self.n_bits += self.width
       while self.n_bits >= 8 {
-        self.buf.write_byte((self.bits >> 24).to_byte())
+        self.emit_byte(dst, (self.bits >> 24).to_byte())
         self.bits = self.bits << 8
         self.n_bits -= 8
       }
@@ -73,9 +98,10 @@ fn LzwCompressState::write_code(self : LzwCompressState, code : Int) -> Unit {
 }
 
 ///|
-/// Increments hi and handles overflow/clear code emission.
-/// Returns true if a clear code was emitted and the caller should continue.
-fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
+async fn LzwCompressState::inc_hi(
+  self : LzwCompressState,
+  dst : &@io.Writer,
+) -> Bool raise LzwError {
   self.hi += 1
   if self.hi == self.overflow {
     self.width += 1
@@ -83,11 +109,10 @@ fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
   }
   if self.hi == MAX_CODE {
     let clear = 1 << self.lit_width
-    self.write_code(clear)
+    self.write_code(dst, clear)
     self.width = self.lit_width + 1
     self.hi = clear + 1
     self.overflow = clear << 1
-    // Clear the hash table
     for i in 0..<TABLE_SIZE {
       self.table[i] = 0U
     }
@@ -97,74 +122,60 @@ fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
 }
 
 ///|
-fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
-  if data.length() == 0 {
+async fn LzwCompressState::write_input_byte(
+  self : LzwCompressState,
+  dst : &@io.Writer,
+  byte : Byte,
+) -> Unit raise LzwError {
+  let literal = byte.to_int()
+  if self.saved_code == INVALID_CODE {
+    let clear = 1 << self.lit_width
+    self.write_code(dst, clear)
+    self.saved_code = literal
     return
   }
   let mut code = self.saved_code
-  let mut start = 0
-  if code == INVALID_CODE {
-    // First write: send clear code
-    let clear = 1 << self.lit_width
-    self.write_code(clear)
-    code = data[0].to_int()
-    start = 1
+  let key = (code << 8) | literal
+  let mut hash = ((key >> 12) ^ key) & TABLE_MASK
+  while self.table[hash] != 0U {
+    let t = self.table[hash]
+    if key.reinterpret_as_uint() == t >> 12 {
+      self.saved_code = (t & MAX_CODE.reinterpret_as_uint()).reinterpret_as_int()
+      return
+    }
+    hash = (hash + 1) & TABLE_MASK
   }
-  for i in start..<data.length() {
-    let literal = data[i].to_int()
-    let key = (code << 8) | literal
-    let mut hash = ((key >> 12) ^ key) & TABLE_MASK
-    // Hash table lookup
-    let mut found = false
-    while self.table[hash] != 0U {
-      let t = self.table[hash]
-      if key.reinterpret_as_uint() == t >> 12 {
-        code = (t & MAX_CODE.reinterpret_as_uint()).reinterpret_as_int()
-        found = true
-        break
-      }
-      hash = (hash + 1) & TABLE_MASK
-    }
-    if found {
-      continue
-    }
-    // Not found: emit current code
-    self.write_code(code)
-    code = literal
-    // Inc hi and possibly clear table
-    if self.inc_hi() {
-      continue
-    }
-    // Insert into hash table
-    while self.table[hash] != 0U {
-      hash = (hash + 1) & TABLE_MASK
-    }
-    self.table[hash] = (key.reinterpret_as_uint() << 12) |
-      self.hi.reinterpret_as_uint()
-  }
+  self.write_code(dst, code)
+  code = literal
   self.saved_code = code
+  if self.inc_hi(dst) {
+    return
+  }
+  while self.table[hash] != 0U {
+    hash = (hash + 1) & TABLE_MASK
+  }
+  self.table[hash] = (key.reinterpret_as_uint() << 12) |
+    self.hi.reinterpret_as_uint()
 }
 
 ///|
-fn LzwCompressState::close(self : LzwCompressState) -> Bytes {
-  // Write the saved code if valid
+async fn LzwCompressState::finish(
+  self : LzwCompressState,
+  dst : &@io.Writer,
+) -> Unit raise LzwError {
   if self.saved_code != INVALID_CODE {
-    self.write_code(self.saved_code)
-    ignore(self.inc_hi())
+    self.write_code(dst, self.saved_code)
+    ignore(self.inc_hi(dst))
   } else {
-    // Write clear code since write was never called
     let clear = 1 << self.lit_width
-    self.write_code(clear)
+    self.write_code(dst, clear)
   }
-  // Write EOF code
   let eof = (1 << self.lit_width) + 1
-  self.write_code(eof)
-  // Flush remaining bits
+  self.write_code(dst, eof)
   if self.n_bits > 0 {
     match self.order {
-      MSB => self.buf.write_byte((self.bits >> 24).to_byte())
-      LSB => self.buf.write_byte((self.bits & 0xFFU).to_byte())
+      MSB => self.emit_byte(dst, (self.bits >> 24).to_byte())
+      LSB => self.emit_byte(dst, (self.bits & 0xFFU).to_byte())
     }
   }
-  self.buf.to_bytes()
 }

@@ -9,9 +9,61 @@ let help_message : String =
   #|
   #|Notes:
   #|  - This tool exists for the manual native 50GB acceptance harness.
-  #|  - `compress-file` and `decompress-file` currently call the in-memory
-  #|    bytes APIs, so the 50GB harness is expected to fail until the LZW
-  #|    `@io.Reader` / `@io.Writer` redesign lands.
+  #|  - File IO is buffered at the boundary so the codec can remain
+  #|    `Reader`/`Writer`-driven without whole-stream buffering.
+
+///|
+#warnings("-alert_internal")
+struct BufferedInputReader[R] {
+  inner : R
+  read_buf : @io.ReaderBuffer
+  buf : FixedArray[Byte]
+  mut start : Int
+  mut len : Int
+}
+
+///|
+#warnings("-alert_internal")
+fn[R] BufferedInputReader::new(
+  inner : R,
+  size? : Int = 64 * 1024,
+) -> BufferedInputReader[R] {
+  {
+    inner,
+    read_buf: @io.ReaderBuffer::new(),
+    buf: FixedArray::make(size, b'\x00'),
+    start: 0,
+    len: 0,
+  }
+}
+
+///|
+pub impl[R : @io.Reader] @io.Reader for BufferedInputReader[R] with _get_internal_buffer(
+  self,
+) {
+  self.read_buf
+}
+
+///|
+pub impl[R : @io.Reader] @io.Reader for BufferedInputReader[R] with _direct_read(
+  self,
+  dst,
+  offset~,
+  max_len~,
+) {
+  if self.len == 0 {
+    self.len = self.inner.read(self.buf, offset=0, max_len=self.buf.length())
+    self.start = 0
+  }
+  if self.len == 0 {
+    return 0
+  }
+  let n = if max_len < self.len { max_len } else { self.len }
+  dst.unsafe_blit(offset, self.buf, self.start, n)
+  self.start += n
+  self.len -= n
+  n
+}
 
 ///|
 #cfg(target="native")
@@ -50,9 +102,19 @@ async fn compress_file(
   order : @lzw.BitOrder,
   lit_width : Int,
 ) -> Unit {
-  let input = @fs.read_file(input_path).binary()
-  let output = @lzw.compress(input, order, lit_width)
-  @fs.write_file(output_path, output, create=0o644, truncate=true)
+  let raw_input = @fs.open(input_path, mode=ReadOnly)
+  let raw_output = @fs.open(
+    output_path,
+    mode=WriteOnly,
+    create=0o644,
+    truncate=true,
+  )
+  let input = BufferedInputReader::new(raw_input)
+  let output = @io.BufferedWriter::new(raw_output, size=64 * 1024)
+  defer raw_input.close()
+  defer raw_output.close()
+  @lzw.compress(input, output, order, lit_width)
+  output.flush()
 }
 
 ///|
@@ -62,9 +124,19 @@ async fn decompress_file(
   order : @lzw.BitOrder,
   lit_width : Int,
 ) -> Unit {
-  let input = @fs.read_file(input_path).binary()
-  let output = @lzw.decompress(input, order, lit_width)
-  @fs.write_file(output_path, output, create=0o644, truncate=true)
+  let raw_input = @fs.open(input_path, mode=ReadOnly)
+  let raw_output = @fs.open(
+    output_path,
+    mode=WriteOnly,
+    create=0o644,
+    truncate=true,
+  )
+  let input = BufferedInputReader::new(raw_input)
+  let output = @io.BufferedWriter::new(raw_output, size=64 * 1024)
+  defer raw_input.close()
+  defer raw_output.close()
+  @lzw.decompress(input, output, order, lit_width)
+  output.flush()
 }
 
 ///|
