@@ -36,7 +36,6 @@ pub async fn compress(
   dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int,
-  forward_eod? : Bool = true,
 ) -> Unit raise LzwError
 ```
 
@@ -60,7 +59,6 @@ pub async fn decompress(
   dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int,
-  forward_eod? : Bool = true,
 ) -> Unit raise LzwError
 
 pub async fn decompress_bytes(
@@ -149,7 +147,6 @@ fn LzwEncoder::write_byte(
 async fn LzwEncoder::finish(
   self : LzwEncoder,
   dst : &@io.Writer,
-  forward_eod : Bool,
 ) -> Unit raise LzwError
 ```
 
@@ -166,7 +163,6 @@ async fn LzwEncoder::finish(
 - emits the last pending code if present
 - emits `eof`
 - flushes the final partial byte
-- optionally forwards the empty end-of-data marker to `dst`
 
 ### 4. `compress()` Is Just a Reader/Writer Loop
 
@@ -182,7 +178,7 @@ pub async fn compress(...) -> Unit raise LzwError {
     }
     encoder.write_byte(b, dst)
   }
-  encoder.finish(dst, forward_eod)
+  encoder.finish(dst)
 }
 ```
 
@@ -268,7 +264,6 @@ async fn LzwDecoder::run(
   self : LzwDecoder,
   src : &@io.Reader,
   dst : &@io.Writer,
-  forward_eod : Bool,
 ) -> Unit raise LzwError
 ```
 
@@ -285,7 +280,6 @@ async fn LzwDecoder::run(
 - flushes bounded decoded output to `dst` as scratch fills
 - verifies that the decoder reached `eof`
 - flushes any remaining decoded bytes
-- optionally forwards the empty end-of-data marker to `dst`
 
 ### 8. `decompress()` Is Also Just a Reader/Writer Loop
 
@@ -293,7 +287,7 @@ async fn LzwDecoder::run(
 pub async fn decompress(...) -> Unit raise LzwError {
   validate_lit_width_or_raise_format(...)
   let decoder = LzwDecoder::new(order, lit_width)
-  decoder.run(src, dst, forward_eod)
+  decoder.run(src, dst)
 }
 ```
 
@@ -312,7 +306,7 @@ This is the same ownership model as `compress()`:
 pub async fn compress_bytes(...) -> Bytes raise LzwError {
   let reader = @io.BytesReader::new(data)
   let writer = @io.BytesWriter::new()
-  compress(reader, writer, order, lit_width, forward_eod=false)
+  compress(reader, writer, order, lit_width)
   writer.to_bytes()
 }
 ```
@@ -325,7 +319,7 @@ This preserves the simple API for tests and small in-memory use cases without ma
 pub async fn decompress_bytes(...) -> Bytes raise LzwError {
   let reader = @io.BytesReader::new(data)
   let writer = @io.BytesWriter::new()
-  decompress(reader, writer, order, lit_width, forward_eod=false)
+  decompress(reader, writer, order, lit_width)
   writer.to_bytes()
 }
 ```
