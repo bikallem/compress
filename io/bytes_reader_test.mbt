@@ -61,5 +61,10 @@ async test "BytesReader.read_byte raises at eof" {
   assert_eq(reader.read_byte(), b'a')
   let result : Result[Byte, Error] = try? reader.read_byte()
   guard result is Err(err) else { fail("expected eof error") }
-  assert_eq(err.to_string(), "IoError: unexpected end of data")
+  inspect(
+    err,
+    content=(
+      #|IoError: unexpected end of data
+    ),
+  )
 }
