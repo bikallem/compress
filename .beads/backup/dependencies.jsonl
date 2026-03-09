@@ -34,6 +34,8 @@
 {"created_at":"2026-03-07T16:09:12Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-guv","issue_id":"compress-claude-kqd","type":"blocks"}
 {"created_at":"2026-03-07T18:24:28Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-2h0","issue_id":"compress-claude-p88","type":"blocks"}
 {"created_at":"2026-03-07T18:24:22Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-2h0","issue_id":"compress-claude-uja","type":"blocks"}
+{"created_at":"2026-03-09T20:04:16Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-apj","issue_id":"compress-claude-uzz","type":"discovered-from"}
+{"created_at":"2026-03-09T20:04:16Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-ecy","issue_id":"compress-claude-uzz","type":"discovered-from"}
 {"created_at":"2026-03-07T16:09:56Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-xzs","issue_id":"compress-claude-wbn","type":"blocks"}
 {"created_at":"2026-03-07T16:09:56Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-z0d","issue_id":"compress-claude-wbn","type":"blocks"}
 {"created_at":"2026-03-07T16:09:46Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-54v","issue_id":"compress-claude-xzs","type":"blocks"}

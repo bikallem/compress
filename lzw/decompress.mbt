@@ -11,6 +11,7 @@ pub async fn decompress(
   while true {
     let code = state.read_code(src, order)
     if state.process_code(dst, code) {
+      state.finish(dst)
       return
     }
   }
@@ -37,8 +38,8 @@ priv struct LzwDecompressState {
   suffix : FixedArray[Byte]
   prefix : FixedArray[Int]
   stack : FixedArray[Byte]
-  in_scratch : FixedArray[Byte]
-  out_scratch : FixedArray[Byte]
+  input : InputByteBuffer
+  output : OutputByteBuffer
   mut width : Int
   mut hi : Int
   mut overflow : Int
@@ -59,8 +60,8 @@ fn LzwDecompressState::new(lit_width : Int) -> LzwDecompressState {
     suffix: FixedArray::make(1 << MAX_WIDTH, b'\x00'),
     prefix: FixedArray::make(1 << MAX_WIDTH, 0),
     stack: FixedArray::make(1 << MAX_WIDTH, b'\x00'),
-    in_scratch: FixedArray::make(1, b'\x00'),
-    out_scratch: FixedArray::make(1, b'\x00'),
+    input: InputByteBuffer::new(),
+    output: OutputByteBuffer::new(),
     width,
     hi: eof,
     overflow: 1 << width,
@@ -76,7 +77,15 @@ async fn LzwDecompressState::emit_byte(
   dst : &@io.Writer,
   byte : Byte,
 ) -> Unit raise LzwError {
-  write_one_byte(dst, self.out_scratch, byte)
+  self.output.write_byte(dst, byte)
+}
+
+///|
+async fn LzwDecompressState::finish(
+  self : LzwDecompressState,
+  dst : &@io.Writer,
+) -> Unit raise LzwError {
+  self.output.flush(dst)
 }
 
 ///|
@@ -123,7 +132,7 @@ async fn LzwDecompressState::read_code(
   order : BitOrder,
 ) -> Int raise LzwError {
   while self.n_bits < self.width {
-    match read_one_byte(src, self.in_scratch) {
+    match self.input.read_byte(src) {
       Some(byte) => {
         match order {
           LSB => self.bits = self.bits | (byte.to_uint() << self.n_bits)
@@ -157,9 +166,7 @@ async fn LzwDecompressState::flush_stack(
   dst : &@io.Writer,
   start : Int,
 ) -> Unit raise LzwError {
-  for i in start..<self.stack.length() {
-    self.emit_byte(dst, self.stack.unsafe_get(i))
-  }
+  self.output.write_fixed(dst, self.stack, start, self.stack.length() - start)
 }
 
 ///|

@@ -1,5 +1,6 @@
 import {
   "bikallem/compress/internal/bytes" @ibytes,
+  "bikallem/compress/internal/blit",
   "moonbitlang/async/io",
 }
 

@@ -8,9 +8,17 @@ pub async fn compress(
 ) -> Unit raise LzwError {
   validate_lit_width(lit_width)
   let state = LzwCompressState::new(order, lit_width)
-  let input_scratch = FixedArray::make(1, b'\x00')
-  while read_one_byte(src, input_scratch) is Some(byte) {
-    state.write_input_byte(dst, byte)
+  let input_buf = FixedArray::make(IO_BUFFER_SIZE, b'\x00')
+  while true {
+    let n = src.read(input_buf, offset=0, max_len=input_buf.length()) catch {
+      e => raise LzwError::Io(e.to_string())
+    }
+    if n == 0 {
+      break
+    }
+    for i in 0..<n {
+      state.write_input_byte(dst, input_buf[i])
+    }
   }
   state.finish(dst)
 }
@@ -33,7 +41,7 @@ priv struct LzwCompressState {
   order : BitOrder
   lit_width : Int
   table : FixedArray[UInt]
-  out_scratch : FixedArray[Byte]
+  output : OutputByteBuffer
   mut width : Int
   mut hi : Int
   mut overflow : Int
@@ -49,7 +57,7 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
     order,
     lit_width: lw,
     table: FixedArray::make(TABLE_SIZE, 0U),
-    out_scratch: FixedArray::make(1, b'\x00'),
+    output: OutputByteBuffer::new(),
     width: 1 + lw,
     hi: (1 << lw) + 1,
     overflow: 1 << (lw + 1),
@@ -65,7 +73,7 @@ async fn LzwCompressState::emit_byte(
   dst : &@io.Writer,
   byte : Byte,
 ) -> Unit raise LzwError {
-  write_one_byte(dst, self.out_scratch, byte)
+  self.output.write_byte(dst, byte)
 }
 
 ///|
@@ -178,4 +186,5 @@ async fn LzwCompressState::finish(
       LSB => self.emit_byte(dst, (self.bits & 0xFFU).to_byte())
     }
   }
+  self.output.flush(dst)
 }
