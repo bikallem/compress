@@ -37,7 +37,7 @@ pub async fn compress(
   order : BitOrder,
   lit_width : Int,
   forward_eod? : Bool = true,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 ```
 
 Keep a bytes convenience wrapper outside the core path:
@@ -47,7 +47,7 @@ pub async fn compress_bytes(
   data : Bytes,
   order : BitOrder,
   lit_width : Int,
-) -> Bytes!LzwError
+) -> Bytes raise LzwError
 ```
 
 `compress_bytes()` should be a thin adapter built from `@io.BytesReader`, `@io.BytesWriter`, and the streaming `compress()`.
@@ -61,13 +61,13 @@ pub async fn decompress(
   order : BitOrder,
   lit_width : Int,
   forward_eod? : Bool = true,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 
 pub async fn decompress_bytes(
   data : Bytes,
   order : BitOrder,
   lit_width : Int,
-) -> Bytes!LzwError
+) -> Bytes raise LzwError
 ```
 
 If only compression is changed, large-file compression becomes constant-memory, but large-file decompression does not.
@@ -130,7 +130,7 @@ fn LzwEncoder::emit_byte(
   self : LzwEncoder,
   dst : &@io.Writer,
   b : Byte,
-) -> Unit!LzwError {
+) -> Unit raise LzwError {
   self.scratch[0] = b
   dst.write(self.scratch[:1])
 }
@@ -147,13 +147,13 @@ async fn LzwEncoder::write_chunk(
   self : LzwEncoder,
   data : Bytes,
   dst : &@io.Writer,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 
 async fn LzwEncoder::finish(
   self : LzwEncoder,
   dst : &@io.Writer,
   forward_eod : Bool,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 ```
 
 `write_chunk()` is almost the same algorithm as the existing `LzwCompressState::write()`:
@@ -176,7 +176,7 @@ async fn LzwEncoder::finish(
 The top-level streaming function becomes a simple transform driver:
 
 ```moonbit
-pub async fn compress(...) -> Unit!LzwError {
+pub async fn compress(...) -> Unit raise LzwError {
   validate_lit_width_or_raise_format(...)
   let encoder = LzwEncoder::new(order, lit_width)
   while true {
@@ -245,7 +245,7 @@ Conceptually:
 async fn LzwDecoder::flush_output(
   self : LzwDecoder,
   dst : &@io.Writer,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 ```
 
 When `self.o > 0`, `flush_output()` writes `self.output[:self.o]` to `dst` and resets `self.o` to `0`.
@@ -267,13 +267,13 @@ async fn LzwDecoder::write_chunk(
   self : LzwDecoder,
   data : Bytes,
   dst : &@io.Writer,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 
 async fn LzwDecoder::finish(
   self : LzwDecoder,
   dst : &@io.Writer,
   forward_eod : Bool,
-) -> Unit!LzwError
+) -> Unit raise LzwError
 ```
 
 `write_chunk()`:
@@ -293,7 +293,7 @@ async fn LzwDecoder::finish(
 ### 8. `decompress()` Is Also Just a Reader/Writer Loop
 
 ```moonbit
-pub async fn decompress(...) -> Unit!LzwError {
+pub async fn decompress(...) -> Unit raise LzwError {
   validate_lit_width_or_raise_format(...)
   let decoder = LzwDecoder::new(order, lit_width)
   while true {
@@ -320,7 +320,7 @@ This is the same ownership model as `compress()`:
 ### `compress_bytes()`
 
 ```moonbit
-pub async fn compress_bytes(...) -> Bytes!LzwError {
+pub async fn compress_bytes(...) -> Bytes raise LzwError {
   let reader = @io.BytesReader::new(data)
   let writer = @io.BytesWriter::new()
   compress(reader, writer, order, lit_width, forward_eod=false)
@@ -333,7 +333,7 @@ This preserves the simple API for tests and small in-memory use cases without ma
 ### `decompress_bytes()`
 
 ```moonbit
-pub async fn decompress_bytes(...) -> Bytes!LzwError {
+pub async fn decompress_bytes(...) -> Bytes raise LzwError {
   let reader = @io.BytesReader::new(data)
   let writer = @io.BytesWriter::new()
   decompress(reader, writer, order, lit_width, forward_eod=false)

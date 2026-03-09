@@ -125,7 +125,7 @@ pub async fn DeflateWriter::new(
   w : &@io.Writer,
   level~ : CompressionLevel = DefaultCompression,
   dict~ : Bytes? = None
-) -> DeflateWriter!CompressError
+) -> DeflateWriter raise CompressError
 
 pub async fn DeflateWriter::write(self : DeflateWriter, data : &@io.Data) -> Unit
 pub async fn DeflateWriter::flush(self : DeflateWriter) -> Unit
@@ -161,12 +161,12 @@ pub async fn compress(
   data : Bytes,
   level~ : CompressionLevel = DefaultCompression,
   dict~ : Bytes? = None
-) -> Bytes!CompressError
+) -> Bytes raise CompressError
 
 pub async fn decompress(
   data : Bytes,
   dict~ : Bytes? = None
-) -> Bytes!CompressError
+) -> Bytes raise CompressError
 ```
 
 ### 3b. gzip
@@ -195,7 +195,7 @@ pub async fn GzipWriter::new(
   w : &@io.Writer,
   level~ : CompressionLevel = DefaultCompression,
   header~ : Header = Header::default()
-) -> GzipWriter!CompressError
+) -> GzipWriter raise CompressError
 
 pub async fn GzipWriter::write(self : GzipWriter, data : &@io.Data) -> Unit
 pub async fn GzipWriter::flush(self : GzipWriter) -> Unit
@@ -209,18 +209,18 @@ pub struct GzipReader {
   pub header : Header                  // populated after construction
 }
 
-pub async fn GzipReader::new(r : &@io.Reader) -> GzipReader!CompressError
+pub async fn GzipReader::new(r : &@io.Reader) -> GzipReader raise CompressError
 pub async fn GzipReader::read(
   self : GzipReader, buf : FixedArray[Byte], offset? : Int, max_len? : Int
 ) -> Int
-pub async fn GzipReader::close(self : GzipReader) -> Unit!CompressError  // verifies checksum
+pub async fn GzipReader::close(self : GzipReader) -> Unit raise CompressError  // verifies checksum
 
 pub impl @io.Reader for GzipReader
 pub impl @io.Writer for GzipWriter
 
 // --- Convenience ---
-pub async fn compress(data : Bytes, level~ : CompressionLevel = DefaultCompression, header~ : Header = Header::default()) -> Bytes!CompressError
-pub async fn decompress(data : Bytes) -> (Bytes, Header)!CompressError
+pub async fn compress(data : Bytes, level~ : CompressionLevel = DefaultCompression, header~ : Header = Header::default()) -> Bytes raise CompressError
+pub async fn decompress(data : Bytes) -> (Bytes, Header) raise CompressError
 ```
 
 ### 3c. zlib
@@ -237,7 +237,7 @@ pub async fn ZlibWriter::new(
   w : &@io.Writer,
   level~ : CompressionLevel = DefaultCompression,
   dict~ : Bytes? = None
-) -> ZlibWriter!CompressError
+) -> ZlibWriter raise CompressError
 
 pub async fn ZlibWriter::write(self : ZlibWriter, data : &@io.Data) -> Unit
 pub async fn ZlibWriter::flush(self : ZlibWriter) -> Unit
@@ -249,16 +249,16 @@ pub struct ZlibReader {
   priv mut adler : UInt
 }
 
-pub async fn ZlibReader::new(r : &@io.Reader, dict~ : Bytes? = None) -> ZlibReader!CompressError
+pub async fn ZlibReader::new(r : &@io.Reader, dict~ : Bytes? = None) -> ZlibReader raise CompressError
 pub async fn ZlibReader::read(self : ZlibReader, buf : FixedArray[Byte], offset? : Int, max_len? : Int) -> Int
-pub async fn ZlibReader::close(self : ZlibReader) -> Unit!CompressError
+pub async fn ZlibReader::close(self : ZlibReader) -> Unit raise CompressError
 
 pub impl @io.Reader for ZlibReader
 pub impl @io.Writer for ZlibWriter
 
 // --- Convenience ---
-pub async fn compress(data : Bytes, level~ : CompressionLevel = DefaultCompression, dict~ : Bytes? = None) -> Bytes!CompressError
-pub async fn decompress(data : Bytes, dict~ : Bytes? = None) -> Bytes!CompressError
+pub async fn compress(data : Bytes, level~ : CompressionLevel = DefaultCompression, dict~ : Bytes? = None) -> Bytes raise CompressError
+pub async fn decompress(data : Bytes, dict~ : Bytes? = None) -> Bytes raise CompressError
 ```
 
 ### 3d. lzw
@@ -271,18 +271,18 @@ pub async fn compress(
   dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int
-) -> Unit!CompressError
+) -> Unit raise CompressError
 
 pub async fn decompress(
   src : &@io.Reader,
   dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int
-) -> Unit!CompressError
+) -> Unit raise CompressError
 
 // --- Convenience ---
-pub async fn compress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes!CompressError
-pub async fn decompress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes!CompressError
+pub async fn compress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes raise CompressError
+pub async fn decompress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes raise CompressError
 ```
 
 ### 3e. bzip2 (decompress only)
@@ -293,14 +293,14 @@ pub struct Bzip2Reader {
   priv mut state : Bzip2DecompressState
 }
 
-pub async fn Bzip2Reader::new(r : &@io.Reader) -> Bzip2Reader!CompressError
+pub async fn Bzip2Reader::new(r : &@io.Reader) -> Bzip2Reader raise CompressError
 pub async fn Bzip2Reader::read(self : Bzip2Reader, buf : FixedArray[Byte], offset? : Int, max_len? : Int) -> Int
 pub async fn Bzip2Reader::close(self : Bzip2Reader) -> Unit
 
 pub impl @io.Reader for Bzip2Reader
 
 // --- Convenience ---
-pub async fn decompress(data : Bytes) -> Bytes!CompressError
+pub async fn decompress(data : Bytes) -> Bytes raise CompressError
 ```
 
 ### 3f. checksum
@@ -386,7 +386,7 @@ struct DeflateState {
   // ... match finder state, block state
 }
 
-fn DeflateState::new(level : CompressionLevel, dict : Bytes?) -> DeflateState!CompressError
+fn DeflateState::new(level : CompressionLevel, dict : Bytes?) -> DeflateState raise CompressError
 fn DeflateState::write(self : DeflateState, input : BytesView) -> Unit
 fn DeflateState::flush(self : DeflateState) -> Bytes
 fn DeflateState::finish(self : DeflateState) -> Bytes
@@ -557,7 +557,7 @@ fn Token::match_(length : Int, offset : Int) -> Token {
 ### 6b. Bit Patterns for Header Parsing
 
 ```moonbit
-async fn parse_gzip_header(r : &@io.Reader) -> Header!CompressError {
+async fn parse_gzip_header(r : &@io.Reader) -> Header raise CompressError {
   let header_bytes = try { r.read_exactly!(10) } catch {
     ReaderClosed(_) => raise CompressError::UnexpectedEOF
   }
@@ -633,7 +633,7 @@ pub async fn DeflateWriter::close(self : DeflateWriter) -> Unit {
 pub async fn compress(
   data : Bytes,
   level~ : CompressionLevel = DefaultCompression
-) -> Bytes!CompressError {
+) -> Bytes raise CompressError {
   let (pr, pw) = @io.pipe()
   // Write compressed data to pipe
   let w = DeflateWriter::new!(pw, level~)
@@ -654,7 +654,7 @@ Or, for the simple case, bypass async entirely with a synchronous buffer path:
 pub fn compress_sync(
   data : Bytes,
   level~ : CompressionLevel = DefaultCompression
-) -> Bytes!CompressError {
+) -> Bytes raise CompressError {
   let state = DeflateState::new!(level)
   state.write(data[..])
   state.finish()
@@ -665,7 +665,7 @@ pub fn compress_sync(
 
 ```moonbit
 // Compress multiple files concurrently
-async fn compress_files(paths : Array[String]) -> Unit!Error {
+async fn compress_files(paths : Array[String]) -> Unit raise Error {
   @async.with_task_group!(async fn(g) {
     for path in paths {
       g.spawn(async fn() {
