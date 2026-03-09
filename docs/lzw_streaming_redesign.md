@@ -390,6 +390,9 @@ This keeps the LZW redesign focused on codec errors instead of reintroducing a s
 - writer error propagation from the middle of decoded output flush
 - large generated input through `FnReader` to confirm flat memory use
 - compatibility tests that compare `compress_bytes()` and `decompress_bytes()` with the streaming paths over `@io.BytesReader` / `@io.BytesWriter`
+- native/manual integration test that creates a 50GB file, compresses it, then decompresses it as a round trip
+- during the 50GB test, observed system memory remains flat rather than scaling with file size
+- do not run the 50GB test until the user is notified so they can watch system monitor
 
 ## Recommendation
 
