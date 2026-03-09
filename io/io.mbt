@@ -33,4 +33,5 @@ pub(open) trait Reader {
 /// An empty `BytesView` (length 0) signals end of data.
 pub(open) trait Writer {
   async write(Self, BytesView) -> Unit raise IoError
+  async write_byte(Self, Byte) -> Unit raise IoError
 }
