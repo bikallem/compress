@@ -28,12 +28,11 @@ pub fn blit_bytes(
 pub fn fill_bytes(
   dst : FixedArray[Byte],
   dst_offset : Int,
-  value : Int,
+  value : Byte,
   length : Int,
 ) -> Unit {
-  let byte_val = value.to_byte()
   for i in 0..<length {
-    dst[dst_offset + i] = byte_val
+    dst[dst_offset + i] = value
   }
 }
 

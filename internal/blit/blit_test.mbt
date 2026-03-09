@@ -39,7 +39,7 @@ test "blit_fixed_array overlapping backward (same array)" {
 ///|
 test "fill_bytes fills region with value" {
   let dst : FixedArray[Byte] = FixedArray::make(6, b'\x00')
-  @blit.fill_bytes(dst, 1, 0xFF, 4)
+  @blit.fill_bytes(dst, 1, b'\xFF', 4)
   inspect(
     dst,
     content="[b'\\x00', b'\\xFF', b'\\xFF', b'\\xFF', b'\\xFF', b'\\x00']",
@@ -49,7 +49,7 @@ test "fill_bytes fills region with value" {
 ///|
 test "fill_bytes zero length is no-op" {
   let dst : FixedArray[Byte] = FixedArray::make(3, b'\x00')
-  @blit.fill_bytes(dst, 0, 0xAB, 0)
+  @blit.fill_bytes(dst, 0, b'\xAB', 0)
   inspect(dst, content="[b'\\x00', b'\\x00', b'\\x00']")
 }
 

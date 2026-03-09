@@ -72,12 +72,7 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     @blit.blit_fixed_array(hist, dst_base, hist, src_pos, max_copy)
   } else if dist == 1 {
     // RLE: fill with single byte using vectorized memset
-    @blit.fill_bytes(
-      hist,
-      dst_base,
-      hist.unsafe_get(src_pos).to_int(),
-      max_copy,
-    )
+    @blit.fill_bytes(hist, dst_base, hist.unsafe_get(src_pos), max_copy)
   } else if src_pos < dst_base && src_pos + max_copy <= hist_len {
     // Overlapping forward copy, no wrap — copy in dist-sized chunks
     let mut dst_pos = dst_base

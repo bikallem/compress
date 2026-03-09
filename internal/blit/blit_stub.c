@@ -13,7 +13,7 @@ MOONBIT_FFI_EXPORT void bikallem_compress_internal_blit_blit_fixed_array(
 // Fill a byte array region with a single byte value (vectorized memset).
 MOONBIT_FFI_EXPORT void bikallem_compress_internal_blit_fill_bytes(
     moonbit_bytes_t dst, int32_t dst_off,
-    int32_t val, int32_t len) {
+    uint8_t val, int32_t len) {
   memset(dst + dst_off, val, (size_t)len);
 }
 

@@ -8,7 +8,7 @@ pub fn blit_bytesview(FixedArray[Byte], Int, BytesView, Int, Int) -> Unit
 
 pub fn blit_fixed_array(FixedArray[Byte], Int, FixedArray[Byte], Int, Int) -> Unit
 
-pub fn fill_bytes(FixedArray[Byte], Int, Int, Int) -> Unit
+pub fn fill_bytes(FixedArray[Byte], Int, Byte, Int) -> Unit
 
 pub fn make_uninit(Int) -> FixedArray[Byte]
 

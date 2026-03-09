@@ -28,7 +28,7 @@ pub extern "c" fn blit_bytes(
 pub extern "c" fn fill_bytes(
   dst : FixedArray[Byte],
   dst_offset : Int,
-  value : Int,
+  value : Byte,
   length : Int,
 ) -> Unit = "bikallem_compress_internal_blit_fill_bytes"
 
