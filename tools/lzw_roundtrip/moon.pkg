@@ -1,5 +1,6 @@
 import {
   "bikallem/compress/checksum",
+  "bikallem/compress/io" @lzwio,
   "bikallem/compress/lzw",
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/fs" @fs,

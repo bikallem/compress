@@ -64,12 +64,10 @@ fn OutputBuffer::to_bytes(self : OutputBuffer) -> Bytes {
     if self.pos == self.current.length() {
       return self.current.unsafe_reinterpret_as_bytes()
     }
-    // Result fully overwritten by blit_fixed_array — skip zeroing
     let result = @blit.make_uninit(self.pos)
     @blit.blit_fixed_array(result, 0, self.current, 0, self.pos)
     return result.unsafe_reinterpret_as_bytes()
   }
-  // Result fully overwritten by blit_fixed_array — skip zeroing
   let result = @blit.make_uninit(self.total)
   let mut offset = 0
   for chunk in self.chunks {

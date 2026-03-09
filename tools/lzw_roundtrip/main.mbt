@@ -8,10 +8,91 @@ let help_message : String =
   #|  fingerprint-file INPUT
   #|
   #|Notes:
-  #|  - This tool exists for the manual native 50GB acceptance harness.
-  #|  - `compress-file` and `decompress-file` currently call the in-memory
-  #|    bytes APIs, so the 50GB harness is expected to fail until the LZW
-  #|    `@io.Reader` / `@io.Writer` redesign lands.
+  #|  - Streaming compress/decompress with constant memory usage.
+
+///|
+/// Adapter: wraps @fs.File as @lzwio.Reader for streaming decompression.
+struct FileReader {
+  file : @fs.File
+  mut buf : Bytes
+  mut pos : Int
+}
+
+///|
+fn FileReader::new(file : @fs.File) -> FileReader {
+  { file, buf: b"", pos: 0 }
+}
+
+///|
+impl @lzwio.Reader for FileReader with read(self) -> BytesView {
+  // If we have buffered data, return it
+  if self.pos < self.buf.length() {
+    let view = self.buf[self.pos:]
+    self.pos = self.buf.length()
+    return view
+  }
+  // Read more from file
+  let data = self.file.read_some(max_len=65536) catch {
+    e => raise @lzwio.Io(e.to_string())
+  }
+  match data {
+    Some(data) => {
+      self.buf = data
+      self.pos = data.length()
+      data[:]
+    }
+    None => b""
+  }
+}
+
+///|
+impl @lzwio.Reader for FileReader with read_byte(self) -> Byte {
+  if self.pos < self.buf.length() {
+    let b = self.buf[self.pos]
+    self.pos += 1
+    return b
+  }
+  // Refill buffer
+  let data = self.file.read_some(max_len=65536) catch {
+    e => raise @lzwio.Io(e.to_string())
+  }
+  match data {
+    Some(data) => {
+      self.buf = data
+      self.pos = 1
+      data[0]
+    }
+    None => raise @lzwio.UnexpectedEod
+  }
+}
+
+///|
+/// Adapter: wraps @fs.File as @lzwio.Writer for streaming compression.
+struct FileWriter {
+  file : @fs.File
+}
+
+///|
+fn FileWriter::new(file : @fs.File) -> FileWriter {
+  { file, }
+}
+
+///|
+impl @lzwio.Writer for FileWriter with write(self, data) {
+  if data.is_empty() {
+    return
+  }
+  self.file.write(data.to_bytes()) catch {
+    e => raise @lzwio.Io(e.to_string())
+  }
+}
+
+///|
+impl @lzwio.Writer for FileWriter with write_byte(self, b) {
+  self.file.write(Bytes::make(1, b)) catch {
+    e => raise @lzwio.Io(e.to_string())
+  }
+}
 
 ///|
 #cfg(target="native")
@@ -50,9 +131,18 @@ async fn compress_file(
   order : @lzw.BitOrder,
   lit_width : Int,
 ) -> Unit {
-  let input = @fs.read_file(input_path).binary()
-  let output = @lzw.compress(input, order, lit_width)
-  @fs.write_file(output_path, output, create=0o644, truncate=true)
+  let input_file = @fs.open(input_path, mode=ReadOnly)
+  defer input_file.close()
+  let output_file = @fs.open(
+    output_path,
+    mode=WriteOnly,
+    create=0o644,
+    truncate=true,
+  )
+  defer output_file.close()
+  let src = FileReader::new(input_file)
+  let dst = FileWriter::new(output_file)
+  @lzw.compress(src, dst, order, lit_width~)
 }
 
 ///|
@@ -62,9 +152,18 @@ async fn decompress_file(
   order : @lzw.BitOrder,
   lit_width : Int,
 ) -> Unit {
-  let input = @fs.read_file(input_path).binary()
-  let output = @lzw.decompress(input, order, lit_width)
-  @fs.write_file(output_path, output, create=0o644, truncate=true)
+  let input_file = @fs.open(input_path, mode=ReadOnly)
+  defer input_file.close()
+  let output_file = @fs.open(
+    output_path,
+    mode=WriteOnly,
+    create=0o644,
+    truncate=true,
+  )
+  defer output_file.close()
+  let src = FileReader::new(input_file)
+  let dst = FileWriter::new(output_file)
+  @lzw.decompress(src, dst, order, lit_width~)
 }
 
 ///|

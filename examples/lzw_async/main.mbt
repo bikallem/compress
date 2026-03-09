@@ -13,39 +13,22 @@ fn main {
   @moonasync.run_async_main(async fn() {
     let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
 
-    // --- Compress: pipe_async with LzwStreamWriter filter ---
-    let (compressed_read, compressed_write) = @io.pipe()
-    let (source_read, source_write) = @io.pipe()
-    @moonasync.with_task_group(root => {
-      root.spawn_bg(() => {
-        source_write.write(original)
-        source_write.close()
-      })
-      root.spawn_bg(() => {
-        @sa.pipe_async(source_read, compressed_write, fn(sink) {
-          @lzwlib.LzwStreamWriter::new(sink, LSB, 8)
-        })
-        compressed_write.close()
-      })
-      let compressed = compressed_read.read_all().binary()
-      println(
-        "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
-      )
+    // --- Streaming compress via @lzwio Reader/Writer ---
+    let src = @lzwio.BytesReader::new(original)
+    let compressed_dst = @lzwio.BytesWriter::new()
+    @lzwlib.compress(src, compressed_dst, LSB)
+    let compressed = compressed_dst.content()
+    println(
+      "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
+    )
 
-      // --- Decompress: reader_of_io + LzwReader ---
-      let (pipe_read, pipe_write) = @io.pipe()
-      root.spawn_bg(() => {
-        pipe_write.write(compressed)
-        pipe_write.close()
-      })
-      let stream_reader = @sa.reader_of_io(pipe_read)
-      let lzw_reader = @lzwlib.LzwReader::new(stream_reader, LSB, 8)
-      let restored = @stream.read_all(lzw_reader)
-      assert_eq(restored, original)
-      println(
-        "Async LZW decompress: round-trip OK (\{restored.length()} bytes)",
-      )
-    })
+    // --- Streaming decompress ---
+    let src2 = @lzwio.BytesReader::new(compressed)
+    let decompressed_dst = @lzwio.BytesWriter::new()
+    @lzwlib.decompress(src2, decompressed_dst, LSB)
+    let restored = decompressed_dst.content()
+    assert_eq(restored, original)
+    println("Async LZW decompress: round-trip OK (\{restored.length()} bytes)")
   })
 }
 
