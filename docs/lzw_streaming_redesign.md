@@ -14,11 +14,21 @@ That means the current API shape is not suitable for a 50GB file unless the call
 
 Make both `lzw.compress()` and `lzw.decompress()` streaming transforms:
 
-- input is pulled from `@io.Reader`
-- output is pushed directly to `@io.Writer`
+- input is pulled from `moonbitlang/async/io.Reader`
+- output is pushed directly to `moonbitlang/async/io.Writer`
 - the codec owns only LZW state, not an input or output buffering policy
 - memory usage is constant with respect to file size
 - neither direction materializes the full input or full output in memory
+
+## Target Runtime I/O
+
+This redesign should target `moonbitlang/async/io` directly.
+
+- in code snippets below, `moonbitlang/async/io` is imported as `@asyncio`
+- thin in-memory helpers live in `bikallem/compress/internal/bytes`, imported below as `@ibytes`
+- native file streaming should use `@fs.File` directly because it already implements `moonbitlang/async/io.Reader` and `Writer`
+- the repo-local `bikallem/compress/io` package is not the long-term target abstraction for `lzw`
+- once no callers need that local package, it should be deleted or reduced to any remaining non-LZW use cases
 
 ## Non-Goals
 
@@ -32,8 +42,8 @@ Make the stream-oriented function the primary API:
 
 ```moonbit
 pub async fn compress(
-  src : &@io.Reader,
-  dst : &@io.Writer,
+  src : &@asyncio.Reader,
+  dst : &@asyncio.Writer,
   order : BitOrder,
   lit_width : Int,
 ) -> Unit raise LzwError
@@ -49,14 +59,14 @@ pub async fn compress_bytes(
 ) -> Bytes raise LzwError
 ```
 
-`compress_bytes()` should be a thin adapter built from `@io.BytesReader`, `@io.BytesWriter`, and the streaming `compress()`.
+`compress_bytes()` should be a thin adapter built from `@ibytes.BytesReader`, `@ibytes.BytesWriter`, and the streaming `compress()`.
 
 Recommended symmetry on the read side:
 
 ```moonbit
 pub async fn decompress(
-  src : &@io.Reader,
-  dst : &@io.Writer,
+  src : &@asyncio.Reader,
+  dst : &@asyncio.Writer,
   order : BitOrder,
   lit_width : Int,
 ) -> Unit raise LzwError
@@ -124,7 +134,7 @@ Refactor `write_code()` so that it emits completed bytes as soon as they exist:
 ```moonbit
 async fn LzwEncoder::emit_byte(
   self : LzwEncoder,
-  dst : &@io.Writer,
+  dst : &@asyncio.Writer,
   b : Byte,
 ) -> Unit raise LzwError {
   dst.write_byte(b)
@@ -141,12 +151,12 @@ That satisfies the design constraint that `compress()` itself does not choose a 
 fn LzwEncoder::write_byte(
   self : LzwEncoder,
   b : Byte,
-  dst : &@io.Writer,
+  dst : &@asyncio.Writer,
 ) -> Unit raise LzwError
 
 async fn LzwEncoder::finish(
   self : LzwEncoder,
-  dst : &@io.Writer,
+  dst : &@asyncio.Writer,
 ) -> Unit raise LzwError
 ```
 
@@ -174,7 +184,7 @@ pub async fn compress(...) -> Unit raise LzwError {
   let encoder = LzwEncoder::new(order, lit_width)
   loop {
     let b = src.read_byte() catch {
-      ReaderClosed => break
+      @asyncio.ReaderClosed => break
     }
     encoder.write_byte(b, dst)
   }
@@ -236,7 +246,7 @@ Conceptually:
 ```moonbit
 async fn LzwDecoder::flush_output(
   self : LzwDecoder,
-  dst : &@io.Writer,
+  dst : &@asyncio.Writer,
 ) -> Unit raise LzwError
 ```
 
@@ -257,13 +267,13 @@ Recommended shape:
 ```moonbit
 async fn LzwDecoder::read_code(
   self : LzwDecoder,
-  src : &@io.Reader,
+  src : &@asyncio.Reader,
 ) -> Int raise LzwError
 
 async fn LzwDecoder::run(
   self : LzwDecoder,
-  src : &@io.Reader,
-  dst : &@io.Writer,
+  src : &@asyncio.Reader,
+  dst : &@asyncio.Writer,
 ) -> Unit raise LzwError
 ```
 
@@ -298,16 +308,45 @@ This is the same ownership model as `compress()`:
 - `lzw.decompress()` is only the codec transform
 - memory stays bounded by decoder tables and scratch buffers, not stream size
 
+## Internal Bytes Helpers
+
+The `Bytes -> Bytes` convenience path still needs in-memory `Reader` and `Writer` implementations, but they should be thin helpers, not the primary codec boundary.
+
+Recommended location:
+
+- `internal/bytes/bytes_reader.mbt`
+- `internal/bytes/bytes_writer.mbt`
+
+Recommended shape:
+
+```moonbit
+pub struct BytesReader
+pub fn BytesReader::new(data : Bytes) -> BytesReader
+pub impl @asyncio.Reader for BytesReader
+
+pub struct BytesWriter
+pub fn BytesWriter::new(size_hint? : Int = 65536) -> BytesWriter
+pub fn BytesWriter::content(self : BytesWriter) -> Bytes
+pub impl @asyncio.Writer for BytesWriter
+```
+
+These types should stay:
+
+- local to the repository
+- async-`io` compatible
+- small and allocation-light
+- used by tests and convenience wrappers, not by the main streaming file path
+
 ## Bytes Convenience Wrappers
 
 ### `compress_bytes()`
 
 ```moonbit
 pub async fn compress_bytes(...) -> Bytes raise LzwError {
-  let reader = @io.BytesReader::new(data)
-  let writer = @io.BytesWriter::new()
+  let reader = @ibytes.BytesReader::new(data)
+  let writer = @ibytes.BytesWriter::new()
   compress(reader, writer, order, lit_width)
-  writer.to_bytes()
+  writer.content()
 }
 ```
 
@@ -317,10 +356,10 @@ This preserves the simple API for tests and small in-memory use cases without ma
 
 ```moonbit
 pub async fn decompress_bytes(...) -> Bytes raise LzwError {
-  let reader = @io.BytesReader::new(data)
-  let writer = @io.BytesWriter::new()
+  let reader = @ibytes.BytesReader::new(data)
+  let writer = @ibytes.BytesWriter::new()
   decompress(reader, writer, order, lit_width)
-  writer.to_bytes()
+  writer.content()
 }
 ```
 
@@ -352,7 +391,7 @@ This redesign removes buffering policy from both `lzw.compress()` and `lzw.decom
 - a buffered/file writer can batch writes efficiently
 - an unbuffered writer may see many small writes
 
-That is acceptable because it places buffering in the correct layer. If performance is poor with a concrete sink, add a generic buffered writer wrapper in `stream`, not a hidden output buffer inside `lzw`.
+That is acceptable because it places buffering in the correct layer. If performance is poor with a concrete sink, pass a buffered runtime writer such as `@asyncio.BufferedWriter`, not a hidden output buffer inside `lzw`.
 
 ## Error Model
 
@@ -360,36 +399,39 @@ Recommended split:
 
 - internal codec state machine keeps `LzwError`
 - async public surfaces (`compress`, `decompress`, `compress_bytes`, `decompress_bytes`) keep `LzwError`
-- `@io` transport-level behavior follows the `io` package semantics of the chosen runtime
+- transport-level behavior follows `moonbitlang/async/io`, including `@asyncio.ReaderClosed`
 
-This keeps the LZW redesign focused on codec errors instead of reintroducing a separate sync `stream` error layer.
+This keeps the LZW redesign focused on codec errors instead of reintroducing either the old sync `stream` layer or a second local I/O abstraction.
 
 ## Migration Plan
 
-1. Add `LzwEncoder` and move the current compression logic into `write_byte()` and `finish()`.
-2. Introduce streaming `compress(src, dst, ...)` as the new primary entrypoint.
-3. Rename the current bytes API to `compress_bytes()`.
-4. Add `LzwDecoder` and move the current decompression logic into `read_code()` and `run()`.
-5. Introduce streaming `decompress(src, dst, ...)` and rename the current bytes API to `decompress_bytes()`.
-6. Replace the current whole-output decompression path with direct writes to `dst`.
-7. Delete `lzw/lzw_writer.mbt` and `lzw/lzw_reader.mbt` from the final API surface.
-8. Update examples, tests, benchmarks, and `pkg.generated.mbti`.
+1. Retarget `lzw` to `moonbitlang/async/io.Reader` / `Writer` directly.
+2. Add `internal/bytes` with thin async `BytesReader` / `BytesWriter` helpers.
+3. Add `LzwEncoder` and move the current compression logic into `write_byte()` and `finish()`.
+4. Introduce streaming `compress(src, dst, ...)` as the new primary entrypoint.
+5. Rename the current bytes API to `compress_bytes()`.
+6. Add `LzwDecoder` and move the current decompression logic into `read_code()` and `run()`.
+7. Introduce streaming `decompress(src, dst, ...)` and rename the current bytes API to `decompress_bytes()`.
+8. Replace the current whole-output decompression path with direct writes to `dst`.
+9. Delete `lzw/lzw_writer.mbt` and `lzw/lzw_reader.mbt` from the final API surface.
+10. Delete or shrink the repo-local `io` package once no remaining callers need it.
+11. Update examples, tests, benchmarks, and `pkg.generated.mbti`.
 
 ## Tests To Add Or Update
 
 - compress round-trip with chunk boundaries at every byte position
-- end-to-end compression using `@io.Reader` / `@io.Writer` pairs
+- end-to-end compression using `@asyncio.Reader` / `@asyncio.Writer` pairs
 - verify that `compress(src, dst, ...)` produces output incrementally instead of waiting for full input materialization
 - verify that encoder output uses `write_byte()` directly with no one-byte wrapper buffer
 - decompress round-trip with compressed input split at every byte position
-- end-to-end decompression using `@io.Reader` / `@io.Writer` pairs
+- end-to-end decompression using `@asyncio.Reader` / `@asyncio.Writer` pairs
 - verify that `decompress(src, dst, ...)` forwards decoded bytes before end-of-input
 - `read_byte()`-driven partial-code boundary tests for both `LSB` and `MSB`
 - decompressor `UnexpectedEOF` behavior when the final code is truncated across chunk boundaries
 - writer error propagation from the middle of code emission
 - writer error propagation from the middle of decoded output flush
-- large generated input through `FnReader` to confirm flat memory use
-- compatibility tests that compare `compress_bytes()` and `decompress_bytes()` with the streaming paths over `@io.BytesReader` / `@io.BytesWriter`
+- large generated input through a custom async test `Reader` to confirm flat memory use
+- compatibility tests that compare `compress_bytes()` and `decompress_bytes()` with the streaming paths over `@ibytes.BytesReader` / `@ibytes.BytesWriter`
 - native/manual integration test that creates a 50GB file, compresses it, then decompresses it as a round trip
 - during the 50GB test, observed system memory remains flat rather than scaling with file size
 - do not run the 50GB test until the user is notified so they can watch system monitor

@@ -28,7 +28,7 @@ Layer 1: Core Algorithms (pure, no I/O)
 
 **Layer 2** is the primary API — async streaming, matching Go's design intent.
 
-**Layer 3** is sugar — wraps Layer 2 using in-memory pipes for callers who just want `Bytes -> Bytes`.
+**Layer 3** is sugar — wraps Layer 2 using thin in-memory `BytesReader` / `BytesWriter` helpers under `internal/bytes` for callers who just want `Bytes -> Bytes`.
 
 ---
 
@@ -60,6 +60,8 @@ pub(open) trait Writer {
 ```
 
 No custom traits needed. We implement `@io.Reader` and `@io.Writer` directly.
+
+For `Bytes -> Bytes` convenience wrappers, add thin local helpers under `internal/bytes`. The vendored `moonbitlang/async/io` version in this repo provides buffered wrappers, but not built-in `BytesReader` / `BytesWriter` types.
 
 ### 2b. Go's NewReader/NewWriter Pattern
 
@@ -287,6 +289,8 @@ pub async fn compress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> 
 pub async fn decompress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes raise CompressError
 ```
 
+`compress_bytes()` and `decompress_bytes()` should be thin wrappers over local helpers in `internal/bytes`, not implementations built on top of `@io.pipe()`.
+
 ### 3e. bzip2 (decompress only)
 
 ```moonbit
@@ -455,6 +459,12 @@ compress-claude/
       bit_reader.mbt               # Read bits from BytesView
       bit_writer.mbt               # Write bits to Buffer
 
+    internal/bytes/                 # Thin in-memory async io helpers
+      moon.pkg.json
+      bytes_reader.mbt
+      bytes_writer.mbt
+      *_test.mbt
+
     flate/
       moon.pkg.json                 # deps: [checksum, internal]
                                     # import: moonbitlang/async/io
@@ -487,7 +497,7 @@ compress-claude/
       *_test.mbt
 
     lzw/
-      moon.pkg.json                 # deps: [internal]
+      moon.pkg.json                 # deps: [internal, internal/bytes]
       types.mbt                     # BitOrder, LzwCompressState, LzwDecompressState
       lzw_state.mbt                # Pure LZW state machines
       compress.mbt
@@ -629,22 +639,17 @@ pub async fn DeflateWriter::close(self : DeflateWriter) -> Unit {
 }
 ```
 
-### 6e. Convenience API via In-Memory Pipe
+### 6e. Convenience API via Internal Bytes Helpers
 
 ```moonbit
 pub async fn compress(
   data : Bytes,
   level~ : CompressionLevel = DefaultCompression
 ) -> Bytes raise CompressError {
-  let (pr, pw) = @io.pipe()
-  // Write compressed data to pipe
-  let w = DeflateWriter::new!(pw, level~)
-  w.write!(data)
-  w.close!()
-  pw.close()
-  // Read all compressed bytes from pipe
-  let result = pr.read_all!()
-  result.binary()
+  let reader = @ibytes.BytesReader::new(data)
+  let writer = @ibytes.BytesWriter::new()
+  compress(reader, writer, level~)
+  writer.content()
 }
 ```
 
@@ -879,7 +884,7 @@ test "T6: cancel mid-stream" {
 | Testing | Simpler (pure functions) | Needs async test harness |
 | Concurrency | Trivially safe (pure) | Safe via structured concurrency |
 | Use with sockets/files | Caller must buffer+call | Direct streaming |
-| Sync `Bytes->Bytes` | Primary | Available via `compress_sync` or pipe |
+| Sync `Bytes->Bytes` | Primary | Available via local `internal/bytes` helpers |
 
 ### Recommendation
 
