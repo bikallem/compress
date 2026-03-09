@@ -9,3 +9,4 @@ vendor
 bench_results.json
 dhat.out.*
 massif.out
+.claude/settings.json

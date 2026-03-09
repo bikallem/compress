@@ -44,6 +44,7 @@ pub impl Writer for BytesWriter with write(self, data_chunk) {
     0,
     10,
   )
+  @blit.blit_bytesview(self.buf, self.data_len, data_chunk, 0, chunk_len)
   self.buf.blit_from_bytesview(self.data_len, data_chunk)
   self.data_len += chunk_len
 }

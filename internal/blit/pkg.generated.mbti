@@ -2,7 +2,11 @@
 package "bikallem/compress/internal/blit"
 
 // Values
-pub fn blit_bytes(FixedArray[Byte], Int, FixedArray[Byte], Int, Int) -> Unit
+pub fn blit_bytes(FixedArray[Byte], Int, Bytes, Int, Int) -> Unit
+
+pub fn blit_bytesview(FixedArray[Byte], Int, BytesView, Int, Int) -> Unit
+
+pub fn blit_fixed_array(FixedArray[Byte], Int, FixedArray[Byte], Int, Int) -> Unit
 
 pub fn fill_bytes(FixedArray[Byte], Int, Int, Int) -> Unit
 
