@@ -71,9 +71,29 @@ pub fn decompress_bytes(
 
 If only compression is changed, large-file compression becomes constant-memory, but large-file decompression does not.
 
+## No Public Reader/Writer Adapters
+
+The redesign should remove `LzwStreamWriter` and `LzwReader` instead of preserving them as convenience shims.
+
+Reasoning:
+
+- `compress(src, dst, ...)` already is the streaming writer-side API.
+- `decompress(src, dst, ...)` already is the streaming reader-side API.
+- keeping `LzwStreamWriter` and `LzwReader` would duplicate the same transform in two extra public types with no new capability
+- they also preserve an unnecessary public API surface that callers would need to learn and maintain
+
+So the target public surface should be only:
+
+- `compress(src, dst, ...)`
+- `decompress(src, dst, ...)`
+- `compress_bytes(...)`
+- `decompress_bytes(...)`
+
+If the package later needs reusable filter objects for composition, they can be introduced after a concrete use case appears. They should not be part of the redesign by default.
+
 ## Internal Design
 
-Split the current `LzwCompressState` into a pure codec state machine plus thin adapters.
+Split the current `LzwCompressState` into a pure codec state machine plus direct function entrypoints.
 
 ### 1. Encoder State Owns Only Codec State
 
@@ -175,28 +195,7 @@ This is the right ownership boundary:
 - `Writer` decides whether and how to buffer output
 - `lzw.compress()` only performs codec translation
 
-## Adapter Types After The Redesign
-
-### `LzwStreamWriter`
-
-Keep it as a convenience adapter, but make it a thin wrapper over `LzwEncoder`.
-
-```moonbit
-pub struct LzwStreamWriter {
-  priv dest : &@stream.Writer
-  priv encoder : LzwEncoder
-  priv forward_eod : Bool
-  priv mut closed : Bool
-}
-```
-
-Behavior:
-
-- non-empty `write(data)` calls `encoder.write_chunk(data, dest)`
-- empty `write(b""[:])` calls `encoder.finish(dest, forward_eod)` once
-- no `@buffer.Buffer`
-- no delayed whole-stream compression
-- no `slice_length` argument, because chunking is now the reader's concern and buffering is the writer's concern
+## Bytes Convenience Wrappers
 
 ### `compress_bytes()`
 
@@ -239,25 +238,25 @@ That is acceptable because it places buffering in the correct layer. If performa
 Recommended split:
 
 - internal codec state machine keeps `LzwError`
-- streaming surfaces (`compress`, `decompress`, stream adapters) expose `@stream.StreamError`, mapping codec failures to `StreamError::Format`
+- streaming surfaces (`compress`, `decompress`) expose `@stream.StreamError`, mapping codec failures to `StreamError::Format`
 - bytes convenience wrappers keep `LzwError`
 
-This matches the existing stream wrappers in the repo and avoids introducing a second streaming error hierarchy unless there is a strong need for typed format errors.
+This avoids introducing a second streaming error hierarchy unless there is a strong need for typed format errors.
 
 ## Migration Plan
 
 1. Add `LzwEncoder` and move the current compression logic into `write_chunk()` and `finish()`.
-2. Change `LzwStreamWriter` to own `LzwEncoder` instead of `@buffer.Buffer`.
-3. Introduce streaming `compress(src, dst, ...)` as the new primary entrypoint.
-4. Rename the current bytes API to `compress_bytes()`.
-5. Update examples, tests, benchmarks, and `pkg.generated.mbti`.
-6. Apply the same pattern to decompression so `LzwReader` stops calling `@stream.read_all()`.
+2. Introduce streaming `compress(src, dst, ...)` as the new primary entrypoint.
+3. Rename the current bytes API to `compress_bytes()`.
+4. Introduce streaming `decompress(src, dst, ...)` and rename the current bytes API to `decompress_bytes()`.
+5. Delete `lzw/lzw_writer.mbt` and `lzw/lzw_reader.mbt` from the final API surface.
+6. Update examples, tests, benchmarks, and `pkg.generated.mbti`.
 
 ## Tests To Add Or Update
 
 - compress round-trip with chunk boundaries at every byte position
 - stream-to-stream compression using `FnReader` and `FnWriter`
-- verify that `LzwStreamWriter` forwards output before end-of-data
+- verify that `compress(src, dst, ...)` produces output incrementally instead of waiting for full input materialization
 - writer error propagation from the middle of code emission
 - large generated input through `FnReader` to confirm flat memory use
 - compatibility tests that compare `compress_bytes()` output with the streaming path over `BytesReader`/`BytesWriter`
@@ -270,4 +269,4 @@ If the concrete goal is "compress a 50GB file without exhausting memory", the mi
 - do not keep any input or output `Buffer` in `lzw`
 - leave output buffering to the destination `Writer`
 
-If the goal is "compress and decompress 50GB files without exhausting memory", then `lzw/decompress` and `LzwReader` need the same redesign in the same milestone.
+If the goal is "compress and decompress 50GB files without exhausting memory", then decompression needs the same streaming redesign in the same milestone.

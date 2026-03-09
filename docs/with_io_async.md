@@ -266,34 +266,23 @@ pub async fn decompress(data : Bytes, dict~ : Bytes? = None) -> Bytes!CompressEr
 ```moonbit
 pub enum BitOrder { LSB; MSB }
 
-pub struct LzwWriter {
-  priv downstream : &@io.Writer
-  priv order : BitOrder
-  priv lit_width : Int
-  priv mut state : LzwCompressState
-}
+pub async fn compress(
+  src : &@io.Reader,
+  dst : &@io.Writer,
+  order : BitOrder,
+  lit_width : Int
+) -> Unit!CompressError
 
-pub fn LzwWriter::new(w : &@io.Writer, order : BitOrder, lit_width : Int) -> LzwWriter
-pub async fn LzwWriter::write(self : LzwWriter, data : &@io.Data) -> Unit
-pub async fn LzwWriter::close(self : LzwWriter) -> Unit
-
-pub struct LzwReader {
-  priv upstream : &@io.Reader
-  priv order : BitOrder
-  priv lit_width : Int
-  priv mut state : LzwDecompressState
-}
-
-pub fn LzwReader::new(r : &@io.Reader, order : BitOrder, lit_width : Int) -> LzwReader
-pub async fn LzwReader::read(self : LzwReader, buf : FixedArray[Byte], offset? : Int, max_len? : Int) -> Int
-pub async fn LzwReader::close(self : LzwReader) -> Unit
-
-pub impl @io.Reader for LzwReader
-pub impl @io.Writer for LzwWriter
+pub async fn decompress(
+  src : &@io.Reader,
+  dst : &@io.Writer,
+  order : BitOrder,
+  lit_width : Int
+) -> Unit!CompressError
 
 // --- Convenience ---
-pub async fn compress(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes!CompressError
-pub async fn decompress(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes!CompressError
+pub async fn compress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes!CompressError
+pub async fn decompress_bytes(data : Bytes, order : BitOrder, lit_width : Int) -> Bytes!CompressError
 ```
 
 ### 3e. bzip2 (decompress only)
@@ -499,8 +488,6 @@ compress-claude/
       moon.pkg.json                 # deps: [internal]
       types.mbt                     # BitOrder, LzwCompressState, LzwDecompressState
       lzw_state.mbt                # Pure LZW state machines
-      lzw_reader.mbt               # LzwReader : @io.Reader
-      lzw_writer.mbt               # LzwWriter : @io.Writer
       compress.mbt
       *_test.mbt
 
@@ -744,8 +731,8 @@ g.spawn(async fn() { /* read from pr */ })
 
 **1c. lzw** (~500 LOC)
 - Layer 1: `LzwCompressState` / `LzwDecompressState`
-- Layer 2: `LzwReader` / `LzwWriter` implementing `@io.Reader`/`@io.Writer`
-- Layer 3: `compress(Bytes, ...) -> Bytes` / `decompress(Bytes, ...) -> Bytes`
+- Layer 2: `compress(reader, writer, ...)` / `decompress(reader, writer, ...)`
+- Layer 3: `compress_bytes(...) -> Bytes` / `decompress_bytes(...) -> Bytes`
 - Tests: port `reader_test.go` (313 lines), `writer_test.go` (238 lines)
 
 **1d. bzip2** (~600 LOC, decompress only)

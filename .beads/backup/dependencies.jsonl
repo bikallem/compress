@@ -10,6 +10,7 @@
 {"created_at":"2026-03-07T16:08:12Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-8kl","issue_id":"compress-claude-8of","type":"blocks"}
 {"created_at":"2026-03-07T16:08:12Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-dgq","issue_id":"compress-claude-8of","type":"blocks"}
 {"created_at":"2026-03-07T16:07:51Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-8b0","issue_id":"compress-claude-9xr","type":"blocks"}
+{"created_at":"2026-03-09T12:33:18Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-ddx","issue_id":"compress-claude-apj","type":"discovered-from"}
 {"created_at":"2026-03-07T16:08:40Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-8of","issue_id":"compress-claude-are","type":"blocks"}
 {"created_at":"2026-03-07T16:08:40Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-guv","issue_id":"compress-claude-are","type":"blocks"}
 {"created_at":"2026-03-07T16:09:33Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-4hm","issue_id":"compress-claude-c3m","type":"blocks"}
@@ -23,6 +24,7 @@
 {"created_at":"2026-03-07T16:08:01Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-e05","issue_id":"compress-claude-c6v","type":"blocks"}
 {"created_at":"2026-03-07T16:08:01Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-p6a","issue_id":"compress-claude-dgq","type":"blocks"}
 {"created_at":"2026-03-07T16:07:51Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-8b0","issue_id":"compress-claude-e05","type":"blocks"}
+{"created_at":"2026-03-09T12:33:18Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-ddx","issue_id":"compress-claude-ecy","type":"discovered-from"}
 {"created_at":"2026-03-07T16:08:57Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-8of","issue_id":"compress-claude-esy","type":"blocks"}
 {"created_at":"2026-03-07T16:09:27Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-p6a","issue_id":"compress-claude-f67","type":"blocks"}
 {"created_at":"2026-03-07T16:08:31Z","created_by":"Bikal Gurung","depends_on_id":"compress-claude-p6a","issue_id":"compress-claude-guv","type":"blocks"}
