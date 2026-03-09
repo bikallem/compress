@@ -3,7 +3,7 @@
 
 // Fast byte array blit using memmove (vectorized by libc).
 // FixedArray[Byte] has the same layout as Bytes (moonbit_bytes_t).
-MOONBIT_FFI_EXPORT void bikallem_compress_internal_blit_blit_bytes(
+MOONBIT_FFI_EXPORT void bikallem_compress_internal_blit_blit_fixed_array(
     moonbit_bytes_t dst, int32_t dst_off,
     moonbit_bytes_t src, int32_t src_off,
     int32_t len) {

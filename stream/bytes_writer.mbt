@@ -26,7 +26,7 @@ pub impl Writer for BytesWriter with write(self, data_chunk) {
   if need > buf_len {
     let new_cap = if need > buf_len * 2 { need } else { buf_len * 2 }
     let new_buf = @blit.make_uninit(new_cap)
-    @blit.blit_bytes(new_buf, 0, self.buf, 0, self.data_len)
+    @blit.blit_fixed_array(new_buf, 0, self.buf, 0, self.data_len)
     self.buf = new_buf
   }
   self.buf.blit_from_bytesview(self.data_len, data_chunk)

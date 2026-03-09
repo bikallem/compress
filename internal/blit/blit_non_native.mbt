@@ -1,5 +1,5 @@
 ///|
-pub fn blit_bytes(
+pub fn blit_fixed_array(
   dst : FixedArray[Byte],
   dst_offset : Int,
   src : FixedArray[Byte],

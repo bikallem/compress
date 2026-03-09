@@ -346,7 +346,7 @@ fn BufferedBitWriter::write_stored_data(
   while written < len {
     let avail = self.buf.length() - self.pos
     let n = if len - written < avail { len - written } else { avail }
-    @blit.blit_bytes(self.buf, self.pos, data, offset + written, n)
+    @blit.blit_fixed_array(self.buf, self.pos, data, offset + written, n)
     self.pos += n
     written += n
     if self.pos == self.buf.length() {

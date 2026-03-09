@@ -29,14 +29,14 @@ fn OutputBuffer::write_fixed(
 ) -> Unit {
   let avail = self.current.length() - self.pos
   if len <= avail {
-    @blit.blit_bytes(self.current, self.pos, src, start, len)
+    @blit.blit_fixed_array(self.current, self.pos, src, start, len)
     self.pos += len
     self.total += len
   } else {
     let mut remaining = len
     let mut src_pos = start
     if avail > 0 {
-      @blit.blit_bytes(self.current, self.pos, src, src_pos, avail)
+      @blit.blit_fixed_array(self.current, self.pos, src, src_pos, avail)
       self.pos += avail
       self.total += avail
       remaining -= avail
@@ -49,7 +49,7 @@ fn OutputBuffer::write_fixed(
       } else {
         self.current.length()
       }
-      @blit.blit_bytes(self.current, 0, src, src_pos, n)
+      @blit.blit_fixed_array(self.current, 0, src, src_pos, n)
       self.pos = n
       self.total += n
       remaining -= n
@@ -64,21 +64,21 @@ fn OutputBuffer::to_bytes(self : OutputBuffer) -> Bytes {
     if self.pos == self.current.length() {
       return self.current.unsafe_reinterpret_as_bytes()
     }
-    // Result fully overwritten by blit_bytes — skip zeroing
+    // Result fully overwritten by blit_fixed_array — skip zeroing
     let result = @blit.make_uninit(self.pos)
-    @blit.blit_bytes(result, 0, self.current, 0, self.pos)
+    @blit.blit_fixed_array(result, 0, self.current, 0, self.pos)
     return result.unsafe_reinterpret_as_bytes()
   }
-  // Result fully overwritten by blit_bytes — skip zeroing
+  // Result fully overwritten by blit_fixed_array — skip zeroing
   let result = @blit.make_uninit(self.total)
   let mut offset = 0
   for chunk in self.chunks {
     let chunk_len = chunk.length()
-    @blit.blit_bytes(result, offset, chunk, 0, chunk_len)
+    @blit.blit_fixed_array(result, offset, chunk, 0, chunk_len)
     offset += chunk_len
   }
   if self.pos > 0 {
-    @blit.blit_bytes(result, offset, self.current, 0, self.pos)
+    @blit.blit_fixed_array(result, offset, self.current, 0, self.pos)
   }
   result.unsafe_reinterpret_as_bytes()
 }

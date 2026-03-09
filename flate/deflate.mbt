@@ -571,7 +571,7 @@ fn BitWriter::ensure_capacity(self : BitWriter, needed : Int) -> Unit {
       self.pos + needed
     }
     let new_buf = FixedArray::make(new_cap, b'\x00')
-    @blit.blit_bytes(new_buf, 0, self.buf, 0, self.pos)
+    @blit.blit_fixed_array(new_buf, 0, self.buf, 0, self.pos)
     self.buf = new_buf
   }
 }
@@ -664,7 +664,7 @@ fn BitWriter::finish(self : BitWriter) -> Bytes {
     return self.buf.unsafe_reinterpret_as_bytes()
   }
   let result = @blit.make_uninit(self.pos)
-  @blit.blit_bytes(result, 0, self.buf, 0, self.pos)
+  @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
   result.unsafe_reinterpret_as_bytes()
 }
 

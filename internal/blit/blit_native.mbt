@@ -2,13 +2,13 @@
 /// Fast byte-level blit using libc memmove (vectorized).
 /// FixedArray[Byte] has the same memory layout as Bytes in native backend.
 #borrow(dst, src)
-pub extern "c" fn blit_bytes(
+pub extern "c" fn blit_fixed_array(
   dst : FixedArray[Byte],
   dst_offset : Int,
   src : FixedArray[Byte],
   src_offset : Int,
   length : Int,
-) -> Unit = "bikallem_compress_internal_blit_blit_bytes"
+) -> Unit = "bikallem_compress_internal_blit_blit_fixed_array"
 
 ///|
 /// Fill a byte array region with a single byte value (vectorized memset).

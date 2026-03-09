@@ -22,7 +22,7 @@ pub fn BytesWriter::ensure_space(self : BytesWriter, len : Int) -> Unit {
   if need > buf_len {
     let new_cap = if need > buf_len * 2 { need } else { buf_len * 2 }
     let new_buf = @blit.make_uninit(new_cap)
-    @blit.blit_bytes(new_buf, 0, self.buf, 0, self.data_len)
+    @blit.blit_fixed_array(new_buf, 0, self.buf, 0, self.data_len)
     self.buf = new_buf
   }
 }
@@ -37,7 +37,7 @@ pub impl Writer for BytesWriter with write(self, data_chunk) {
   }
   let chunk_len = data_chunk.length()
   self.ensure_space(chunk_len)
-  @blit.blit_bytes(self.buf, self.data_len, data_chunk.to_fixedarray(), 0, 10)
+  @blit.blit_fixed_array(self.buf, self.data_len, data_chunk.to_fixedarray(), 0, 10)
   self.buf.blit_from_bytesview(self.data_len, data_chunk)
   self.data_len += chunk_len
 }

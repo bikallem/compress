@@ -80,7 +80,7 @@ fn StreamingCompressor::fill(
 /// Shift window: move second half to first half, adjust hash tables.
 fn StreamingCompressor::shift_window(self : StreamingCompressor) -> Unit {
   // Copy second half to first half
-  @blit.blit_bytes(self.window, 0, self.window, WINDOW_SIZE, WINDOW_SIZE)
+  @blit.blit_fixed_array(self.window, 0, self.window, WINDOW_SIZE, WINDOW_SIZE)
   self.window_end -= WINDOW_SIZE
   self.index -= WINDOW_SIZE
   self.block_start -= WINDOW_SIZE
