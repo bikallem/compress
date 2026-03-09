@@ -13,8 +13,12 @@
     {
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
+          coreutils
+          gawk
+          gnugrep
           valgrind
           go
+          procps
         ];
       };
     };
