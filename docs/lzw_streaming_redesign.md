@@ -6,7 +6,7 @@ The current `lzw` package still materializes whole streams in memory in the two 
 
 - `lzw/compress.mbt` exposes `compress(data : Bytes, ...) -> Bytes`, so the batch API requires the full input and full compressed output in memory.
 - `lzw/lzw_writer.mbt` buffers every input chunk into `buf : @buffer.Buffer` and only compresses on end-of-data.
-- `lzw/lzw_reader.mbt` calls `@stream.read_all(self.source)` and then holds the entire decompressed output in `self.output`.
+- `lzw/lzw_reader.mbt` calls `read_all()` on its source and then holds the entire decompressed output in `self.output`.
 
 That means the current API shape is not suitable for a 50GB file unless the caller accepts 50GB-scale buffering.
 
@@ -14,8 +14,8 @@ That means the current API shape is not suitable for a 50GB file unless the call
 
 Make both `lzw.compress()` and `lzw.decompress()` streaming transforms:
 
-- input is pulled from `@stream.Reader`
-- output is pushed directly to `@stream.Writer`
+- input is pulled from `@io.Reader`
+- output is pushed directly to `@io.Writer`
 - the codec owns only LZW state, not an input or output buffering policy
 - memory usage is constant with respect to file size
 - neither direction materializes the full input or full output in memory
@@ -31,43 +31,43 @@ Make both `lzw.compress()` and `lzw.decompress()` streaming transforms:
 Make the stream-oriented function the primary API:
 
 ```moonbit
-pub fn compress(
-  src : &@stream.Reader,
-  dst : &@stream.Writer,
+pub async fn compress(
+  src : &@io.Reader,
+  dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int,
   forward_eod? : Bool = true,
-) -> Unit raise @stream.StreamError
+) -> Unit!LzwError
 ```
 
 Keep a bytes convenience wrapper outside the core path:
 
 ```moonbit
-pub fn compress_bytes(
+pub async fn compress_bytes(
   data : Bytes,
   order : BitOrder,
   lit_width : Int,
-) -> Bytes raise LzwError
+) -> Bytes!LzwError
 ```
 
-`compress_bytes()` should be a thin adapter built from `@stream.BytesReader`, `@stream.BytesWriter`, and the streaming `compress()`.
+`compress_bytes()` should be a thin adapter built from `@io.BytesReader`, `@io.BytesWriter`, and the streaming `compress()`.
 
 Recommended symmetry on the read side:
 
 ```moonbit
-pub fn decompress(
-  src : &@stream.Reader,
-  dst : &@stream.Writer,
+pub async fn decompress(
+  src : &@io.Reader,
+  dst : &@io.Writer,
   order : BitOrder,
   lit_width : Int,
   forward_eod? : Bool = true,
-) -> Unit raise @stream.StreamError
+) -> Unit!LzwError
 
-pub fn decompress_bytes(
+pub async fn decompress_bytes(
   data : Bytes,
   order : BitOrder,
   lit_width : Int,
-) -> Bytes raise LzwError
+) -> Bytes!LzwError
 ```
 
 If only compression is changed, large-file compression becomes constant-memory, but large-file decompression does not.
@@ -128,9 +128,9 @@ Refactor `write_code()` so that it emits completed bytes as soon as they exist:
 ```moonbit
 fn LzwEncoder::emit_byte(
   self : LzwEncoder,
-  dst : &@stream.Writer,
+  dst : &@io.Writer,
   b : Byte,
-) -> Unit raise @stream.StreamError {
+) -> Unit!LzwError {
   self.scratch[0] = b
   dst.write(self.scratch[:1])
 }
@@ -143,17 +143,17 @@ That satisfies the design constraint that `compress()` itself does not choose a 
 ### 3. Encoder Chunk Processing Stays Stateless With Respect to Input Ownership
 
 ```moonbit
-fn LzwEncoder::write_chunk(
+async fn LzwEncoder::write_chunk(
   self : LzwEncoder,
-  data : BytesView,
-  dst : &@stream.Writer,
-) -> Unit raise @stream.StreamError
+  data : Bytes,
+  dst : &@io.Writer,
+) -> Unit!LzwError
 
-fn LzwEncoder::finish(
+async fn LzwEncoder::finish(
   self : LzwEncoder,
-  dst : &@stream.Writer,
+  dst : &@io.Writer,
   forward_eod : Bool,
-) -> Unit raise @stream.StreamError
+) -> Unit!LzwError
 ```
 
 `write_chunk()` is almost the same algorithm as the existing `LzwCompressState::write()`:
@@ -162,7 +162,7 @@ fn LzwEncoder::finish(
 - update `saved_code` across chunk boundaries
 - probe/insert into the fixed dictionary
 - emit codes as phrases close
-- never keep ownership of the caller's `BytesView`
+- never keep ownership of the caller's chunk beyond the call
 
 `finish()`:
 
@@ -176,16 +176,17 @@ fn LzwEncoder::finish(
 The top-level streaming function becomes a simple transform driver:
 
 ```moonbit
-pub fn compress(...) -> Unit raise @stream.StreamError {
+pub async fn compress(...) -> Unit!LzwError {
   validate_lit_width_or_raise_format(...)
   let encoder = LzwEncoder::new(order, lit_width)
   while true {
-    let chunk = src.read()
-    if chunk.is_empty() {
-      encoder.finish(dst, forward_eod)
-      break
+    match src.read_some() {
+      Some(chunk) => encoder.write_chunk(chunk, dst)
+      None => {
+        encoder.finish(dst, forward_eod)
+        break
+      }
     }
-    encoder.write_chunk(chunk, dst)
   }
 }
 ```
@@ -241,10 +242,10 @@ The current decompressor already uses a bounded `output` scratch array while dec
 Conceptually:
 
 ```moonbit
-fn LzwDecoder::flush_output(
+async fn LzwDecoder::flush_output(
   self : LzwDecoder,
-  dst : &@stream.Writer,
-) -> Unit raise @stream.StreamError
+  dst : &@io.Writer,
+) -> Unit!LzwError
 ```
 
 When `self.o > 0`, `flush_output()` writes `self.output[:self.o]` to `dst` and resets `self.o` to `0`.
@@ -262,17 +263,17 @@ The decoder needs one extra detail that compression does not: partial codes may 
 Recommended shape:
 
 ```moonbit
-fn LzwDecoder::write_chunk(
+async fn LzwDecoder::write_chunk(
   self : LzwDecoder,
-  data : BytesView,
-  dst : &@stream.Writer,
-) -> Unit raise @stream.StreamError
+  data : Bytes,
+  dst : &@io.Writer,
+) -> Unit!LzwError
 
-fn LzwDecoder::finish(
+async fn LzwDecoder::finish(
   self : LzwDecoder,
-  dst : &@stream.Writer,
+  dst : &@io.Writer,
   forward_eod : Bool,
-) -> Unit raise @stream.StreamError
+) -> Unit!LzwError
 ```
 
 `write_chunk()`:
@@ -292,16 +293,17 @@ fn LzwDecoder::finish(
 ### 8. `decompress()` Is Also Just a Reader/Writer Loop
 
 ```moonbit
-pub fn decompress(...) -> Unit raise @stream.StreamError {
+pub async fn decompress(...) -> Unit!LzwError {
   validate_lit_width_or_raise_format(...)
   let decoder = LzwDecoder::new(order, lit_width)
   while true {
-    let chunk = src.read()
-    if chunk.is_empty() {
-      decoder.finish(dst, forward_eod)
-      break
+    match src.read_some() {
+      Some(chunk) => decoder.write_chunk(chunk, dst)
+      None => {
+        decoder.finish(dst, forward_eod)
+        break
+      }
     }
-    decoder.write_chunk(chunk, dst)
   }
 }
 ```
@@ -318,13 +320,11 @@ This is the same ownership model as `compress()`:
 ### `compress_bytes()`
 
 ```moonbit
-pub fn compress_bytes(...) -> Bytes raise LzwError {
-  let reader = @stream.BytesReader::new(data)
-  let writer = @stream.BytesWriter::new()
-  compress(reader, writer, order, lit_width, forward_eod=false) catch {
-    e => raise stream_error_to_lzw_error(e)
-  }
-  writer.content()
+pub async fn compress_bytes(...) -> Bytes!LzwError {
+  let reader = @io.BytesReader::new(data)
+  let writer = @io.BytesWriter::new()
+  compress(reader, writer, order, lit_width, forward_eod=false)
+  writer.to_bytes()
 }
 ```
 
@@ -333,13 +333,11 @@ This preserves the simple API for tests and small in-memory use cases without ma
 ### `decompress_bytes()`
 
 ```moonbit
-pub fn decompress_bytes(...) -> Bytes raise LzwError {
-  let reader = @stream.BytesReader::new(data)
-  let writer = @stream.BytesWriter::new()
-  decompress(reader, writer, order, lit_width, forward_eod=false) catch {
-    e => raise stream_error_to_lzw_error(e)
-  }
-  writer.content()
+pub async fn decompress_bytes(...) -> Bytes!LzwError {
+  let reader = @io.BytesReader::new(data)
+  let writer = @io.BytesWriter::new()
+  decompress(reader, writer, order, lit_width, forward_eod=false)
+  writer.to_bytes()
 }
 ```
 
@@ -379,10 +377,10 @@ That is acceptable because it places buffering in the correct layer. If performa
 Recommended split:
 
 - internal codec state machine keeps `LzwError`
-- streaming surfaces (`compress`, `decompress`) expose `@stream.StreamError`, mapping codec failures to `StreamError::Format`
-- bytes convenience wrappers keep `LzwError`
+- async public surfaces (`compress`, `decompress`, `compress_bytes`, `decompress_bytes`) keep `LzwError`
+- `@io` transport-level behavior follows the `io` package semantics of the chosen runtime
 
-This avoids introducing a second streaming error hierarchy unless there is a strong need for typed format errors.
+This keeps the LZW redesign focused on codec errors instead of reintroducing a separate sync `stream` error layer.
 
 ## Migration Plan
 
@@ -398,17 +396,17 @@ This avoids introducing a second streaming error hierarchy unless there is a str
 ## Tests To Add Or Update
 
 - compress round-trip with chunk boundaries at every byte position
-- stream-to-stream compression using `FnReader` and `FnWriter`
+- end-to-end compression using `@io.Reader` / `@io.Writer` pairs
 - verify that `compress(src, dst, ...)` produces output incrementally instead of waiting for full input materialization
 - decompress round-trip with compressed input split at every byte position
-- stream-to-stream decompression using `FnReader` and `FnWriter`
+- end-to-end decompression using `@io.Reader` / `@io.Writer` pairs
 - verify that `decompress(src, dst, ...)` forwards decoded bytes before end-of-input
 - reader-side partial-code boundary tests for both `LSB` and `MSB`
 - decompressor `UnexpectedEOF` behavior when the final code is truncated across chunk boundaries
 - writer error propagation from the middle of code emission
 - writer error propagation from the middle of decoded output flush
 - large generated input through `FnReader` to confirm flat memory use
-- compatibility tests that compare `compress_bytes()` and `decompress_bytes()` with the streaming paths over `BytesReader`/`BytesWriter`
+- compatibility tests that compare `compress_bytes()` and `decompress_bytes()` with the streaming paths over `@io.BytesReader` / `@io.BytesWriter`
 
 ## Recommendation
 
