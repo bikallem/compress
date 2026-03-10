@@ -20,24 +20,32 @@ Make both `lzw.compress()` and `lzw.decompress()` streaming transforms:
 - memory usage is constant with respect to file size
 - neither direction materializes the full input or full output in memory
 
-## Current Performance Finding
+## Current Performance Status
 
-The streaming/constant-memory redesign fixed the memory problem, but it did not fix the main throughput gap against Go's `compress/lzw`.
+The streaming/constant-memory redesign fixed the memory problem, and the first hot-path refactor has already removed the worst encoder overhead.
 
-On March 10, 2026, a like-for-like native comparison on the same machine and the same real zero-filled `1GiB` input showed:
+Before that refactor, a like-for-like native comparison on March 10, 2026, using the same real zero-filled `1GiB` input showed roughly:
 
 - MoonBit release compress: about `115s`
+- Go compress: about `3.2s`
+
+That large gap was traced to the encoder's per-byte `async` call chain.
+
+After refactoring the encoder so that chunk processing is synchronous and async only happens at refill/flush boundaries, the same comparison moved to roughly:
+
+- MoonBit release compress: about `15.5s`
 - Go compress: about `3.2s`
 - MoonBit release decompress: about `9.4s`
 - Go decompress: about `3.2s`
 
-That result means:
+That means:
 
-- memory behavior is acceptable
-- decompression is slower than Go, but within the same order of magnitude
-- compression is the real performance problem
+- constant-memory behavior is still intact
+- the main encoder bottleneck was correctly identified and substantially reduced
+- compression is still slower than Go, but the gap is now in the single-digit multiplier range instead of the mid-30x range
+- decompression remains about `3x` slower than Go and is now a more visible follow-up target
 
-So the next redesign step should focus on the encoder hot path, not on adding more file buffering.
+The checked-in comparison harness for this work lives at `tools/lzw_bench.sh`.
 
 ## Target Runtime I/O
 
@@ -123,24 +131,19 @@ If the package later needs reusable filter objects for composition, they can be 
 
 Split the current LZW implementation into pure codec state machines plus direct function entrypoints for both encode and decode.
 
-## Next Refactor Target
+## Next Optimization Target
 
-The current implementation still expresses the encoder hot path in a way that is expensive for MoonBit native codegen:
+The encoder is now synchronous at chunk-processing time, but it still leaves performance on the table because hot state is still mediated through struct fields and per-byte method calls.
 
-- `compress()` loops over a chunk and calls `state.write_input_byte(...)` once per byte
-- `write_input_byte()`, `write_code()`, `emit_byte()`, and `inc_hi()` are all `async`
-- hot encoder state lives in mutable struct fields instead of chunk-local variables
-
-That structure is correct, but it is not a good performance shape.
-
-The next redesign step should therefore be:
+So the next optimization step should be:
 
 - keep the public API as `async Reader -> Writer`
 - keep constant memory
-- move `async` to the refill/flush boundaries only
-- make the encoder core synchronous and chunk-oriented
+- keep async only at refill/flush boundaries
+- keep the encoder core synchronous and chunk-oriented
+- additionally hoist hot encoder state into chunk-local variables for the duration of the loop
 
-Concretely, the encoder should become something like:
+Concretely, the encoder should converge toward something like:
 
 ```moonbit
 priv fn LzwEncoder::write_chunk(
@@ -160,7 +163,9 @@ with this intent:
 - completed output bytes are appended to a bounded output buffer
 - async writer calls happen only when that output buffer flushes
 
-This is much closer to Go's `Writer.Write(p []byte)` shape and should remove the current per-byte async/method overhead without changing the streaming API or memory guarantees.
+This is much closer to Go's `Writer.Write(p []byte)` shape and should remove the remaining per-byte field/method overhead without changing the streaming API or memory guarantees.
+
+After that, the most likely next performance task is to apply the same idea to the decoder so decompression also uses a tighter synchronous chunk core instead of a per-code async/method-heavy structure.
 
 ### 1. Encoder State Owns Only Codec State
 

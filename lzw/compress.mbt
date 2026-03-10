@@ -16,9 +16,8 @@ pub async fn compress(
     if n == 0 {
       break
     }
-    for i in 0..<n {
-      state.write_input_byte(dst, input_buf[i])
-    }
+    state.write_chunk(input_buf, n)
+    state.flush_output(dst)
   }
   state.finish(dst)
 }
@@ -57,7 +56,7 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
     order,
     lit_width: lw,
     table: FixedArray::make(TABLE_SIZE, 0U),
-    output: OutputByteBuffer::new(),
+    output: OutputByteBuffer::new(size=ENCODER_OUTPUT_BUFFER_SIZE),
     width: 1 + lw,
     hi: (1 << lw) + 1,
     overflow: 1 << (lw + 1),
@@ -68,27 +67,27 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
 }
 
 ///|
-async fn LzwCompressState::emit_byte(
+async fn LzwCompressState::flush_output(
   self : LzwCompressState,
   dst : &@io.Writer,
-  byte : Byte,
 ) -> Unit raise LzwError {
-  self.output.write_byte(dst, byte)
+  self.output.flush(dst)
 }
 
 ///|
-async fn LzwCompressState::write_code(
-  self : LzwCompressState,
-  dst : &@io.Writer,
-  code : Int,
-) -> Unit raise LzwError {
+fn LzwCompressState::emit_byte(self : LzwCompressState, byte : Byte) -> Unit {
+  self.output.write_byte_sync(byte)
+}
+
+///|
+fn LzwCompressState::write_code(self : LzwCompressState, code : Int) -> Unit {
   let c = code.reinterpret_as_uint()
   match self.order {
     LSB => {
       self.bits = self.bits | (c << self.n_bits)
       self.n_bits += self.width
       while self.n_bits >= 8 {
-        self.emit_byte(dst, (self.bits & 0xFFU).to_byte())
+        self.emit_byte((self.bits & 0xFFU).to_byte())
         self.bits = self.bits >> 8
         self.n_bits -= 8
       }
@@ -97,7 +96,7 @@ async fn LzwCompressState::write_code(
       self.bits = self.bits | (c << (32 - self.width - self.n_bits))
       self.n_bits += self.width
       while self.n_bits >= 8 {
-        self.emit_byte(dst, (self.bits >> 24).to_byte())
+        self.emit_byte((self.bits >> 24).to_byte())
         self.bits = self.bits << 8
         self.n_bits -= 8
       }
@@ -106,10 +105,7 @@ async fn LzwCompressState::write_code(
 }
 
 ///|
-async fn LzwCompressState::inc_hi(
-  self : LzwCompressState,
-  dst : &@io.Writer,
-) -> Bool raise LzwError {
+fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
   self.hi += 1
   if self.hi == self.overflow {
     self.width += 1
@@ -117,7 +113,7 @@ async fn LzwCompressState::inc_hi(
   }
   if self.hi == MAX_CODE {
     let clear = 1 << self.lit_width
-    self.write_code(dst, clear)
+    self.write_code(clear)
     self.width = self.lit_width + 1
     self.hi = clear + 1
     self.overflow = clear << 1
@@ -130,15 +126,14 @@ async fn LzwCompressState::inc_hi(
 }
 
 ///|
-async fn LzwCompressState::write_input_byte(
+fn LzwCompressState::write_input_byte(
   self : LzwCompressState,
-  dst : &@io.Writer,
   byte : Byte,
-) -> Unit raise LzwError {
+) -> Unit {
   let literal = byte.to_int()
   if self.saved_code == INVALID_CODE {
     let clear = 1 << self.lit_width
-    self.write_code(dst, clear)
+    self.write_code(clear)
     self.saved_code = literal
     return
   }
@@ -153,10 +148,10 @@ async fn LzwCompressState::write_input_byte(
     }
     hash = (hash + 1) & TABLE_MASK
   }
-  self.write_code(dst, code)
+  self.write_code(code)
   code = literal
   self.saved_code = code
-  if self.inc_hi(dst) {
+  if self.inc_hi() {
     return
   }
   while self.table[hash] != 0U {
@@ -167,24 +162,35 @@ async fn LzwCompressState::write_input_byte(
 }
 
 ///|
+fn LzwCompressState::write_chunk(
+  self : LzwCompressState,
+  input : FixedArray[Byte],
+  len : Int,
+) -> Unit {
+  for i in 0..<len {
+    self.write_input_byte(input[i])
+  }
+}
+
+///|
 async fn LzwCompressState::finish(
   self : LzwCompressState,
   dst : &@io.Writer,
 ) -> Unit raise LzwError {
   if self.saved_code != INVALID_CODE {
-    self.write_code(dst, self.saved_code)
-    ignore(self.inc_hi(dst))
+    self.write_code(self.saved_code)
+    ignore(self.inc_hi())
   } else {
     let clear = 1 << self.lit_width
-    self.write_code(dst, clear)
+    self.write_code(clear)
   }
   let eof = (1 << self.lit_width) + 1
-  self.write_code(dst, eof)
+  self.write_code(eof)
   if self.n_bits > 0 {
     match self.order {
-      MSB => self.emit_byte(dst, (self.bits >> 24).to_byte())
-      LSB => self.emit_byte(dst, (self.bits & 0xFFU).to_byte())
+      MSB => self.emit_byte((self.bits >> 24).to_byte())
+      LSB => self.emit_byte((self.bits & 0xFFU).to_byte())
     }
   }
-  self.output.flush(dst)
+  self.flush_output(dst)
 }

@@ -2,6 +2,9 @@
 const IO_BUFFER_SIZE : Int = 64 * 1024
 
 ///|
+const ENCODER_OUTPUT_BUFFER_SIZE : Int = 2 * IO_BUFFER_SIZE
+
+///|
 fn validate_lit_width(lit_width : Int) -> Unit raise LzwError {
   guard lit_width >= 2 && lit_width <= 8 else {
     raise LzwError::InvalidLitWidth(lit_width)
@@ -65,6 +68,18 @@ async fn OutputByteBuffer::flush(
 }
 
 ///|
+fn OutputByteBuffer::write_byte_sync(
+  self : OutputByteBuffer,
+  byte : Byte,
+) -> Unit {
+  guard self.len < self.buf.length() else {
+    abort("lzw encoder output buffer overflow")
+  }
+  self.buf[self.len] = byte
+  self.len += 1
+}
+
+///|
 async fn OutputByteBuffer::write_byte(
   self : OutputByteBuffer,
   dst : &@io.Writer,
@@ -73,8 +88,7 @@ async fn OutputByteBuffer::write_byte(
   if self.len >= self.buf.length() {
     self.flush(dst)
   }
-  self.buf[self.len] = byte
-  self.len += 1
+  self.write_byte_sync(byte)
 }
 
 ///|
