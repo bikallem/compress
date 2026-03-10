@@ -20,6 +20,25 @@ Make both `lzw.compress()` and `lzw.decompress()` streaming transforms:
 - memory usage is constant with respect to file size
 - neither direction materializes the full input or full output in memory
 
+## Current Performance Finding
+
+The streaming/constant-memory redesign fixed the memory problem, but it did not fix the main throughput gap against Go's `compress/lzw`.
+
+On March 10, 2026, a like-for-like native comparison on the same machine and the same real zero-filled `1GiB` input showed:
+
+- MoonBit release compress: about `115s`
+- Go compress: about `3.2s`
+- MoonBit release decompress: about `9.4s`
+- Go decompress: about `3.2s`
+
+That result means:
+
+- memory behavior is acceptable
+- decompression is slower than Go, but within the same order of magnitude
+- compression is the real performance problem
+
+So the next redesign step should focus on the encoder hot path, not on adding more file buffering.
+
 ## Target Runtime I/O
 
 This redesign should target `moonbitlang/async/io` directly.
@@ -103,6 +122,45 @@ If the package later needs reusable filter objects for composition, they can be 
 ## Internal Design
 
 Split the current LZW implementation into pure codec state machines plus direct function entrypoints for both encode and decode.
+
+## Next Refactor Target
+
+The current implementation still expresses the encoder hot path in a way that is expensive for MoonBit native codegen:
+
+- `compress()` loops over a chunk and calls `state.write_input_byte(...)` once per byte
+- `write_input_byte()`, `write_code()`, `emit_byte()`, and `inc_hi()` are all `async`
+- hot encoder state lives in mutable struct fields instead of chunk-local variables
+
+That structure is correct, but it is not a good performance shape.
+
+The next redesign step should therefore be:
+
+- keep the public API as `async Reader -> Writer`
+- keep constant memory
+- move `async` to the refill/flush boundaries only
+- make the encoder core synchronous and chunk-oriented
+
+Concretely, the encoder should become something like:
+
+```moonbit
+priv fn LzwEncoder::write_chunk(
+  self : LzwEncoder,
+  input : FixedArray[Byte],
+  len : Int,
+  out : OutputByteBuffer,
+) -> Unit raise LzwError
+```
+
+with this intent:
+
+- `compress()` does async reads of input chunks
+- the chunk encoder runs as a tight synchronous loop over `input[0..<len]`
+- `saved_code`, `width`, `hi`, `overflow`, `bits`, and `n_bits` are copied into locals for the duration of the loop
+- the locals are written back to `self` only once per chunk
+- completed output bytes are appended to a bounded output buffer
+- async writer calls happen only when that output buffer flushes
+
+This is much closer to Go's `Writer.Write(p []byte)` shape and should remove the current per-byte async/method overhead without changing the streaming API or memory guarantees.
 
 ### 1. Encoder State Owns Only Codec State
 
