@@ -22,28 +22,34 @@ Make both `lzw.compress()` and `lzw.decompress()` streaming transforms:
 
 ## Current Performance Status
 
-The streaming/constant-memory redesign fixed the memory problem, and the first hot-path refactor has already removed the worst encoder overhead.
+The streaming/constant-memory redesign fixed the memory problem, and two hot-path refactors have already removed the worst encoder overhead.
 
-Before that refactor, a like-for-like native comparison on March 10, 2026, using the same real zero-filled `1GiB` input showed roughly:
+Before those refactors, a like-for-like native comparison on March 10, 2026, using the same real zero-filled `1GiB` input showed roughly:
 
 - MoonBit release compress: about `115s`
 - Go compress: about `3.2s`
 
-That large gap was traced to the encoder's per-byte `async` call chain.
+That large gap was traced primarily to the encoder's per-byte `async` call chain and method-heavy hot loop.
 
-After refactoring the encoder so that chunk processing is synchronous and async only happens at refill/flush boundaries, the same comparison moved to roughly:
+After:
 
-- MoonBit release compress: about `15.5s`
+- moving the encoder hot path to synchronous chunk processing
+- hoisting encoder hot state into chunk-local variables
+- making decoder output buffering synchronous between async flush boundaries
+
+the same comparison moved to roughly:
+
+- MoonBit release compress: about `10.0s`
 - Go compress: about `3.2s`
-- MoonBit release decompress: about `9.4s`
+- MoonBit release decompress: about `9.6s`
 - Go decompress: about `3.2s`
 
 That means:
 
 - constant-memory behavior is still intact
 - the main encoder bottleneck was correctly identified and substantially reduced
-- compression is still slower than Go, but the gap is now in the single-digit multiplier range instead of the mid-30x range
-- decompression remains about `3x` slower than Go and is now a more visible follow-up target
+- compression is now about `3.1x` slower than Go instead of the original mid-30x range
+- decompression remains about `3x` slower than Go and is now the clearest follow-up target
 
 The checked-in comparison harness for this work lives at `tools/lzw_bench.sh`.
 
@@ -133,39 +139,36 @@ Split the current LZW implementation into pure codec state machines plus direct 
 
 ## Next Optimization Target
 
-The encoder is now synchronous at chunk-processing time, but it still leaves performance on the table because hot state is still mediated through struct fields and per-byte method calls.
+The encoder chunk-local refactor is now in place, so the next likely wins are on the decoder/input side and on the remaining method-heavy decoder state transitions.
 
 So the next optimization step should be:
 
 - keep the public API as `async Reader -> Writer`
 - keep constant memory
 - keep async only at refill/flush boundaries
-- keep the encoder core synchronous and chunk-oriented
-- additionally hoist hot encoder state into chunk-local variables for the duration of the loop
+- preserve the encoder's current chunk-synchronous shape
+- make the decoder follow the same idea more closely by hoisting more of its hot state into run-local variables
+- reduce the per-code overhead in the bit-reader path so compressed bytes are consumed in tighter synchronous runs between refills
 
-Concretely, the encoder should converge toward something like:
+Concretely, the decoder should converge toward something like:
 
 ```moonbit
-priv fn LzwEncoder::write_chunk(
-  self : LzwEncoder,
-  input : FixedArray[Byte],
-  len : Int,
-  out : OutputByteBuffer,
-) -> Unit raise LzwError
+priv async fn LzwDecoder::run_chunk(
+  self : LzwDecoder,
+  src : &@asyncio.Reader,
+  order : BitOrder,
+) -> Bool raise LzwError
 ```
 
 with this intent:
 
-- `compress()` does async reads of input chunks
-- the chunk encoder runs as a tight synchronous loop over `input[0..<len]`
-- `saved_code`, `width`, `hi`, `overflow`, `bits`, and `n_bits` are copied into locals for the duration of the loop
-- the locals are written back to `self` only once per chunk
-- completed output bytes are appended to a bounded output buffer
-- async writer calls happen only when that output buffer flushes
+- `decompress()` keeps async only where it must refill compressed input or flush decoded output
+- the decoder runs synchronously for as long as buffered compressed input and output space allow
+- `width`, `hi`, `overflow`, `last`, `bits`, and `n_bits` are copied into locals for the duration of that run
+- the locals are written back to `self` only when the run ends
+- decoded bytes are appended to bounded scratch/output buffers and flushed only at async boundaries
 
-This is much closer to Go's `Writer.Write(p []byte)` shape and should remove the remaining per-byte field/method overhead without changing the streaming API or memory guarantees.
-
-After that, the most likely next performance task is to apply the same idea to the decoder so decompression also uses a tighter synchronous chunk core instead of a per-code async/method-heavy structure.
+This is the same direction that already paid off on the encoder side and is the most defensible next step for shrinking the remaining `~3x` gap without weakening the streaming or constant-memory guarantees.
 
 ### 1. Encoder State Owns Only Codec State
 

@@ -9,9 +9,9 @@ pub async fn decompress(
   validate_lit_width(lit_width)
   let state = LzwDecompressState::new(lit_width)
   while true {
-    let code = state.read_code(src, order)
-    if state.process_code(dst, code) {
-      state.finish(dst)
+    let done = state.run_until_flush_or_eof(src, order)
+    state.flush_output(dst)
+    if done {
       return
     }
   }
@@ -72,16 +72,15 @@ fn LzwDecompressState::new(lit_width : Int) -> LzwDecompressState {
 }
 
 ///|
-async fn LzwDecompressState::emit_byte(
+fn LzwDecompressState::emit_byte(
   self : LzwDecompressState,
-  dst : &@io.Writer,
   byte : Byte,
-) -> Unit raise LzwError {
-  self.output.write_byte(dst, byte)
+) -> Unit {
+  self.output.write_byte_sync(byte)
 }
 
 ///|
-async fn LzwDecompressState::finish(
+async fn LzwDecompressState::flush_output(
   self : LzwDecompressState,
   dst : &@io.Writer,
 ) -> Unit raise LzwError {
@@ -161,22 +160,20 @@ async fn LzwDecompressState::read_code(
 }
 
 ///|
-async fn LzwDecompressState::flush_stack(
+fn LzwDecompressState::flush_stack(
   self : LzwDecompressState,
-  dst : &@io.Writer,
   start : Int,
-) -> Unit raise LzwError {
-  self.output.write_fixed(dst, self.stack, start, self.stack.length() - start)
+) -> Unit {
+  self.output.write_fixed_sync(self.stack, start, self.stack.length() - start)
 }
 
 ///|
-async fn LzwDecompressState::process_code(
+fn LzwDecompressState::process_code(
   self : LzwDecompressState,
-  dst : &@io.Writer,
   code : Int,
 ) -> Bool raise LzwError {
   if code < self.clear {
-    self.emit_byte(dst, code.to_byte())
+    self.emit_byte(code.to_byte())
     if self.last != DECODER_INVALID_CODE {
       self.suffix.unsafe_set(self.hi, code.to_byte())
       self.prefix.unsafe_set(self.hi, self.last)
@@ -211,10 +208,26 @@ async fn LzwDecompressState::process_code(
   let first = current.to_byte()
   top -= 1
   self.stack.unsafe_set(top, first)
-  self.flush_stack(dst, top)
+  self.flush_stack(top)
   self.suffix.unsafe_set(self.hi, first)
   self.prefix.unsafe_set(self.hi, self.last)
   self.last = incode
   self.advance_hi()
+  false
+}
+
+///|
+async fn LzwDecompressState::run_until_flush_or_eof(
+  self : LzwDecompressState,
+  src : &@io.Reader,
+  order : BitOrder,
+) -> Bool raise LzwError {
+  let reserve = 1 << MAX_WIDTH
+  while self.output.remaining() >= reserve {
+    let code = self.read_code(src, order)
+    if self.process_code(code) {
+      return true
+    }
+  }
   false
 }

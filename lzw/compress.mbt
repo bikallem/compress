@@ -126,50 +126,139 @@ fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
 }
 
 ///|
-fn LzwCompressState::write_input_byte(
-  self : LzwCompressState,
-  byte : Byte,
-) -> Unit {
-  let literal = byte.to_int()
-  if self.saved_code == INVALID_CODE {
-    let clear = 1 << self.lit_width
-    self.write_code(clear)
-    self.saved_code = literal
-    return
-  }
-  let mut code = self.saved_code
-  let key = (code << 8) | literal
-  let mut hash = ((key >> 12) ^ key) & TABLE_MASK
-  while self.table[hash] != 0U {
-    let t = self.table[hash]
-    if key.reinterpret_as_uint() == t >> 12 {
-      self.saved_code = (t & MAX_CODE.reinterpret_as_uint()).reinterpret_as_int()
-      return
-    }
-    hash = (hash + 1) & TABLE_MASK
-  }
-  self.write_code(code)
-  code = literal
-  self.saved_code = code
-  if self.inc_hi() {
-    return
-  }
-  while self.table[hash] != 0U {
-    hash = (hash + 1) & TABLE_MASK
-  }
-  self.table[hash] = (key.reinterpret_as_uint() << 12) |
-    self.hi.reinterpret_as_uint()
-}
-
-///|
 fn LzwCompressState::write_chunk(
   self : LzwCompressState,
   input : FixedArray[Byte],
   len : Int,
 ) -> Unit {
+  let table = self.table
+  let output = self.output
+  let order = self.order
+  let lit_width = self.lit_width
+  let clear = 1 << lit_width
+  let clear_u = clear.reinterpret_as_uint()
+  let max_code_u = MAX_CODE.reinterpret_as_uint()
+  let mut width = self.width
+  let mut hi = self.hi
+  let mut overflow = self.overflow
+  let mut saved_code = self.saved_code
+  let mut bits = self.bits
+  let mut n_bits = self.n_bits
+
   for i in 0..<len {
-    self.write_input_byte(input[i])
+    let literal = input[i].to_int()
+    if saved_code == INVALID_CODE {
+      match order {
+        LSB => {
+          bits = bits | (clear_u << n_bits)
+          n_bits += width
+          while n_bits >= 8 {
+            output.write_byte_sync((bits & 0xFFU).to_byte())
+            bits = bits >> 8
+            n_bits -= 8
+          }
+        }
+        MSB => {
+          bits = bits | (clear_u << (32 - width - n_bits))
+          n_bits += width
+          while n_bits >= 8 {
+            output.write_byte_sync((bits >> 24).to_byte())
+            bits = bits << 8
+            n_bits -= 8
+          }
+        }
+      }
+      saved_code = literal
+      continue
+    }
+
+    let code = saved_code
+    let key = (code << 8) | literal
+    let key_u = key.reinterpret_as_uint()
+    let mut hash = ((key >> 12) ^ key) & TABLE_MASK
+    let mut found = false
+    while table[hash] != 0U {
+      let t = table[hash]
+      if key_u == t >> 12 {
+        saved_code = (t & max_code_u).reinterpret_as_int()
+        found = true
+        break
+      }
+      hash = (hash + 1) & TABLE_MASK
+    }
+    if found {
+      continue
+    }
+
+    match order {
+      LSB => {
+        bits = bits | (code.reinterpret_as_uint() << n_bits)
+        n_bits += width
+        while n_bits >= 8 {
+          output.write_byte_sync((bits & 0xFFU).to_byte())
+          bits = bits >> 8
+          n_bits -= 8
+        }
+      }
+      MSB => {
+        bits = bits | (code.reinterpret_as_uint() << (32 - width - n_bits))
+        n_bits += width
+        while n_bits >= 8 {
+          output.write_byte_sync((bits >> 24).to_byte())
+          bits = bits << 8
+          n_bits -= 8
+        }
+      }
+    }
+
+    saved_code = literal
+    hi += 1
+    if hi == overflow {
+      width += 1
+      overflow = overflow << 1
+    }
+    if hi == MAX_CODE {
+      match order {
+        LSB => {
+          bits = bits | (clear_u << n_bits)
+          n_bits += width
+          while n_bits >= 8 {
+            output.write_byte_sync((bits & 0xFFU).to_byte())
+            bits = bits >> 8
+            n_bits -= 8
+          }
+        }
+        MSB => {
+          bits = bits | (clear_u << (32 - width - n_bits))
+          n_bits += width
+          while n_bits >= 8 {
+            output.write_byte_sync((bits >> 24).to_byte())
+            bits = bits << 8
+            n_bits -= 8
+          }
+        }
+      }
+      width = lit_width + 1
+      hi = clear + 1
+      overflow = clear << 1
+      for j in 0..<TABLE_SIZE {
+        table[j] = 0U
+      }
+      continue
+    }
+
+    while table[hash] != 0U {
+      hash = (hash + 1) & TABLE_MASK
+    }
+    table[hash] = (key_u << 12) | hi.reinterpret_as_uint()
   }
+
+  self.width = width
+  self.hi = hi
+  self.overflow = overflow
+  self.saved_code = saved_code
+  self.bits = bits
+  self.n_bits = n_bits
 }
 
 ///|

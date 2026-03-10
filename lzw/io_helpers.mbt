@@ -80,36 +80,18 @@ fn OutputByteBuffer::write_byte_sync(
 }
 
 ///|
-async fn OutputByteBuffer::write_byte(
-  self : OutputByteBuffer,
-  dst : &@io.Writer,
-  byte : Byte,
-) -> Unit raise LzwError {
-  if self.len >= self.buf.length() {
-    self.flush(dst)
-  }
-  self.write_byte_sync(byte)
+fn OutputByteBuffer::remaining(self : OutputByteBuffer) -> Int {
+  self.buf.length() - self.len
 }
 
 ///|
-async fn OutputByteBuffer::write_fixed(
+fn OutputByteBuffer::write_fixed_sync(
   self : OutputByteBuffer,
-  dst : &@io.Writer,
   src : FixedArray[Byte],
   start : Int,
   len : Int,
-) -> Unit raise LzwError {
-  let mut src_start = start
-  let mut remaining = len
-  while remaining > 0 {
-    if self.len >= self.buf.length() {
-      self.flush(dst)
-    }
-    let available = self.buf.length() - self.len
-    let n = if remaining < available { remaining } else { available }
-    @blit.blit_fixed_array(self.buf, self.len, src, src_start, n)
-    self.len += n
-    src_start += n
-    remaining -= n
-  }
+) -> Unit {
+  guard len <= self.remaining() else { abort("lzw output buffer overflow") }
+  @blit.blit_fixed_array(self.buf, self.len, src, start, len)
+  self.len += len
 }
