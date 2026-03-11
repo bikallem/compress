@@ -1,0 +1,12 @@
+import {
+  "bikallem/compress/internal/blit",
+  "moonbitlang/core/buffer",
+}
+
+options(
+  "native-stub": [ "match_len_stub.c" ],
+  targets: {
+    "match_len_native.mbt": [ "native" ],
+    "match_len_non_native.mbt": [ "wasm", "wasm-gc", "js" ],
+  },
+)
