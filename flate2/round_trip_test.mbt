@@ -69,7 +69,7 @@ test "signal protocol: chunked input" {
         inspect(false, content="true")
       } else {
         // Feed one byte at a time
-        d.src(Bytes::makei(1, fn(_) { compressed[pos] }))
+        d.src([compressed[pos]])
         pos += 1
         continue d.decode()
       }
