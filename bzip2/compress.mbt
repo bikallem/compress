@@ -33,10 +33,6 @@ pub fn compress(data : Bytes, level? : Int = 9) -> Bytes raise Bzip2Error {
     write_block(bw, symbols, num_in_use, in_use, orig_ptr, block_crc)
     offset = end
   }
-  // Handle empty input
-  if data.length() == 0 {
-    // Write an empty block: just the EOS marker
-  }
   // End of stream marker: 0x177245385090
   bw.write_bits(0x177245U, 24)
   bw.write_bits(0x385090U, 24)
