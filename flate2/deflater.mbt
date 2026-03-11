@@ -227,7 +227,6 @@ fn Deflater::step_stored(self : Deflater) -> Unit {
     self.w.write_stored_header(block_len, false)
     self.w.write_stored_data(self.window, self.index, block_len)
     self.index += block_len
-    ()
   }
 }
 
