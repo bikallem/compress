@@ -2,6 +2,20 @@
 
 A pure MoonBit compression library ported from Go's `compress/*` stdlib.
 
+## Table of Contents
+
+- [Packages](#packages)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Streaming API](#streaming-api)
+  - [Compression](#compression)
+  - [Decompression](#decompression)
+  - [Format Wrappers](#format-wrappers)
+- [Compression Levels](#compression-levels)
+- [Checksums](#checksums)
+- [Features](#features)
+- [License](#license)
+
 ## Packages
 
 | Package | Description |
