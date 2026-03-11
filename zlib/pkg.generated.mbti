@@ -6,13 +6,9 @@ import {
 }
 
 // Values
-pub fn compress(Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
+pub fn compress(Bytes, dict? : Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
 
-pub fn compress_with_dict(Bytes, Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
-
-pub fn decompress(Bytes) -> Bytes raise ZlibError
-
-pub fn decompress_with_dict(Bytes, Bytes) -> Bytes raise ZlibError
+pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise ZlibError
 
 // Errors
 pub suberror ZlibError {
