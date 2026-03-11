@@ -25,9 +25,7 @@ async fn main {
     )
     let (restored, header) = @gz.decompress(compressed)
     assert_eq(restored, original)
-    println(
-      "Async gzip decompress: round-trip OK (\{restored.length()} bytes)",
-    )
+    println("Async gzip decompress: round-trip OK (\{restored.length()} bytes)")
     println("Header name: \"\{header.name}\"")
   })
 }

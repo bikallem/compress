@@ -1,14 +1,8 @@
 ///|
-/// Decompresses zlib-encoded data (RFC 1950).
-pub fn decompress(data : Bytes) -> Bytes raise ZlibError {
-  decompress_with_dict(data, Bytes::default())
-}
-
-///|
 /// Decompresses zlib-encoded data with a preset dictionary.
-pub fn decompress_with_dict(
+pub fn decompress(
   data : Bytes,
-  dict : Bytes,
+  dict? : Bytes = Bytes::default(),
 ) -> Bytes raise ZlibError {
   // Need at least 2 bytes header + 4 bytes Adler-32 footer
   if data.length() < 6 {

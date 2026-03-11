@@ -25,8 +25,6 @@ async fn main {
     )
     let restored = @zliblib.decompress(compressed)
     assert_eq(restored, original)
-    println(
-      "Async zlib decompress: round-trip OK (\{restored.length()} bytes)",
-    )
+    println("Async zlib decompress: round-trip OK (\{restored.length()} bytes)")
   })
 }

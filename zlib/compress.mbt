@@ -1,17 +1,8 @@
 ///|
-/// Compresses data using zlib format (RFC 1950).
+/// Compresses data using zlib format with a preset dictionary.
 pub fn compress(
   data : Bytes,
-  level? : @flate.CompressionLevel = DefaultCompression,
-) -> Bytes raise ZlibError {
-  compress_with_dict(data, Bytes::default(), level~)
-}
-
-///|
-/// Compresses data using zlib format with a preset dictionary.
-pub fn compress_with_dict(
-  data : Bytes,
-  dict : Bytes,
+  dict? : Bytes = Bytes::default(),
   level? : @flate.CompressionLevel = DefaultCompression,
 ) -> Bytes raise ZlibError {
   let buf = @buffer.new(size_hint=data.length() + 12)

@@ -22,10 +22,7 @@ pub fn compress(
 }
 
 ///|
-fn build_gzip_header(
-  header : Header,
-  level : @flate.CompressionLevel,
-) -> Bytes {
+fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes {
   let buf = @buffer.new(size_hint=32)
   // Magic bytes
   buf.write_byte(GZIP_MAGIC1)

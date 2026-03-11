@@ -94,7 +94,7 @@ test "golden: decompress Go-zlib-dict repeated 4k level6" {
   let compressed = zlib_hex_to_bytes(
     "78bba93516a2ecc7310d00000080a0feadede13861666666666666e6bf0b0000ffff100b885b",
   )
-  let decompressed = @zlib.decompress_with_dict(compressed, dict)
+  let decompressed = @zlib.decompress(compressed, dict~)
   inspect(decompressed.length(), content="4096")
   let expected : Bytes = b"abcdefghijklmnop"
   let mut matches = true

@@ -24,12 +24,12 @@ fn run() -> Unit raise {
 
   // --- With preset dictionary ---
   let dict = b"zlib framing Adler checksum"
-  let compressed_d = @zliblib.compress_with_dict(
+  let compressed_d = @zliblib.compress(
     original,
-    dict,
+    dict~,
     level=DefaultCompression,
   )
-  let restored_d = @zliblib.decompress_with_dict(compressed_d, dict)
+  let restored_d = @zliblib.decompress(compressed_d, dict~)
   assert_eq(restored_d, original)
   println("With dict: \{compressed_d.length()} bytes")
 
