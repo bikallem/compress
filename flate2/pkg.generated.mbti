@@ -1,0 +1,64 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/flate2"
+
+// Values
+pub fn compress(Bytes, level? : CompressionLevel) -> Bytes raise CompressError
+
+pub fn decompress(Bytes) -> Bytes raise CompressError
+
+pub fn decompress_with_dict(Bytes, Bytes) -> Bytes raise CompressError
+
+// Errors
+pub suberror CompressError {
+  CorruptInput(String)
+  InvalidLevel(Int)
+  UnexpectedEOF
+}
+pub impl Show for CompressError
+
+// Types and methods
+pub(all) enum CompressionLevel {
+  NoCompression
+  BestSpeed
+  Level(Int)
+  BestCompression
+  DefaultCompression
+  HuffmanOnly
+}
+pub impl Eq for CompressionLevel
+pub impl Show for CompressionLevel
+
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(CompressError)
+}
+pub impl Show for Decode
+
+pub struct Deflater {
+  // private fields
+}
+pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::new(level? : CompressionLevel, dict? : Bytes) -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(CompressError)
+}
+pub impl Show for Encode
+
+pub struct Inflater {
+  // private fields
+}
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::new(dict? : Bytes) -> Self
+pub fn Inflater::remaining(Self) -> Bytes
+pub fn Inflater::src(Self, Bytes) -> Unit
+
+// Type aliases
+
+// Traits
+
