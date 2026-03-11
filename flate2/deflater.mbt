@@ -49,24 +49,24 @@ const MAX_BLOCK_TOKENS : Int = 16384
 /// The caller drives the encode loop:
 ///   - `encode(Some(data))` feeds input, may return `Data(bytes)` or `Ok`
 ///   - `encode(None)` signals EOF, may return `Data(bytes)` or `End`
-pub struct Deflater {
-  priv level : Int
-  priv w : BitWriter
-  priv mut phase : DeflatePhase
+struct Deflater {
+  level : Int
+  w : BitWriter
+  mut phase : DeflatePhase
   // Sliding window (double-sized for lookback)
-  priv window : FixedArray[Byte]
-  priv mut window_end : Int
-  priv mut index : Int
+  window : FixedArray[Byte]
+  mut window_end : Int
+  mut index : Int
   // Hash tables
-  priv head : FixedArray[Int]
-  priv prev : FixedArray[Int]
+  head : FixedArray[Int]
+  prev : FixedArray[Int]
   // Token buffer
-  priv tokens : Array[Token]
+  tokens : Array[Token]
   // Lazy match state (levels 4+)
-  priv mut prev_match_len : Int
-  priv mut prev_match_dist : Int
-  priv mut prev_literal : Byte
-  priv mut has_prev : Bool
+  mut prev_match_len : Int
+  mut prev_match_dist : Int
+  mut prev_literal : Byte
+  mut has_prev : Bool
 }
 
 ///|
