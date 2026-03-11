@@ -2,7 +2,7 @@
 /// Streaming gzip compressor using signal protocol.
 ///
 /// Wraps @flate.Deflater with gzip header (RFC 1952) and CRC-32/ISIZE trailer.
-priv struct DeflaterState {
+priv struct Encoder {
   deflater : @flate.Deflater
   crc : @checksum.CRC32
   mut size : UInt
@@ -12,7 +12,7 @@ priv struct DeflaterState {
 }
 
 ///|
-struct Deflater(DeflaterState)
+struct Deflater(Encoder)
 
 ///|
 pub fn Deflater::new(

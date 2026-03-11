@@ -11,7 +11,7 @@
 ///     End => break
 ///     Error(e) => ...
 ///   }
-priv struct InflaterState {
+priv struct Decoder {
   inflater : @flate.Inflater
   adler : @checksum.Adler32
   dict : Bytes
@@ -30,7 +30,7 @@ priv enum InflatePhase {
 }
 
 ///|
-struct Inflater(InflaterState)
+struct Inflater(Decoder)
 
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
@@ -172,7 +172,7 @@ fn try_parse_header_bytes(
 }
 
 ///|
-fn verify_trailer(s : InflaterState, remaining : Bytes) -> Decode {
+fn verify_trailer(s : Decoder, remaining : Bytes) -> Decode {
   if remaining.length() < 4 {
     s.phase = VerifyTrailer(remaining)
     return Await
@@ -191,7 +191,7 @@ fn verify_trailer(s : InflaterState, remaining : Bytes) -> Decode {
 }
 
 ///|
-fn fail_with(s : InflaterState, e : ZlibError) -> Decode {
+fn fail_with(s : Decoder, e : ZlibError) -> Decode {
   s.phase = Failed(e)
   Error(e)
 }

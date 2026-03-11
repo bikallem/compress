@@ -13,7 +13,7 @@
 ///     End => break
 ///     Error(e) => ...
 ///   }
-priv struct InflaterState {
+priv struct Decoder {
   buf : @buffer.Buffer
   mut output : Bytes
   mut output_emitted : Bool
@@ -22,7 +22,7 @@ priv struct InflaterState {
 }
 
 ///|
-struct Inflater(InflaterState)
+struct Inflater(Decoder)
 
 ///|
 pub fn Inflater::new() -> Inflater {

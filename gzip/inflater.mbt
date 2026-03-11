@@ -2,7 +2,7 @@
 /// Streaming gzip decompressor using signal protocol.
 ///
 /// Wraps @flate.Inflater with gzip header parsing and CRC-32/ISIZE verification.
-priv struct InflaterState {
+priv struct Decoder {
   inflater : @flate.Inflater
   crc : @checksum.CRC32
   mut size : UInt
@@ -22,7 +22,7 @@ priv enum InflatePhase {
 }
 
 ///|
-struct Inflater(InflaterState)
+struct Inflater(Decoder)
 
 ///|
 pub fn Inflater::new() -> Inflater {
@@ -196,7 +196,7 @@ fn try_parse_gzip_header(
 }
 
 ///|
-fn verify_gzip_trailer(s : InflaterState, remaining : Bytes) -> Decode {
+fn verify_gzip_trailer(s : Decoder, remaining : Bytes) -> Decode {
   if remaining.length() < 8 {
     s.phase = VerifyTrailer(remaining)
     return Await
@@ -228,7 +228,7 @@ fn verify_gzip_trailer(s : InflaterState, remaining : Bytes) -> Decode {
 }
 
 ///|
-fn fail_with(s : InflaterState, e : GzipError) -> Decode {
+fn fail_with(s : Decoder, e : GzipError) -> Decode {
   s.phase = Failed(e)
   Error(e)
 }

@@ -8,14 +8,14 @@
 ///   let d = Deflater::new()
 ///   match d.encode(Some(data)) { Ok => ... }
 ///   match d.encode(None) { Data(out) => ...; End => ... }
-priv struct DeflaterState {
+priv struct Encoder {
   level : Int
   buf : @buffer.Buffer
   mut finished : Bool
 }
 
 ///|
-struct Deflater(DeflaterState)
+struct Deflater(Encoder)
 
 ///|
 pub fn Deflater::new(level? : Int = 9) -> Deflater raise Bzip2Error {

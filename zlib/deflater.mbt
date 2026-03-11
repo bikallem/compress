@@ -11,7 +11,7 @@
 ///   loop {
 ///     match d.encode(None) { Data(out) => write(out); End => break; .. }
 ///   }
-priv struct DeflaterState {
+priv struct Encoder {
   deflater : @flate.Deflater
   adler : @checksum.Adler32
   header : Bytes
@@ -20,7 +20,7 @@ priv struct DeflaterState {
 }
 
 ///|
-struct Deflater(DeflaterState)
+struct Deflater(Encoder)
 
 ///|
 pub fn Deflater::new(
