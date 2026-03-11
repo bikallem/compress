@@ -1,7 +1,5 @@
 import {
   "bikallem/compress/gzip" @gz,
-  "bikallem/compress/stream",
-  "bikallem/compress/stream/async" @sa,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",

@@ -29,7 +29,7 @@ test "gzip round-trip repeated data" {
 ///|
 test "gzip round-trip all compression levels" {
   let data = b"The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog."
-  let levels : Array[@flate.CompressionLevel] = [
+  let levels : Array[@flate2.CompressionLevel] = [
     NoCompression,
     BestSpeed,
     Level(5),
@@ -144,8 +144,8 @@ test "golden: decompress Go-gzip hello" {
 ///|
 test "gzip invalid magic" {
   let data : Bytes = [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ]
   let result = try? @gzip.decompress(data)
   guard result is Err(_) else { fail("expected error for invalid magic") }
@@ -167,12 +167,10 @@ test "gzip checksum mismatch" {
   for i in 0..<(compressed.length() - 8) {
     buf.write_byte(compressed[i])
   }
-  // Write corrupted CRC
   buf.write_byte(b'\xFF')
   buf.write_byte(b'\xFF')
   buf.write_byte(b'\xFF')
   buf.write_byte(b'\xFF')
-  // Keep original ISIZE
   for i in (compressed.length() - 4)..<compressed.length() {
     buf.write_byte(compressed[i])
   }
@@ -189,7 +187,6 @@ test "gzip compression reduces size" {
   }
   let data = buf.to_bytes()
   let compressed = @gzip.compress(data)
-  // 5000 bytes of 'x' should compress well (gzip header ~18 bytes overhead)
   assert_true(compressed.length() < 100)
 }
 
@@ -219,7 +216,6 @@ test "gzip round-trip 32KB boundary" {
 
 ///|
 test "gzip invalid method" {
-  // Valid magic but wrong compression method
   let data : Bytes = [
     0x1F, 0x8B, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ]
@@ -231,7 +227,6 @@ test "gzip invalid method" {
 test "gzip size mismatch" {
   let data = b"test"
   let compressed = @gzip.compress(data)
-  // Corrupt ISIZE (last 4 bytes)
   let buf = @buffer.new(size_hint=compressed.length())
   for i in 0..<(compressed.length() - 4) {
     buf.write_byte(compressed[i])

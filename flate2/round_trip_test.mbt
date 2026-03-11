@@ -55,6 +55,36 @@ test "round-trip: large repetitive data" {
 }
 
 ///|
+test "round-trip: 32KB boundary all levels" {
+  let data = Bytes::makei(32768, fn(i) { (i % 256).to_byte() })
+  for
+    lvl in [
+      @flate2.NoCompression,
+      @flate2.BestSpeed,
+      @flate2.Level(3),
+      @flate2.DefaultCompression,
+      @flate2.BestCompression,
+    ] {
+    let compressed = @flate2.compress(data, level=lvl)
+    let decompressed = @flate2.decompress(compressed)
+    inspect(decompressed.length(), content="32768")
+    inspect(decompressed == data, content="true")
+  }
+}
+
+///|
+test "round-trip: sizes around 32KB" {
+  for size in [32000, 32700, 32767, 32768, 32769, 33000, 40000, 65536] {
+    let data = Bytes::makei(size, fn(i) { (i % 256).to_byte() })
+    let compressed = @flate2.compress(data)
+    let decompressed = @flate2.decompress(compressed)
+    if decompressed.length() != size {
+      fail("size \{size}: got \{decompressed.length()}")
+    }
+  }
+}
+
+///|
 test "signal protocol: chunked input" {
   // Compress data, then decompress it by feeding one byte at a time
   let data : Bytes = b"Hello, World!"

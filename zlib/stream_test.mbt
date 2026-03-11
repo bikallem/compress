@@ -1,73 +1,162 @@
 ///|
-test "ZlibReader decompresses zlib data" {
+test "streaming zlib deflater round-trip" {
   let original = b"Hello, World! This is a test of zlib streaming."
-  let compressed = @zlib.compress(original)
-  let reader = @zlib.ZlibReader::new(
-    @stream.BytesReader::new(compressed, slice_length=16),
-  )
-  let result = @stream.read_all(reader)
-  assert_eq(result, original)
-}
-
-///|
-test "ZlibReader yields bounded chunks" {
-  let original = Bytes::makei(5000, fn(i) { (i % 256).to_byte() })
-  let compressed = @zlib.compress(original)
-  let reader = @zlib.ZlibReader::new(
-    @stream.BytesReader::new(compressed),
-    slice_length=1000,
-  )
-  let mut max_chunk = 0
-  let mut total = 0
-  while true {
-    let chunk = reader.read()
-    if chunk.is_empty() {
+  let d = @zlib.Deflater::new()
+  let buf = @buffer.new()
+  // Feed data
+  match d.encode(Some(original)) {
+    Data(out) => buf.write_bytes(out)
+    Ok => ()
+    _ => fail("unexpected signal during encode")
+  }
+  // Finish
+  loop d.encode(None) {
+    Data(out) => {
+      buf.write_bytes(out)
+      continue d.encode(None)
+    }
+    End => break
+    _ => {
+      fail("unexpected signal during finish")
       break
     }
-    if chunk.length() > max_chunk {
-      max_chunk = chunk.length()
-    }
-    total += chunk.length()
   }
-  assert_eq(total, 5000)
-  assert_true(max_chunk <= 1000)
-}
-
-///|
-test "ZlibStreamWriter compresses data" {
-  let original = b"Hello, World! This is zlib streaming compression."
-  let dest_buf = @stream.BytesWriter::new()
-  let writer = @zlib.ZlibStreamWriter::new(dest_buf)
-  writer.write(original[0:20])
-  writer.write(original[20:])
-  writer.write(b""[:])
-  let compressed = dest_buf.content()
+  let compressed = buf.to_bytes()
   let decompressed = @zlib.decompress(compressed)
   assert_eq(decompressed, original)
 }
 
 ///|
-test "ZlibStreamWriter with compression levels" {
-  let original = Bytes::makei(1000, fn(i) { (i % 26 + 65).to_byte() })
-  let dest = @stream.BytesWriter::new()
-  let writer = @zlib.ZlibStreamWriter::new(dest, level=NoCompression)
-  writer.write(original[:])
-  writer.write(b""[:])
-  let decompressed = @zlib.decompress(dest.content())
-  assert_eq(decompressed, original)
+test "streaming zlib inflater round-trip" {
+  let original = b"Hello, World! This is a test of zlib streaming decompression."
+  let compressed = @zlib.compress(original)
+  let d = @zlib.Inflater::new()
+  let buf = @buffer.new()
+  // Feed all compressed data at once
+  d.src(compressed)
+  loop d.decode() {
+    Await => {
+      fail("unexpected Await with all data provided")
+      break
+    }
+    Data(out) => {
+      buf.write_bytes(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => {
+      fail("error: \{e}")
+      break
+    }
+  }
+  assert_eq(buf.to_bytes(), original)
 }
 
 ///|
-test "ZlibReader + ZlibStreamWriter round-trip via pipe" {
+test "streaming zlib inflater with chunked input" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
-  let compress_dest = @stream.BytesWriter::new()
-  let zlib_writer = @zlib.ZlibStreamWriter::new(compress_dest)
-  @stream.pipe(
-    @stream.BytesReader::new(original, slice_length=500),
-    zlib_writer,
-  )
-  let compressed = compress_dest.content()
-  let reader = @zlib.ZlibReader::new(@stream.BytesReader::new(compressed))
-  let result = @stream.read_all(reader)
-  assert_eq(result, original)
+  let compressed = @zlib.compress(original)
+  let d = @zlib.Inflater::new()
+  let buf = @buffer.new()
+  let chunk_size = 64
+  let mut offset = 0
+  loop d.decode() {
+    Await => {
+      if offset >= compressed.length() {
+        fail("unexpected Await: all data consumed")
+        break
+      }
+      let end = if offset + chunk_size > compressed.length() {
+        compressed.length()
+      } else {
+        offset + chunk_size
+      }
+      let chunk = Bytes::makei(end - offset, fn(i) {
+        compressed[offset + i]
+      })
+      d.src(chunk)
+      offset = end
+      continue d.decode()
+    }
+    Data(out) => {
+      buf.write_bytes(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => {
+      fail("error: \{e}")
+      break
+    }
+  }
+  assert_eq(buf.to_bytes(), original)
+}
+
+///|
+test "streaming zlib deflater + inflater round-trip" {
+  let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
+  // Compress with deflater
+  let d = @zlib.Deflater::new()
+  let cbuf = @buffer.new()
+  match d.encode(Some(original)) {
+    Data(out) => cbuf.write_bytes(out)
+    Ok => ()
+    _ => fail("unexpected signal")
+  }
+  loop d.encode(None) {
+    Data(out) => {
+      cbuf.write_bytes(out)
+      continue d.encode(None)
+    }
+    End => break
+    _ => {
+      fail("unexpected signal")
+      break
+    }
+  }
+  let compressed = cbuf.to_bytes()
+  // Decompress with inflater
+  let inf = @zlib.Inflater::new()
+  let dbuf = @buffer.new()
+  inf.src(compressed)
+  loop inf.decode() {
+    Await => {
+      fail("unexpected Await")
+      break
+    }
+    Data(out) => {
+      dbuf.write_bytes(out)
+      continue inf.decode()
+    }
+    End => break
+    Error(e) => {
+      fail("error: \{e}")
+      break
+    }
+  }
+  assert_eq(dbuf.to_bytes(), original)
+}
+
+///|
+test "streaming zlib deflater with compression levels" {
+  let original = Bytes::makei(1000, fn(i) { (i % 26 + 65).to_byte() })
+  let d = @zlib.Deflater::new(level=NoCompression)
+  let buf = @buffer.new()
+  match d.encode(Some(original)) {
+    Data(out) => buf.write_bytes(out)
+    Ok => ()
+    _ => fail("unexpected signal")
+  }
+  loop d.encode(None) {
+    Data(out) => {
+      buf.write_bytes(out)
+      continue d.encode(None)
+    }
+    End => break
+    _ => {
+      fail("unexpected signal")
+      break
+    }
+  }
+  let decompressed = @zlib.decompress(buf.to_bytes())
+  assert_eq(decompressed, original)
 }

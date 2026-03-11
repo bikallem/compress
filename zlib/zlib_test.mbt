@@ -41,7 +41,7 @@ test "zlib round-trip all zeros" {
 ///|
 test "zlib round-trip all compression levels" {
   let data = b"The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog."
-  let levels : Array[@flate.CompressionLevel] = [
+  let levels : Array[@flate2.CompressionLevel] = [
     NoCompression,
     BestSpeed,
     Level(5),
@@ -109,8 +109,6 @@ test "golden: decompress Go-zlib-dict repeated 4k level6" {
 
 ///|
 test "zlib header validation - bad checksum" {
-  // Valid zlib header is 0x78 0x9C (default compression)
-  // Corrupt the FLG byte to break FCHECK
   let data : Bytes = [0x78, 0x9D, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]
   let result = try? @zlib.decompress(data)
   guard result is Err(_) else { fail("expected error for bad header checksum") }
@@ -118,12 +116,6 @@ test "zlib header validation - bad checksum" {
 
 ///|
 test "zlib header validation - bad method" {
-  // CMF = 0x18 means method=8 cinfo=1, but let's use method=4
-  // CMF=0x74 -> method=4, cinfo=7
-  // Need FLG so that (0x74*256+FLG) % 31 == 0
-  // 0x74*256 = 29696, 29696 % 31 = 29696 - 958*31 = 29696 - 29698 = ... let me calculate
-  // 29696 / 31 = 958.something, 958*31 = 29698, so remainder = 29696 - 29698 < 0
-  // Better: just build valid header with wrong method
   let cmf = 0x74 // method=4, cinfo=7
   let remainder = cmf * 256 % 31
   let flg = if remainder == 0 { 0 } else { 31 - remainder }
@@ -164,16 +156,12 @@ test "zlib checksum mismatch" {
 
 ///|
 test "zlib decompress known vector" {
-  // This is a valid zlib stream: 78 9C = default compression header
-  // Followed by stored block with "Hi" and Adler-32
-  // Let's compress with our code and verify the header format
   let compressed = @zlib.compress(b"Hi")
-  // First two bytes should form a valid zlib header
   let cmf = compressed[0].to_int()
   let flg = compressed[1].to_int()
   assert_true((cmf * 256 + flg) % 31 == 0)
-  assert_true((cmf & 0x0F) == 8) // deflate method
-  assert_true(((cmf >> 4) & 0x0F) <= 7) // valid window size
+  assert_true((cmf & 0x0F) == 8)
+  assert_true(((cmf >> 4) & 0x0F) <= 7)
 }
 
 ///|
@@ -190,7 +178,6 @@ test "zlib round-trip larger data" {
   }
   let data = buf.to_bytes()
   let compressed = @zlib.compress(data)
-  // Zlib should compress well on repetitive data
   assert_true(compressed.length() < data.length())
   let decompressed = @zlib.decompress(compressed)
   assert_eq(decompressed, data)
@@ -230,12 +217,10 @@ test "zlib empty data" {
 ///|
 test "zlib compression actually reduces size" {
   let buf = @buffer.new(size_hint=5000)
-  // Highly repetitive data
   for _ in 0..<5000 {
     buf.write_byte(b'x')
   }
   let data = buf.to_bytes()
   let compressed = @zlib.compress(data)
-  // 5000 bytes of 'x' should compress very well
   assert_true(compressed.length() < 100)
 }

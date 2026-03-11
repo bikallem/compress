@@ -1,6 +1,5 @@
 import {
   "bikallem/compress/zlib" @zliblib,
-  "bikallem/compress/stream",
   "moonbitlang/core/buffer",
 }
 

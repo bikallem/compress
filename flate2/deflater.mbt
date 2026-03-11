@@ -406,6 +406,15 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
     }
     return
   }
+  // Emit pending lazy match before remaining literals.
+  // When step_lazy exits with has_prev=true, self.index is match_start+1.
+  // The match covers match_start through match_start+prev_match_len-1,
+  // so we must advance index past the match to avoid double-emitting bytes.
+  if self.has_prev {
+    self.tokens.push(Token::match_(self.prev_match_len, self.prev_match_dist))
+    self.index += self.prev_match_len - 1
+    self.has_prev = false
+  }
   while self.index < self.window_end {
     if self.level <= 1 {
       self.w.start_fixed_block(false)

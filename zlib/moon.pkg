@@ -1,10 +1,5 @@
 import {
   "bikallem/compress/checksum",
-  "bikallem/compress/flate",
-  "bikallem/compress/stream",
+  "bikallem/compress/flate2",
   "moonbitlang/core/buffer",
 }
-
-import {
-  "bikallem/compress/stream",
-} for "test"
