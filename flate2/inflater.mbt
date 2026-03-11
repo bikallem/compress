@@ -9,6 +9,7 @@ priv enum InflatePhase {
   // Partial match decode states (suspended mid-symbol)
   HuffmanMatchLen(HuffmanDecoder, HuffmanDecoder, Int, Int) // lit_dec, dist_dec, length_code, extra_bits
   HuffmanMatchDist(HuffmanDecoder, HuffmanDecoder, Int) // lit_dec, dist_dec, length
+  HuffmanMatchDistExtra(HuffmanDecoder, HuffmanDecoder, Int, Int, Int) // lit_dec, dist_dec, length, dist_sym, dextra
   HuffmanMatchCopy(HuffmanDecoder, HuffmanDecoder, Int, Int) // lit_dec, dist_dec, dist, remaining
   Done
   Failed(CompressError)
@@ -74,6 +75,10 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       self.decode_huffman_match_len(lit_dec, dist_dec, length_code, extra_bits)
     HuffmanMatchDist(lit_dec, dist_dec, length) =>
       self.decode_huffman_match_dist(lit_dec, dist_dec, length)
+    HuffmanMatchDistExtra(lit_dec, dist_dec, length, dist_sym, dextra) =>
+      self.decode_huffman_match_dist_extra(
+        lit_dec, dist_dec, length, dist_sym, dextra,
+      )
     HuffmanMatchCopy(lit_dec, dist_dec, dist, remaining) =>
       self.decode_huffman_match_copy(lit_dec, dist_dec, dist, remaining)
   }
@@ -84,6 +89,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
 pub fn Inflater::remaining(self : Inflater) -> Bytes {
   self.bb.remaining()
 }
+
 
 ///|
 fn Inflater::fail(self : Inflater, e : CompressError) -> Decode {
@@ -530,9 +536,10 @@ fn Inflater::decode_huffman_match_dist_inline(
   let dextra = dist_extra.unsafe_get(dist_sym)
   if dextra > 0 {
     if not(bb.ensure(dextra)) {
-      // Need to save dist_sym and resume later — but we can require
-      // extra bits inline since dist_extra is at most 13 bits
-      self.phase = HuffmanMatchDist(lit_dec, dist_dec, length)
+      // dist_sym already decoded — save it so we don't re-decode on resume
+      self.phase = HuffmanMatchDistExtra(
+        lit_dec, dist_dec, length, dist_sym, dextra,
+      )
       return Await
     }
     let dextra_val = bb.read_unchecked(dextra)
@@ -566,6 +573,31 @@ fn Inflater::decode_huffman_match_dist(
   length : Int,
 ) -> Decode {
   self.decode_huffman_match_dist_inline(lit_dec, dist_dec, length)
+}
+
+///|
+/// Resume distance decode when dist_sym was already decoded but extra bits were missing.
+fn Inflater::decode_huffman_match_dist_extra(
+  self : Inflater,
+  lit_dec : HuffmanDecoder,
+  dist_dec : HuffmanDecoder,
+  length : Int,
+  dist_sym : Int,
+  dextra : Int,
+) -> Decode {
+  if not(self.bb.ensure(dextra)) {
+    return Await
+  }
+  let dextra_val = self.bb.read_unchecked(dextra)
+  let dist = dist_base.unsafe_get(dist_sym) + dextra_val
+  if dist > self.dd.hist_size() {
+    return self.fail(
+      CompressError::CorruptInput(
+        "distance \{dist} exceeds history \{self.dd.hist_size()}",
+      ),
+    )
+  }
+  self.do_copy(lit_dec, dist_dec, dist, length)
 }
 
 ///|

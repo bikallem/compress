@@ -81,3 +81,50 @@ test "signal protocol - Await then Data then End" {
     Error(e) => raise e
   }
 }
+
+///|
+fn streaming_decompress(compressed : Bytes, chunk_size : Int) -> (Int, Bool) {
+  let inflater = @flate2.Inflater::new()
+  let mut total = 0
+  let mut offset = 0
+  let mut ok = true
+  loop inflater.decode() {
+    Await => {
+      if offset >= compressed.length() {
+        ok = false
+        break
+      }
+      let end = if offset + chunk_size > compressed.length() {
+        compressed.length()
+      } else {
+        offset + chunk_size
+      }
+      let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
+      inflater.src(chunk)
+      offset = end
+      continue inflater.decode()
+    }
+    Data(chunk) => {
+      total += chunk.length()
+      continue inflater.decode()
+    }
+    End => ()
+    Error(_) => ok = false
+  }
+  (total, ok)
+}
+
+///|
+test "streaming decompress with chunk boundaries on compressible data" {
+  let pattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@"
+  let size = 256 * 1024
+  let input = Bytes::makei(size, fn(i) {
+    pattern[i % pattern.length()].to_int().to_byte()
+  })
+  let compressed = @flate2.compress(input)
+  for chunk_size in [32, 64, 128, 256, 512, 1024, 1580, 2048, 3160] {
+    let (got, ok) = streaming_decompress(compressed, chunk_size)
+    assert_true(ok)
+    assert_eq(got, size)
+  }
+}
