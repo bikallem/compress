@@ -61,7 +61,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
         Data(out) =>
           if not(s.header_emitted) {
             s.header_emitted = true
-            Data(concat_bytes(s.header, out))
+            Data(s.header + out)
           } else {
             Data(out)
           }
@@ -74,7 +74,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
         Data(out) =>
           if not(s.header_emitted) {
             s.header_emitted = true
-            Data(concat_bytes(s.header, out))
+            Data(s.header + out)
           } else {
             Data(out)
           }
@@ -83,7 +83,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
           let trailer = adler32_trailer(s.adler.checksum())
           if not(s.header_emitted) {
             s.header_emitted = true
-            Data(concat_bytes(s.header, trailer))
+            Data(s.header + trailer)
           } else {
             Data(trailer)
           }
@@ -97,22 +97,4 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
 ///|
 fn adler32_trailer(checksum : UInt) -> Bytes {
   Bytes::makei(4, fn(i) { ((checksum >> ((3 - i) * 8)) & 0xFFU).to_byte() })
-}
-
-///|
-fn concat_bytes(a : Bytes, b : Bytes) -> Bytes {
-  if a.length() == 0 {
-    return b
-  }
-  if b.length() == 0 {
-    return a
-  }
-  let alen = a.length()
-  Bytes::makei(alen + b.length(), fn(i) {
-    if i < alen {
-      a[i]
-    } else {
-      b[i - alen]
-    }
-  })
 }

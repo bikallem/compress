@@ -67,13 +67,7 @@ pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
     }
     Inflate => s.inflater.src(data)
     VerifyTrailer(prev) => {
-      let combined = Bytes::makei(prev.length() + data.length(), fn(i) {
-        if i < prev.length() {
-          prev[i]
-        } else {
-          data[i - prev.length()]
-        }
-      })
+      let combined = prev + data
       s.phase = VerifyTrailer(combined)
     }
     Done | Failed(_) => ()

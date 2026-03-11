@@ -50,7 +50,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
         Data(out) =>
           if not(s.header_emitted) {
             s.header_emitted = true
-            Data(concat_bytes(s.header, out))
+            Data(s.header + out)
           } else {
             Data(out)
           }
@@ -63,7 +63,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
         Data(out) =>
           if not(s.header_emitted) {
             s.header_emitted = true
-            Data(concat_bytes(s.header, out))
+            Data(s.header + out)
           } else {
             Data(out)
           }
@@ -72,7 +72,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
           let trailer = gzip_trailer(s.crc.checksum(), s.size)
           if not(s.header_emitted) {
             s.header_emitted = true
-            Data(concat_bytes(s.header, trailer))
+            Data(s.header + trailer)
           } else {
             Data(trailer)
           }
@@ -95,20 +95,3 @@ fn gzip_trailer(crc : UInt, size : UInt) -> Bytes {
   })
 }
 
-///|
-fn concat_bytes(a : Bytes, b : Bytes) -> Bytes {
-  if a.length() == 0 {
-    return b
-  }
-  if b.length() == 0 {
-    return a
-  }
-  let alen = a.length()
-  Bytes::makei(alen + b.length(), fn(i) {
-    if i < alen {
-      a[i]
-    } else {
-      b[i - alen]
-    }
-  })
-}
