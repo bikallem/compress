@@ -1,9 +1,0 @@
-import {
-  "bikallem/compress/flate" @deflate,
-  "bikallem/compress/stream",
-  "moonbitlang/core/buffer",
-}
-
-options(
-  "is-main": true,
-)

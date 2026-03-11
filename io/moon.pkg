@@ -1,7 +1,0 @@
-import {
-  "bikallem/compress/internal/blit",
-}
-
-import {
-  "moonbitlang/async",
-} for "test"

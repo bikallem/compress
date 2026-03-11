@@ -25,5 +25,5 @@ fn gen_text(size : Int) -> Bytes {
 ///|
 fn main {
   let data = gen_text(104857600) // 100MB
-  let _ = try! @flate.compress(data)
+  let _ = try! @flate2.compress(data)
 }
