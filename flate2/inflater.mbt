@@ -22,12 +22,12 @@ priv enum InflatePhase {
 ///   - `decode()` returns `Data(bytes)` when output is available
 ///   - `decode()` returns `End` when the stream is complete
 ///   - `decode()` returns `Error(e)` on format errors
-pub struct Inflater {
-  priv bb : BitBuf
-  priv dd : DictDecoder
-  priv mut phase : InflatePhase
-  priv mut final_block : Bool
-  priv mut pending_output : Bytes // buffered Data to emit before resuming
+struct Inflater {
+  bb : BitBuf
+  dd : DictDecoder
+  mut phase : InflatePhase
+  mut final_block : Bool
+  mut pending_output : Bytes // buffered Data to emit before resuming
 }
 
 ///|

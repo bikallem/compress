@@ -36,9 +36,7 @@ pub(all) enum Decode {
 }
 pub impl Show for Decode
 
-pub struct Deflater {
-  // private fields
-}
+type Deflater
 pub fn Deflater::encode(Self, Bytes?) -> Encode
 pub fn Deflater::new(level? : CompressionLevel, dict? : Bytes) -> Self
 
@@ -50,9 +48,7 @@ pub(all) enum Encode {
 }
 pub impl Show for Encode
 
-pub struct Inflater {
-  // private fields
-}
+type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::new(dict? : Bytes) -> Self
 pub fn Inflater::remaining(Self) -> Bytes
