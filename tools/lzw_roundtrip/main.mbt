@@ -9,25 +9,6 @@ let help_message : String =
   #|
   #|Notes:
   #|  - This tool exists for the manual native 50GB acceptance harness.
-  #|  - `compress-file` and `decompress-file` currently call the in-memory
-  #|    bytes APIs, so the 50GB harness is expected to fail until the LZW
-  #|    `@io.Reader` / `@io.Writer` redesign lands.
-
-///|
-#cfg(target="native")
-fn main {
-  @moonasync.run_async_main(async fn() {
-    run() catch {
-      e => fail("lzw_roundtrip: \{e}")
-    }
-  })
-}
-
-///|
-#cfg(target="wasm-gc")
-fn main {
-  println("This tool requires --target native")
-}
 
 ///|
 fn parse_order(order : String) -> @lzw.BitOrder raise {
@@ -69,14 +50,10 @@ async fn decompress_file(
 
 ///|
 async fn fingerprint_file(path : String) -> Unit {
-  let file = @fs.open(path, mode=ReadOnly)
-  defer file.close()
-  let size = file.size()
+  let data = @fs.read_file(path).binary()
   let crc = @checksum.CRC32::new()
-  while file.read_some(max_len=1024 * 1024) is Some(chunk) {
-    crc.update(chunk[:])
-  }
-  println("\{size}\t\{crc.checksum()}")
+  crc.update(data[:])
+  println("\{data.length()}\t\{crc.checksum()}")
 }
 
 ///|
@@ -104,4 +81,13 @@ async fn run() -> Unit {
     ["fingerprint-file", input] => fingerprint_file(input)
     _ => fail(help_message)
   }
+}
+
+///|
+fn main {
+  @moonasync.run_async_main(async fn() {
+    run() catch {
+      e => fail("lzw_roundtrip: \{e}")
+    }
+  })
 }

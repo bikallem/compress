@@ -51,7 +51,6 @@ fn path_to_cstr(s : String) -> Bytes {
 }
 
 ///|
-#cfg(target="native")
 fn main {
   let args = @env.args()
   if args.length() < 2 {
@@ -136,12 +135,6 @@ fn main {
   if ok {
     println("PASS: round-trip matches")
   }
-}
-
-///|
-#cfg(target="wasm-gc")
-fn main {
-  println("This tool requires --target native")
 }
 
 ///|
