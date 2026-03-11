@@ -7,31 +7,100 @@ priv enum DeflatePhase {
 }
 
 ///|
+const WINDOW_SIZE : Int = 1 << 15 // 32KB
+
+///|
+const WINDOW_MASK : Int = WINDOW_SIZE - 1
+
+///|
+const MAX_BLOCK_TOKENS : Int = 16384
+
+///|
 /// Streaming, non-blocking DEFLATE compressor.
+///
+/// Memory: ~450KB constant regardless of input size (double window + hash tables).
 ///
 /// The caller drives the encode loop:
 ///   - `encode(Some(data))` feeds input, may return `Data(bytes)` or `Ok`
 ///   - `encode(None)` signals EOF, may return `Data(bytes)` or `End`
 pub struct Deflater {
   priv level : Int
+  priv w : BitWriter
   priv mut phase : DeflatePhase
-  priv input_chunks : Array[Bytes]
-  priv mut total_input : Int
-  priv mut pending_output : Bytes
+  // Sliding window (double-sized for lookback)
+  priv window : FixedArray[Byte]
+  priv mut window_end : Int
+  priv mut index : Int
+  // Hash tables
+  priv head : FixedArray[Int]
+  priv prev : FixedArray[Int]
+  // Token buffer
+  priv tokens : Array[Token]
+  // Lazy match state (levels 4+)
+  priv mut prev_match_len : Int
+  priv mut prev_match_dist : Int
+  priv mut prev_literal : Byte
+  priv mut has_prev : Bool
 }
 
 ///|
 pub fn Deflater::new(
   level? : CompressionLevel = DefaultCompression,
+  dict? : Bytes,
 ) -> Deflater {
   let lvl = level.to_int()
-  {
+  let hash_size = 1 << 15
+  let window = FixedArray::make(2 * WINDOW_SIZE, b'\x00')
+  let head = FixedArray::make(hash_size, -1)
+  let prev_arr = FixedArray::make(WINDOW_SIZE, -1)
+  let d = {
     level: lvl,
+    w: BitWriter::new(),
     phase: Ready,
-    input_chunks: [],
-    total_input: 0,
-    pending_output: Bytes::default(),
+    window,
+    window_end: 0,
+    index: 0,
+    head,
+    prev: prev_arr,
+    tokens: [],
+    prev_match_len: 0,
+    prev_match_dist: 0,
+    prev_literal: b'\x00',
+    has_prev: false,
   }
+  // Preload dictionary if provided
+  match dict {
+    Some(dict_bytes) =>
+      if dict_bytes.length() > 0 && lvl != 0 {
+        let dict_len = if dict_bytes.length() > WINDOW_SIZE {
+          WINDOW_SIZE
+        } else {
+          dict_bytes.length()
+        }
+        let dict_start = dict_bytes.length() - dict_len
+        for i in 0..<dict_len {
+          d.window[i] = dict_bytes[dict_start + i]
+        }
+        d.window_end = dict_len
+        d.index = dict_len
+        if lvl >= 1 {
+          let hash_mask = d.head.length() - 1
+          for i in 0..<(dict_len - 3) {
+            let b0 = d.window[i].to_int()
+            let b1 = d.window[i + 1].to_int()
+            let b2 = d.window[i + 2].to_int()
+            let b3 = d.window[i + 3].to_int()
+            let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+            let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) &
+              hash_mask
+            d.prev[i & WINDOW_MASK] = d.head[h]
+            d.head[h] = i
+          }
+        }
+      }
+    None => ()
+  }
+  d
 }
 
 ///|
@@ -39,63 +108,65 @@ pub fn Deflater::new(
 ///   encode(Some(data)) — feed input to compress
 ///   encode(None)       — signal end of input, flush final block
 pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
-  // Emit pending output first
-  if self.pending_output.length() > 0 {
-    let out = self.pending_output
-    self.pending_output = Bytes::default()
-    return Data(out)
-  }
   match self.phase {
     Failed(e) => Error(e)
     Finished => End
-    Ready =>
-      match data {
-        Some(chunk) => {
-          if chunk.length() > 0 {
-            self.input_chunks.push(chunk)
-            self.total_input += chunk.length()
-          }
-          Ok
-        }
-        None => self.do_compress()
+    Ready => {
+      let lvl = self.level
+      if lvl < -2 || lvl > 9 {
+        self.phase = Failed(CompressError::InvalidLevel(lvl))
+        return Error(CompressError::InvalidLevel(lvl))
       }
+      match data {
+        Some(chunk) => self.feed(chunk)
+        None => self.do_finish()
+      }
+    }
   }
 }
 
 ///|
-fn Deflater::do_compress(self : Deflater) -> Encode {
-  let lvl = self.level
-  if lvl < -2 || lvl > 9 {
-    self.phase = Failed(CompressError::InvalidLevel(lvl))
-    return Error(CompressError::InvalidLevel(lvl))
+/// Feed input bytes into the window, process, return accumulated output.
+fn Deflater::feed(self : Deflater, data : Bytes) -> Encode {
+  if data.length() == 0 {
+    return Ok
   }
-  // Assemble all input
-  let data = if self.input_chunks.length() == 0 {
-    Bytes::default()
-  } else if self.input_chunks.length() == 1 {
-    self.input_chunks[0]
-  } else {
-    let result = FixedArray::make(self.total_input, b'\x00')
-    let mut offset = 0
-    for chunk in self.input_chunks {
-      for i in 0..<chunk.length() {
-        result[offset + i] = chunk[i]
-      }
-      offset += chunk.length()
+  let shift_trigger = 2 * WINDOW_SIZE - (MIN_MATCH_LENGTH + MAX_MATCH_LENGTH)
+  let mut offset = 0
+  while offset < data.length() {
+    if self.index >= shift_trigger {
+      self.shift_window()
     }
-    result.unsafe_reinterpret_as_bytes()
+    let space = self.window.length() - self.window_end
+    let n = if data.length() - offset < space {
+      data.length() - offset
+    } else {
+      space
+    }
+    for i in 0..<n {
+      self.window[self.window_end + i] = data[offset + i]
+    }
+    self.window_end += n
+    offset += n
+    self.step()
   }
-  // Compress using one-shot L1 approach
-  let output = if lvl == 0 {
-    deflate_stored(data)
-  } else {
-    deflate_lz77(data, lvl)
-  }
-  self.phase = Finished
-  self.input_chunks.clear()
-  self.total_input = 0
+  let output = self.w.take_output()
   if output.length() > 0 {
-    self.pending_output = Bytes::default()
+    Data(output)
+  } else {
+    Ok
+  }
+}
+
+///|
+/// Finish compression: flush remaining data and write final block.
+fn Deflater::do_finish(self : Deflater) -> Encode {
+  self.flush_remaining()
+  // Write final empty stored block (BFINAL=1)
+  self.w.write_stored_header(0, true)
+  let output = self.w.finish()
+  self.phase = Finished
+  if output.length() > 0 {
     Data(output)
   } else {
     End
@@ -103,144 +174,178 @@ fn Deflater::do_compress(self : Deflater) -> Encode {
 }
 
 ///|
-fn deflate_stored(data : Bytes) -> Bytes {
-  let buf = @buffer.new(size_hint=data.length() + 11)
-  let mut offset = 0
-  while offset < data.length() || offset == 0 {
-    let remaining = data.length() - offset
+fn Deflater::shift_window(self : Deflater) -> Unit {
+  @blit.blit_fixed_array(self.window, 0, self.window, WINDOW_SIZE, WINDOW_SIZE)
+  self.window_end -= WINDOW_SIZE
+  self.index -= WINDOW_SIZE
+  let head = self.head
+  for i in 0..<head.length() {
+    let v = head[i] - WINDOW_SIZE
+    head[i] = if v < 0 { -1 } else { v }
+  }
+  let prev = self.prev
+  for i in 0..<prev.length() {
+    let v = prev[i] - WINDOW_SIZE
+    prev[i] = if v < 0 { -1 } else { v }
+  }
+}
+
+///|
+fn Deflater::step(self : Deflater) -> Unit {
+  if self.level == 0 {
+    self.step_stored()
+    return
+  }
+  if self.level <= 1 {
+    self.step_fast()
+    return
+  }
+  if self.level <= 3 {
+    self.step_greedy()
+    return
+  }
+  self.step_lazy()
+}
+
+///|
+fn Deflater::step_stored(self : Deflater) -> Unit {
+  while self.index < self.window_end {
+    let remaining = self.window_end - self.index
     let block_len = if remaining > 65535 { 65535 } else { remaining }
-    let is_final = offset + block_len >= data.length()
-    buf.write_byte(if is_final { b'\x01' } else { b'\x00' })
-    buf.write_byte((block_len & 0xFF).to_byte())
-    buf.write_byte((block_len >> 8).to_byte())
-    let nlen = block_len ^ 0xFFFF
-    buf.write_byte((nlen & 0xFF).to_byte())
-    buf.write_byte((nlen >> 8).to_byte())
-    buf.write_bytesview(data[offset:offset + block_len])
-    offset += block_len
-    if data.length() == 0 {
-      break
-    }
+    self.w.write_stored_header(block_len, false)
+    self.w.write_stored_data(self.window, self.index, block_len)
+    self.index += block_len
+    ()
   }
-  buf.to_bytes()
 }
 
 ///|
-fn deflate_lz77(data : Bytes, level : Int) -> Bytes {
-  let w = BitWriter::new(size_hint=data.length())
-  if data.length() == 0 {
-    w.start_fixed_block(true)
-    w.write_fixed_symbol(END_BLOCK_MARKER)
-    return w.finish()
+fn Deflater::step_fast(self : Deflater) -> Unit {
+  let window = self.window
+  let head = self.head
+  let hash_mask = head.length() - 1
+  let end = self.window_end
+  let mut i = self.index
+  let safe_end = end - MIN_MATCH_LENGTH
+  if i >= safe_end {
+    self.index = i
+    return
   }
-  if level <= 1 {
-    return deflate_fast_direct(data, w)
-  }
-  let tokens = if level <= 3 {
-    deflate_greedy_tokens(data, level)
-  } else {
-    deflate_lazy_tokens(data, level)
-  }
-  w.write_dynamic_block(tokens, true)
-  w.finish()
-}
-
-///|
-fn deflate_fast_direct(data : Bytes, w : BitWriter) -> Bytes {
-  let data_len = data.length()
-  let hash_size = 1 << 15
-  let hash_mask = hash_size - 1
-  let head = FixedArray::make(hash_size, -1)
-  w.start_fixed_block(true)
-  let mut i = 0
-  while i < data_len {
-    if i + 3 < data_len {
-      let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
+  self.w.start_fixed_block(false)
+  while i < safe_end {
+    if i + 3 < end {
+      let b0 = window[i].to_int()
+      let b1 = window[i + 1].to_int()
+      let b2 = window[i + 2].to_int()
+      let b3 = window[i + 3].to_int()
+      let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
       let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
       let match_pos = head[h]
       head[h] = i
       if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
-        let max_len = if data_len - i < MAX_MATCH_LENGTH {
-          data_len - i
+        let max_len = if end - i < MAX_MATCH_LENGTH {
+          end - i
         } else {
           MAX_MATCH_LENGTH
         }
-        let length = match_len(data, i, match_pos, max_len)
+        let length = match_len_window(window, i, match_pos, max_len)
         if length >= MIN_MATCH_LENGTH {
-          w.write_match_fast(length, i - match_pos)
-          if i + 4 < data_len {
-            let v1 = data.unsafe_read_uint32_le(i + 1).reinterpret_as_int()
-            let h1 = ((v1 & 0xFFFFFF) ^ (((v1 >> 16) & 0xFF) * 0x1e35a7bd)) &
+          self.w.write_match_fast(length, i - match_pos)
+          if i + 4 < end {
+            let nb0 = window[i + 1].to_int()
+            let nb1 = window[i + 2].to_int()
+            let nb2 = window[i + 3].to_int()
+            let nb3 = window[i + 4].to_int()
+            let nv = nb0 | (nb1 << 8) | (nb2 << 16) | (nb3 << 24)
+            let nh = ((nv & 0xFFFFFF) ^ (((nv >> 16) & 0xFF) * 0x1e35a7bd)) &
               hash_mask
-            head[h1] = i + 1
+            head[nh] = i + 1
           }
           i += length
           continue
         }
       }
     }
-    w.write_literal_fast(data.unsafe_get(i))
+    self.w.write_literal_fast(window[i])
     i += 1
   }
-  w.write_fixed_symbol(END_BLOCK_MARKER)
-  w.finish()
+  self.w.write_fixed_symbol(END_BLOCK_MARKER)
+  self.index = i
+  ()
 }
 
 ///|
-fn deflate_greedy_tokens(data : Bytes, level : Int) -> Array[Token] {
-  let tokens : Array[Token] = []
-  let data_len = data.length()
-  let window_size = 1 << 15
-  let window_mask = window_size - 1
-  let hash_size = 1 << 15
-  let hash_mask = hash_size - 1
-  let max_chain = if level == 2 { 8 } else { 16 }
-  let head = FixedArray::make(hash_size, -1)
-  let prev = FixedArray::make(window_size, -1)
-  let mut i = 0
-  while i < data_len {
-    if i + 3 < data_len {
-      let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
+fn Deflater::step_greedy(self : Deflater) -> Unit {
+  let window = self.window
+  let head = self.head
+  let prev = self.prev
+  let hash_mask = head.length() - 1
+  let max_chain = if self.level == 2 { 8 } else { 16 }
+  let end = self.window_end
+  let mut i = self.index
+  let safe_end = end - MIN_MATCH_LENGTH
+  if i >= safe_end {
+    self.index = i
+    return
+  }
+  while i < safe_end {
+    if i + 3 < end {
+      let b0 = window[i].to_int()
+      let b1 = window[i + 1].to_int()
+      let b2 = window[i + 2].to_int()
+      let b3 = window[i + 3].to_int()
+      let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
       let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
       let match_head = head[h]
-      prev[i & window_mask] = match_head
+      prev[i & WINDOW_MASK] = match_head
       head[h] = i
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = find_best_match(
-          data, i, match_head, prev, window_mask, max_chain,
+        let (length, offset) = find_best_match_window(
+          window, end, i, match_head, prev, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
-          tokens.push(Token::match_(length, offset))
+          self.tokens.push(Token::match_(length, offset))
           for j in 1..<length {
             let pos = i + j
-            if pos + 3 < data_len {
-              let vj = data.unsafe_read_uint32_le(pos).reinterpret_as_int()
-              let hj = ((vj & 0xFFFFFF) ^ (((vj >> 16) & 0xFF) * 0x1e35a7bd)) &
+            if pos + 3 < end {
+              let jb0 = window[pos].to_int()
+              let jb1 = window[pos + 1].to_int()
+              let jb2 = window[pos + 2].to_int()
+              let jb3 = window[pos + 3].to_int()
+              let jv = jb0 | (jb1 << 8) | (jb2 << 16) | (jb3 << 24)
+              let jh = ((jv & 0xFFFFFF) ^ (((jv >> 16) & 0xFF) * 0x1e35a7bd)) &
                 hash_mask
-              prev[pos & window_mask] = head[hj]
-              head[hj] = pos
+              prev[pos & WINDOW_MASK] = head[jh]
+              head[jh] = pos
             }
           }
           i += length
+          if self.tokens.length() >= MAX_BLOCK_TOKENS {
+            self.w.write_dynamic_block(self.tokens, false)
+            self.tokens.clear()
+          }
           continue
         }
       }
     }
-    tokens.push(Token::literal(data.unsafe_get(i)))
+    self.tokens.push(Token::literal(window[i]))
     i += 1
+    if self.tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(self.tokens, false)
+      self.tokens.clear()
+    }
   }
-  tokens
+  self.index = i
+  ()
 }
 
 ///|
-fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
-  let tokens : Array[Token] = []
-  let data_len = data.length()
-  let window_size = 1 << 15
-  let window_mask = window_size - 1
-  let hash_size = 1 << 15
-  let hash_mask = hash_size - 1
-  let max_chain = match level {
+fn Deflater::step_lazy(self : Deflater) -> Unit {
+  let window = self.window
+  let head = self.head
+  let prev = self.prev
+  let hash_mask = head.length() - 1
+  let max_chain = match self.level {
     4 => 32
     5 => 64
     6 => 128
@@ -248,25 +353,29 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
     8 => 512
     _ => 1024
   }
-  let head = FixedArray::make(hash_size, -1)
-  let prev = FixedArray::make(window_size, -1)
-  let mut i = 0
-  let mut prev_match_len = 0
-  let mut prev_match_dist = 0
-  let mut prev_literal : Byte = b'\x00'
-  let mut has_prev = false
-  while i < data_len {
+  let end = self.window_end
+  let mut i = self.index
+  let safe_end = end - MIN_MATCH_LENGTH
+  if i >= safe_end {
+    self.index = i
+    return
+  }
+  while i < safe_end {
     let mut cur_len = 0
     let mut cur_dist = 0
-    if i + 3 < data_len {
-      let v = data.unsafe_read_uint32_le(i).reinterpret_as_int()
+    if i + 3 < end {
+      let b0 = window[i].to_int()
+      let b1 = window[i + 1].to_int()
+      let b2 = window[i + 2].to_int()
+      let b3 = window[i + 3].to_int()
+      let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
       let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
       let match_head = head[h]
-      prev[i & window_mask] = match_head
+      prev[i & WINDOW_MASK] = match_head
       head[h] = i
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = find_best_match(
-          data, i, match_head, prev, window_mask, max_chain,
+        let (length, offset) = find_best_match_window(
+          window, end, i, match_head, prev, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
           cur_len = length
@@ -274,69 +383,129 @@ fn deflate_lazy_tokens(data : Bytes, level : Int) -> Array[Token] {
         }
       }
     }
-    if has_prev {
-      if cur_len > prev_match_len + 1 {
-        tokens.push(Token::literal(prev_literal))
-        prev_match_len = cur_len
-        prev_match_dist = cur_dist
-        prev_literal = data.unsafe_get(i)
+    if self.has_prev {
+      if cur_len > self.prev_match_len + 1 {
+        self.tokens.push(Token::literal(self.prev_literal))
+        self.prev_match_len = cur_len
+        self.prev_match_dist = cur_dist
+        self.prev_literal = window[i]
         i += 1
       } else {
-        tokens.push(Token::match_(prev_match_len, prev_match_dist))
+        self.tokens.push(
+          Token::match_(self.prev_match_len, self.prev_match_dist),
+        )
         let start = i
-        let end = start + prev_match_len - 1
-        for j in start..<end {
-          if j + 3 < data_len {
-            let vj = data.unsafe_read_uint32_le(j).reinterpret_as_int()
-            let hj = ((vj & 0xFFFFFF) ^ (((vj >> 16) & 0xFF) * 0x1e35a7bd)) &
+        let skip_end = start + self.prev_match_len - 1
+        for j in start..<skip_end {
+          if j + 3 < end {
+            let jb0 = window[j].to_int()
+            let jb1 = window[j + 1].to_int()
+            let jb2 = window[j + 2].to_int()
+            let jb3 = window[j + 3].to_int()
+            let jv = jb0 | (jb1 << 8) | (jb2 << 16) | (jb3 << 24)
+            let jh = ((jv & 0xFFFFFF) ^ (((jv >> 16) & 0xFF) * 0x1e35a7bd)) &
               hash_mask
-            prev[j & window_mask] = head[hj]
-            head[hj] = j
+            prev[j & WINDOW_MASK] = head[jh]
+            head[jh] = j
           }
         }
-        i = end
-        has_prev = false
+        i = skip_end
+        self.has_prev = false
       }
     } else if cur_len >= MIN_MATCH_LENGTH {
-      has_prev = true
-      prev_match_len = cur_len
-      prev_match_dist = cur_dist
-      prev_literal = data.unsafe_get(i)
+      self.has_prev = true
+      self.prev_match_len = cur_len
+      self.prev_match_dist = cur_dist
+      self.prev_literal = window[i]
       i += 1
     } else {
-      tokens.push(Token::literal(data.unsafe_get(i)))
+      self.tokens.push(Token::literal(window[i]))
       i += 1
     }
+    if self.tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(self.tokens, false)
+      self.tokens.clear()
+    }
   }
-  if has_prev {
-    tokens.push(Token::match_(prev_match_len, prev_match_dist))
-  }
-  tokens
+  self.index = i
+  ()
 }
 
 ///|
-fn find_best_match(
-  data : Bytes,
+fn Deflater::flush_tokens(self : Deflater) -> Unit {
+  if self.has_prev {
+    self.tokens.push(Token::match_(self.prev_match_len, self.prev_match_dist))
+    self.has_prev = false
+  }
+  if self.tokens.length() > 0 {
+    self.w.write_dynamic_block(self.tokens, false)
+    self.tokens.clear()
+  }
+}
+
+///|
+fn Deflater::flush_remaining(self : Deflater) -> Unit {
+  if self.level == 0 {
+    let remaining = self.window_end - self.index
+    if remaining > 0 {
+      self.w.write_stored_header(remaining, false)
+      self.w.write_stored_data(self.window, self.index, remaining)
+      self.index = self.window_end
+    }
+    return
+  }
+  let window = self.window
+  while self.index < self.window_end {
+    if self.level <= 1 {
+      self.w.start_fixed_block(false)
+      while self.index < self.window_end {
+        self.w.write_literal_fast(window[self.index])
+        self.index += 1
+      }
+      self.w.write_fixed_symbol(END_BLOCK_MARKER)
+    } else {
+      self.tokens.push(Token::literal(window[self.index]))
+      self.index += 1
+    }
+  }
+  self.flush_tokens()
+}
+
+///|
+fn match_len_window(
+  data : FixedArray[Byte],
+  a : Int,
+  b : Int,
+  max_len : Int,
+) -> Int {
+  let mut len = 0
+  while len < max_len && data[a + len] == data[b + len] {
+    len += 1
+  }
+  len
+}
+
+///|
+fn find_best_match_window(
+  window : FixedArray[Byte],
+  window_end : Int,
   cur : Int,
   match_head : Int,
   prev : FixedArray[Int],
-  window_mask : Int,
   max_chain : Int,
 ) -> (Int, Int) {
   let mut best_len = MIN_MATCH_LENGTH - 1
   let mut best_offset = 0
   let mut pos = match_head
   let mut chain_count = 0
-  let data_len = data.length()
-  let max_len = if data_len - cur < MAX_MATCH_LENGTH {
-    data_len - cur
+  let max_len = if window_end - cur < MAX_MATCH_LENGTH {
+    window_end - cur
   } else {
     MAX_MATCH_LENGTH
   }
   while pos >= 0 && cur - pos <= MAX_MATCH_OFFSET && chain_count < max_chain {
-    if best_len > 0 &&
-      data.unsafe_get(pos + best_len) != data.unsafe_get(cur + best_len) {
-      let next = prev[pos & window_mask]
+    if best_len > 0 && window[pos + best_len] != window[cur + best_len] {
+      let next = prev[pos & WINDOW_MASK]
       if next >= pos {
         break
       }
@@ -344,7 +513,7 @@ fn find_best_match(
       chain_count += 1
       continue
     }
-    let length = match_len(data, cur, pos, max_len)
+    let length = match_len_window(window, cur, pos, max_len)
     if length > best_len {
       best_len = length
       best_offset = cur - pos
@@ -352,16 +521,12 @@ fn find_best_match(
         break
       }
     }
-    let next = prev[pos & window_mask]
+    let next = prev[pos & WINDOW_MASK]
     if next >= pos {
       break
     }
     pos = next
     chain_count += 1
   }
-  if best_offset > 0 && best_len >= MIN_MATCH_LENGTH {
-    (best_len, best_offset)
-  } else {
-    (0, 0)
-  }
+  (best_len, best_offset)
 }

@@ -308,17 +308,10 @@ fn BitWriter::write_dynamic_header(
 }
 
 ///|
-/// Extract all accumulated bytes and reset.
+/// Extract accumulated complete bytes without flushing partial bits.
+/// Partial bits stay in the accumulator so the next block continues
+/// from the correct bit position (DEFLATE blocks are not byte-aligned).
 fn BitWriter::take_output(self : BitWriter) -> Bytes {
-  if self.n_bits > 0 {
-    if self.pos == self.buf.length() {
-      self.ensure_capacity(1)
-    }
-    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_byte())
-    self.pos += 1
-    self.bits = 0UL
-    self.n_bits = 0
-  }
   if self.pos == 0 {
     return Bytes::default()
   }
@@ -329,7 +322,16 @@ fn BitWriter::take_output(self : BitWriter) -> Bytes {
 }
 
 ///|
-/// Finalize: flush remaining bits, return final output.
+/// Finalize: flush remaining partial bits, return final output.
 fn BitWriter::finish(self : BitWriter) -> Bytes {
+  if self.n_bits > 0 {
+    if self.pos == self.buf.length() {
+      self.ensure_capacity(1)
+    }
+    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_byte())
+    self.pos += 1
+    self.bits = 0UL
+    self.n_bits = 0
+  }
   self.take_output()
 }

@@ -54,12 +54,9 @@ fn drain(
   buf : @buffer.Buffer,
   input : Bytes?,
 ) -> Unit raise CompressError {
-  loop e.encode(input) {
+  match e.encode(input) {
     Ok | End => ()
-    Data(chunk) => {
-      buf.write_bytes(chunk)
-      continue e.encode(input)
-    }
+    Data(chunk) => buf.write_bytes(chunk)
     Error(e) => raise e
   }
 }
