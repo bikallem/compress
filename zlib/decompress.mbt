@@ -20,10 +20,9 @@ pub fn decompress_with_dict(
   if data_start >= deflate_end {
     raise ZlibError::UnexpectedEOF
   }
-  let deflate_data = Bytes::makei(
-    deflate_end - data_start,
-    fn(i) { data[data_start + i] },
-  )
+  let deflate_data = Bytes::makei(deflate_end - data_start, fn(i) {
+    data[data_start + i]
+  })
   // Decompress DEFLATE data
   let decompressed = try {
     if dict.length() > 0 {
@@ -48,10 +47,7 @@ pub fn decompress_with_dict(
 
 ///|
 /// Parse zlib header. Returns (data_start_offset, fdict_present).
-fn parse_zlib_header(
-  data : Bytes,
-  dict : Bytes,
-) -> (Int, Bool) raise ZlibError {
+fn parse_zlib_header(data : Bytes, dict : Bytes) -> (Int, Bool) raise ZlibError {
   let cmf = data[0].to_int()
   let flg = data[1].to_int()
   if (cmf * 256 + flg) % 31 != 0 {

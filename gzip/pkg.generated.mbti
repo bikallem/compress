@@ -2,12 +2,11 @@
 package "bikallem/compress/gzip"
 
 import {
-  "bikallem/compress/flate",
-  "bikallem/compress/stream",
+  "bikallem/compress/flate2",
 }
 
 // Values
-pub fn compress(Bytes, level? : @flate.CompressionLevel, header? : Header) -> Bytes raise GzipError
+pub fn compress(Bytes, level? : @flate2.CompressionLevel, header? : Header) -> Bytes raise GzipError
 
 pub fn decompress(Bytes) -> (Bytes, Header) raise GzipError
 
@@ -22,18 +21,25 @@ pub suberror GzipError {
 pub impl Show for GzipError
 
 // Types and methods
-pub struct GzipReader {
-  // private fields
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(GzipError)
 }
-pub fn GzipReader::header(Self) -> Header
-pub fn GzipReader::new(&@stream.Reader, slice_length? : Int) -> Self
-pub impl @stream.Reader for GzipReader
+pub impl Show for Decode
 
-pub struct GzipStreamWriter {
-  // private fields
+type Deflater
+pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::new(level? : @flate2.CompressionLevel, header? : Header) -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(GzipError)
 }
-pub fn GzipStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, header? : Header) -> Self
-pub impl @stream.Writer for GzipStreamWriter
+pub impl Show for Encode
 
 pub(all) struct Header {
   name : String
@@ -45,6 +51,12 @@ pub(all) struct Header {
 pub fn Header::default() -> Self
 pub impl Eq for Header
 pub impl Show for Header
+
+type Inflater
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::header(Self) -> Header
+pub fn Inflater::new() -> Self
+pub fn Inflater::src(Self, Bytes) -> Unit
 
 // Type aliases
 

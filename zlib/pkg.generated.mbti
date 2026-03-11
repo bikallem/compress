@@ -2,14 +2,13 @@
 package "bikallem/compress/zlib"
 
 import {
-  "bikallem/compress/flate",
-  "bikallem/compress/stream",
+  "bikallem/compress/flate2",
 }
 
 // Values
-pub fn compress(Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
+pub fn compress(Bytes, level? : @flate2.CompressionLevel) -> Bytes raise ZlibError
 
-pub fn compress_with_dict(Bytes, Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
+pub fn compress_with_dict(Bytes, Bytes, level? : @flate2.CompressionLevel) -> Bytes raise ZlibError
 
 pub fn decompress(Bytes) -> Bytes raise ZlibError
 
@@ -26,17 +25,30 @@ pub suberror ZlibError {
 pub impl Show for ZlibError
 
 // Types and methods
-pub struct ZlibReader {
-  // private fields
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(ZlibError)
 }
-pub fn ZlibReader::new(&@stream.Reader, dict? : Bytes, slice_length? : Int) -> Self
-pub impl @stream.Reader for ZlibReader
+pub impl Show for Decode
 
-pub struct ZlibStreamWriter {
-  // private fields
+type Deflater
+pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::new(level? : @flate2.CompressionLevel, dict? : Bytes) -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(ZlibError)
 }
-pub fn ZlibStreamWriter::new(&@stream.Writer, level? : @flate.CompressionLevel, dict? : Bytes) -> Self
-pub impl @stream.Writer for ZlibStreamWriter
+pub impl Show for Encode
+
+type Inflater
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::new(dict? : Bytes) -> Self
+pub fn Inflater::src(Self, Bytes) -> Unit
 
 // Type aliases
 

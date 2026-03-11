@@ -38,9 +38,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
     }
     None => {
       let input = s.buf.to_bytes()
-      let output = compress(input, level=s.level) catch {
-        e => return Error(e)
-      }
+      let output = compress(input, level=s.level) catch { e => return Error(e) }
       s.finished = true
       if output.length() > 0 {
         Data(output)

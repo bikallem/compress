@@ -90,7 +90,6 @@ pub fn Inflater::remaining(self : Inflater) -> Bytes {
   self.bb.remaining()
 }
 
-
 ///|
 fn Inflater::fail(self : Inflater, e : CompressError) -> Decode {
   self.phase = Failed(e)

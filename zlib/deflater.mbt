@@ -96,9 +96,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
 
 ///|
 fn adler32_trailer(checksum : UInt) -> Bytes {
-  Bytes::makei(4, fn(i) {
-    ((checksum >> ((3 - i) * 8)) & 0xFFU).to_byte()
-  })
+  Bytes::makei(4, fn(i) { ((checksum >> ((3 - i) * 8)) & 0xFFU).to_byte() })
 }
 
 ///|

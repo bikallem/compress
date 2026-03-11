@@ -34,10 +34,7 @@ pub fn compress_with_dict(
 }
 
 ///|
-fn build_zlib_header(
-  level : @flate2.CompressionLevel,
-  dict : Bytes,
-) -> Bytes {
+fn build_zlib_header(level : @flate2.CompressionLevel, dict : Bytes) -> Bytes {
   let buf = @buffer.new(size_hint=6)
   let cmf = (ZLIB_DEFAULT_CINFO << 4) | ZLIB_DEFLATE_METHOD
   let flevel = match level {

@@ -6,12 +6,12 @@ test "streaming lzw deflater LSB" {
   match d.encode(Some(original)) {
     Ok => ()
     Data(out) => buf.write_bytes(out)
-    _ => fail!("unexpected signal from encode(Some)")
+    _ => fail("unexpected signal from encode(Some)")
   }
   match d.encode(None) {
     Data(out) => buf.write_bytes(out)
     End => ()
-    _ => fail!("unexpected signal from encode(None)")
+    _ => fail("unexpected signal from encode(None)")
   }
   // Drain End if we got Data
   match d.encode(None) {
@@ -31,7 +31,7 @@ test "streaming lzw inflater LSB" {
   d.src(compressed)
   let buf = @buffer.new()
   loop d.decode() {
-    Await => fail!("unexpected Await: all data should be available")
+    Await => fail("unexpected Await: all data should be available")
     Data(out) => {
       buf.write_bytes(out)
       continue d.decode()
@@ -53,16 +53,14 @@ test "streaming lzw inflater with chunked input" {
   loop d.decode() {
     Await => {
       if offset >= compressed.length() {
-        fail!("unexpected Await: all data consumed")
+        fail("unexpected Await: all data consumed")
       }
       let end = if offset + chunk_size > compressed.length() {
         compressed.length()
       } else {
         offset + chunk_size
       }
-      let chunk = Bytes::makei(end - offset, fn(i) {
-        compressed[offset + i]
-      })
+      let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
       d.src(chunk)
       offset = end
       continue d.decode()
@@ -91,13 +89,11 @@ test "streaming lzw deflater + inflater round-trip" {
     } else {
       offset + chunk_size
     }
-    let chunk = Bytes::makei(end - offset, fn(i) {
-      original[offset + i]
-    })
+    let chunk = Bytes::makei(end - offset, fn(i) { original[offset + i] })
     match d.encode(Some(chunk)) {
       Ok => ()
       Data(out) => cbuf.write_bytes(out)
-      _ => fail!("unexpected signal")
+      _ => fail("unexpected signal")
     }
     offset = end
   }
@@ -108,7 +104,7 @@ test "streaming lzw deflater + inflater round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => fail!("unexpected signal")
+    _ => fail("unexpected signal")
   }
   // Decompress with inflater
   let compressed = cbuf.to_bytes()
@@ -116,7 +112,7 @@ test "streaming lzw deflater + inflater round-trip" {
   inf.src(compressed)
   let dbuf = @buffer.new()
   loop inf.decode() {
-    Await => fail!("unexpected Await")
+    Await => fail("unexpected Await")
     Data(out) => {
       dbuf.write_bytes(out)
       continue inf.decode()
@@ -135,7 +131,7 @@ test "streaming lzw MSB round-trip" {
   match d.encode(Some(original)) {
     Ok => ()
     Data(out) => cbuf.write_bytes(out)
-    _ => fail!("unexpected signal")
+    _ => fail("unexpected signal")
   }
   loop d.encode(None) {
     Data(out) => {
@@ -143,14 +139,14 @@ test "streaming lzw MSB round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => fail!("unexpected signal")
+    _ => fail("unexpected signal")
   }
   let compressed = cbuf.to_bytes()
   let inf = @lzw.Inflater::new(MSB, 8)
   inf.src(compressed)
   let dbuf = @buffer.new()
   loop inf.decode() {
-    Await => fail!("unexpected Await")
+    Await => fail("unexpected Await")
     Data(out) => {
       dbuf.write_bytes(out)
       continue inf.decode()

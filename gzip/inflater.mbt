@@ -56,9 +56,7 @@ pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
           // Feed all remaining bytes after header to inflater in one call
           let remaining_len = buf.length() - pos
           if remaining_len > 0 {
-            let remaining = Bytes::makei(remaining_len, fn(i) {
-              buf[pos + i]
-            })
+            let remaining = Bytes::makei(remaining_len, fn(i) { buf[pos + i] })
             s.inflater.src(remaining)
           }
           s.phase = Inflate
@@ -70,7 +68,11 @@ pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
     Inflate => s.inflater.src(data)
     VerifyTrailer(prev) => {
       let combined = Bytes::makei(prev.length() + data.length(), fn(i) {
-        if i < prev.length() { prev[i] } else { data[i - prev.length()] }
+        if i < prev.length() {
+          prev[i]
+        } else {
+          data[i - prev.length()]
+        }
       })
       s.phase = VerifyTrailer(combined)
     }
@@ -95,8 +97,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
           let remaining = s.inflater.remaining()
           verify_gzip_trailer(s, remaining)
         }
-        @flate2.Error(e) =>
-          fail_with(s, GzipError::DeflateError(e.to_string()))
+        @flate2.Error(e) => fail_with(s, GzipError::DeflateError(e.to_string()))
       }
     VerifyTrailer(remaining) => verify_gzip_trailer(s, remaining)
     Done => End
@@ -125,9 +126,7 @@ fn try_parse_gzip_header(
   if data[2] != GZIP_DEFLATE {
     return Err(
       HeaderError(
-        GzipError::InvalidHeader(
-          "unsupported compression method \{data[2]}",
-        ),
+        GzipError::InvalidHeader("unsupported compression method \{data[2]}"),
       ),
     )
   }

@@ -58,9 +58,7 @@ test "streaming bzip2 inflater with chunked input" {
       } else {
         offset + chunk_size
       }
-      let chunk = Bytes::makei(end - offset, fn(i) {
-        compressed[offset + i]
-      })
+      let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
       d.src(chunk)
       offset = end
       continue d.decode()
@@ -88,9 +86,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
     } else {
       offset + chunk_size
     }
-    let chunk = Bytes::makei(end - offset, fn(i) {
-      original[offset + i]
-    })
+    let chunk = Bytes::makei(end - offset, fn(i) { original[offset + i] })
     match d.encode(Some(chunk)) {
       Ok => ()
       _ => fail("unexpected signal")

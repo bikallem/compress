@@ -70,7 +70,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   }
   let result = try? decompress(input)
   match result {
-    Ok(output) => {
+    Ok(output) =>
       if output.length() > 0 {
         s.output = output
         s.output_emitted = true
@@ -79,7 +79,6 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
         s.finished = true
         End
       }
-    }
     Err(Bzip2Error::UnexpectedEOF) =>
       // Need more data
       Await

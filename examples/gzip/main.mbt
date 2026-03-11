@@ -44,15 +44,13 @@ fn run() -> Unit raise {
   println("BestCompression: \{best.length()} bytes")
 
   // --- Streaming API (signal protocol) ---
-  let deflater = @gz.Deflater::new(
-    header={
-      name: "streamed.txt",
-      comment: "",
-      extra: Bytes::default(),
-      mod_time: 0U,
-      os: b'\xFF',
-    },
-  )
+  let deflater = @gz.Deflater::new(header={
+    name: "streamed.txt",
+    comment: "",
+    extra: Bytes::default(),
+    mod_time: 0U,
+    os: b'\xFF',
+  })
   let cbuf = @buffer.new()
   match deflater.encode(Some(original)) {
     Data(out) => cbuf.write_bytes(out)

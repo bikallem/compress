@@ -12,9 +12,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   if pos >= footer_start {
     raise GzipError::UnexpectedEOF
   }
-  let deflate_data = Bytes::makei(footer_start - pos, fn(i) {
-    data[pos + i]
-  })
+  let deflate_data = Bytes::makei(footer_start - pos, fn(i) { data[pos + i] })
   // Decompress DEFLATE data
   let decompressed = @flate2.decompress(deflate_data) catch {
     e => raise GzipError::DeflateError(e.to_string())
@@ -36,16 +34,12 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
 
 ///|
 /// Parse gzip header. Returns (data_start_pos, header).
-fn parse_gzip_header(
-  data : Bytes,
-) -> (Int, Header) raise GzipError {
+fn parse_gzip_header(data : Bytes) -> (Int, Header) raise GzipError {
   if data[0] != GZIP_MAGIC1 || data[1] != GZIP_MAGIC2 {
     raise GzipError::InvalidHeader("invalid gzip magic bytes")
   }
   if data[2] != GZIP_DEFLATE {
-    raise GzipError::InvalidHeader(
-      "unsupported compression method \{data[2]}",
-    )
+    raise GzipError::InvalidHeader("unsupported compression method \{data[2]}")
   }
   let flg = data[3].to_int()
   let mtime = read_uint32_le(data, 4)

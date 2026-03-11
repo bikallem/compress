@@ -71,9 +71,7 @@ test "streaming zlib inflater with chunked input" {
       } else {
         offset + chunk_size
       }
-      let chunk = Bytes::makei(end - offset, fn(i) {
-        compressed[offset + i]
-      })
+      let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
       d.src(chunk)
       offset = end
       continue d.decode()

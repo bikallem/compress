@@ -76,7 +76,11 @@ pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
     VerifyTrailer(prev) => {
       // Accumulate trailer bytes from new chunk
       let combined = Bytes::makei(prev.length() + data.length(), fn(i) {
-        if i < prev.length() { prev[i] } else { data[i - prev.length()] }
+        if i < prev.length() {
+          prev[i]
+        } else {
+          data[i - prev.length()]
+        }
       })
       s.phase = VerifyTrailer(combined)
     }
@@ -100,8 +104,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
           let remaining = s.inflater.remaining()
           verify_trailer(s, remaining)
         }
-        @flate2.Error(e) =>
-          fail_with(s, ZlibError::DeflateError(e.to_string()))
+        @flate2.Error(e) => fail_with(s, ZlibError::DeflateError(e.to_string()))
       }
     VerifyTrailer(remaining) => verify_trailer(s, remaining)
     Done => End
@@ -141,9 +144,7 @@ fn try_parse_header_bytes(
   let cinfo = (cmf >> 4) & 0x0F
   if cinfo > 7 {
     return Err(
-      HeaderError(
-        ZlibError::InvalidHeader("invalid window size \{cinfo}"),
-      ),
+      HeaderError(ZlibError::InvalidHeader("invalid window size \{cinfo}")),
     )
   }
   let fdict = (flg >> 5) & 1
@@ -161,9 +162,7 @@ fn try_parse_header_bytes(
     let actual_dict_id = @checksum.adler32(dict[:])
     if actual_dict_id != dict_id {
       return Err(
-        HeaderError(
-          ZlibError::InvalidHeader("dictionary checksum mismatch"),
-        ),
+        HeaderError(ZlibError::InvalidHeader("dictionary checksum mismatch")),
       )
     }
     Ok((6, true))
