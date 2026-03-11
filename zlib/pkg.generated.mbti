@@ -2,13 +2,13 @@
 package "bikallem/compress/zlib"
 
 import {
-  "bikallem/compress/flate2",
+  "bikallem/compress/flate",
 }
 
 // Values
-pub fn compress(Bytes, level? : @flate2.CompressionLevel) -> Bytes raise ZlibError
+pub fn compress(Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
 
-pub fn compress_with_dict(Bytes, Bytes, level? : @flate2.CompressionLevel) -> Bytes raise ZlibError
+pub fn compress_with_dict(Bytes, Bytes, level? : @flate.CompressionLevel) -> Bytes raise ZlibError
 
 pub fn decompress(Bytes) -> Bytes raise ZlibError
 
@@ -35,7 +35,7 @@ pub impl Show for Decode
 
 type Deflater
 pub fn Deflater::encode(Self, Bytes?) -> Encode
-pub fn Deflater::new(level? : @flate2.CompressionLevel, dict? : Bytes) -> Self
+pub fn Deflater::new(level? : @flate.CompressionLevel, dict? : Bytes) -> Self
 
 pub(all) enum Encode {
   Ok

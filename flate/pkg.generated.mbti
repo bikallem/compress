@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "bikallem/compress/flate2"
+package "bikallem/compress/flate"
 
 // Values
 pub fn compress(Bytes, level? : CompressionLevel) -> Bytes raise CompressError

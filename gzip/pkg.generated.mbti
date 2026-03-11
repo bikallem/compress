@@ -2,11 +2,11 @@
 package "bikallem/compress/gzip"
 
 import {
-  "bikallem/compress/flate2",
+  "bikallem/compress/flate",
 }
 
 // Values
-pub fn compress(Bytes, level? : @flate2.CompressionLevel, header? : Header) -> Bytes raise GzipError
+pub fn compress(Bytes, level? : @flate.CompressionLevel, header? : Header) -> Bytes raise GzipError
 
 pub fn decompress(Bytes) -> (Bytes, Header) raise GzipError
 
@@ -31,7 +31,7 @@ pub impl Show for Decode
 
 type Deflater
 pub fn Deflater::encode(Self, Bytes?) -> Encode
-pub fn Deflater::new(level? : @flate2.CompressionLevel, header? : Header) -> Self
+pub fn Deflater::new(level? : @flate.CompressionLevel, header? : Header) -> Self
 
 pub(all) enum Encode {
   Ok
