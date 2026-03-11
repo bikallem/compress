@@ -223,14 +223,11 @@ fn fixed_block_bit_size(
   let mut total = 3
   for i in 0..<lit_freqs.length() {
     if lit_freqs[i] > 0 {
-      let code_len = if i <= 143 {
-        8
-      } else if i <= 255 {
-        9
-      } else if i <= 279 {
-        7
-      } else {
-        8
+      let code_len = match i {
+        0..=143 => 8
+        144..=255 => 9
+        256..=279 => 7
+        _ => 8
       }
       total += lit_freqs[i] * code_len
       if i > 256 && i < 286 {

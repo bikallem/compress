@@ -41,50 +41,9 @@ pub fn crc32(data : BytesView) -> UInt {
   if crc32_try_hw(data) is Some(result) {
     return result
   }
-  let mut crc = 0xFFFFFFFF_U
-  let len = data.length()
-  let mut i = 0
-  // Process 8 bytes at a time
-  let t0 = crc32_tables[0]
-  let t1 = crc32_tables[1]
-  let t2 = crc32_tables[2]
-  let t3 = crc32_tables[3]
-  let t4 = crc32_tables[4]
-  let t5 = crc32_tables[5]
-  let t6 = crc32_tables[6]
-  let t7 = crc32_tables[7]
-  while i + 8 <= len {
-    let b0 = data[i].to_uint()
-    let b1 = data[i + 1].to_uint()
-    let b2 = data[i + 2].to_uint()
-    let b3 = data[i + 3].to_uint()
-    let b4 = data[i + 4].to_uint()
-    let b5 = data[i + 5].to_uint()
-    let b6 = data[i + 6].to_uint()
-    let b7 = data[i + 7].to_uint()
-    // XOR first 4 bytes with current CRC
-    let p0 = (crc ^ b0) & 0xFFU
-    let p1 = ((crc >> 8) ^ b1) & 0xFFU
-    let p2 = ((crc >> 16) ^ b2) & 0xFFU
-    let p3 = ((crc >> 24) ^ b3) & 0xFFU
-    // Safety: all indices are byte values (0-255), tables are 256 entries
-    crc = t7.unsafe_get(p0.reinterpret_as_int()) ^
-      t6.unsafe_get(p1.reinterpret_as_int()) ^
-      t5.unsafe_get(p2.reinterpret_as_int()) ^
-      t4.unsafe_get(p3.reinterpret_as_int()) ^
-      t3.unsafe_get(b4.reinterpret_as_int()) ^
-      t2.unsafe_get(b5.reinterpret_as_int()) ^
-      t1.unsafe_get(b6.reinterpret_as_int()) ^
-      t0.unsafe_get(b7.reinterpret_as_int())
-    i += 8
-  }
-  // Process remaining bytes one at a time
-  while i < len {
-    let index = (crc ^ data[i].to_uint()) & 0xFF_U
-    crc = t0.unsafe_get(index.reinterpret_as_int()) ^ (crc >> 8)
-    i += 1
-  }
-  crc ^ 0xFFFFFFFF_U
+  let h = CRC32::new()
+  h.update(data)
+  h.checksum()
 }
 
 ///|

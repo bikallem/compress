@@ -203,39 +203,13 @@ fn decode_block(
       if s == eob {
         break
       }
-      // Regular symbol: s >= 2, MTF index = s - 1
-      let mtf_idx = s - 1
-      if mtf_idx >= num_in_use {
-        raise Bzip2Error::CorruptData("MTF index out of range")
-      }
-      let byte_val = mtf_list[mtf_idx]
-      // Move to front
-      for j = mtf_idx; j > 0; j = j - 1 {
-        mtf_list[j] = mtf_list[j - 1]
-      }
-      mtf_list[0] = byte_val
-      if decoded_len >= max_block_bytes {
-        raise Bzip2Error::CorruptData("block too large")
-      }
-      tt[decoded_len] = byte_val.to_int()
-      decoded_len += 1
+      decoded_len = mtf_decode_symbol(
+        s, mtf_list, num_in_use, tt, decoded_len, max_block_bytes,
+      )
     } else {
-      // Regular symbol: sym >= 2, MTF index = sym - 1
-      let mtf_idx = sym - 1
-      if mtf_idx >= num_in_use {
-        raise Bzip2Error::CorruptData("MTF index out of range")
-      }
-      let byte_val = mtf_list[mtf_idx]
-      // Move to front
-      for j = mtf_idx; j > 0; j = j - 1 {
-        mtf_list[j] = mtf_list[j - 1]
-      }
-      mtf_list[0] = byte_val
-      if decoded_len >= max_block_bytes {
-        raise Bzip2Error::CorruptData("block too large")
-      }
-      tt[decoded_len] = byte_val.to_int()
-      decoded_len += 1
+      decoded_len = mtf_decode_symbol(
+        sym, mtf_list, num_in_use, tt, decoded_len, max_block_bytes,
+      )
     }
   }
   // Inverse BWT using LF mapping
@@ -246,6 +220,32 @@ fn decode_block(
   // Undo RLE1: consecutive runs of 4+ identical bytes are encoded as
   // 4 copies of byte followed by a repeat count byte
   undo_rle1(bwt_output)
+}
+
+///|
+/// Decodes a single MTF symbol: validates index, moves to front, emits byte.
+fn mtf_decode_symbol(
+  sym : Int,
+  mtf_list : FixedArray[Byte],
+  num_in_use : Int,
+  tt : FixedArray[Int],
+  decoded_len : Int,
+  max_block_bytes : Int,
+) -> Int raise Bzip2Error {
+  let mtf_idx = sym - 1
+  if mtf_idx >= num_in_use {
+    raise Bzip2Error::CorruptData("MTF index out of range")
+  }
+  let byte_val = mtf_list[mtf_idx]
+  for j = mtf_idx; j > 0; j = j - 1 {
+    mtf_list[j] = mtf_list[j - 1]
+  }
+  mtf_list[0] = byte_val
+  if decoded_len >= max_block_bytes {
+    raise Bzip2Error::CorruptData("block too large")
+  }
+  tt[decoded_len] = byte_val.to_int()
+  decoded_len + 1
 }
 
 ///|

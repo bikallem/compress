@@ -103,148 +103,186 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
 }
 
 ///|
-fn decode_lsb(s : InflaterState) -> Decode {
-  let suffix = s.suffix
-  let prefix = s.prefix
-  let decode_buf = s.decode_buf
+/// Result of processing a single LZW code.
+priv enum CodeResult {
+  /// Clear code — reset dictionary, continue loop.
+  Clear
+  /// EOF code — stream complete.
+  Finished
+  /// Invalid code encountered.
+  Invalid(Int)
+  /// Code processed normally.
+  Ok
+}
+
+///|
+/// Processes a single LZW code, updating dictionary and writing output.
+/// Shared by both LSB and MSB decode loops.
+fn process_code(s : InflaterState, code : Int) -> CodeResult {
   let clear = s.clear
+  let out_buf = s.out_buf
+  if code < clear {
+    out_buf.write_byte(code.to_byte())
+    if s.last != DECODER_INVALID_CODE {
+      s.suffix.unsafe_set(s.hi, code.to_byte())
+      s.prefix.unsafe_set(s.hi, s.last)
+    }
+  } else if code == clear {
+    s.width = 1 + s.lit_width
+    s.hi = s.eof_code
+    s.overflow = 1 << s.width
+    s.last = DECODER_INVALID_CODE
+    return Clear
+  } else if code == s.eof_code {
+    return Finished
+  } else if code <= s.hi {
+    let decode_buf = s.decode_buf
+    let suffix = s.suffix
+    let prefix = s.prefix
+    let buf_len = decode_buf.length()
+    let mut c = code
+    let mut i = buf_len - 1
+    if code == s.hi && s.last != DECODER_INVALID_CODE {
+      c = s.last
+      while c >= clear {
+        c = prefix.unsafe_get(c)
+      }
+      decode_buf.unsafe_set(i, c.to_byte())
+      i -= 1
+      c = s.last
+    }
+    while c >= clear {
+      decode_buf.unsafe_set(i, suffix.unsafe_get(c))
+      i -= 1
+      c = prefix.unsafe_get(c)
+    }
+    decode_buf.unsafe_set(i, c.to_byte())
+    let decoded_len = buf_len - i
+    for j in 0..<decoded_len {
+      out_buf.write_byte(decode_buf[i + j])
+    }
+    if s.last != DECODER_INVALID_CODE {
+      suffix.unsafe_set(s.hi, c.to_byte())
+      prefix.unsafe_set(s.hi, s.last)
+    }
+  } else {
+    return Invalid(code)
+  }
+  s.last = code
+  s.hi += 1
+  if s.hi >= s.overflow {
+    if s.hi > s.overflow {
+      abort("unreachable")
+    }
+    if s.width == MAX_WIDTH {
+      s.last = DECODER_INVALID_CODE
+      s.hi -= 1
+    } else {
+      s.width += 1
+      s.overflow = 1 << s.width
+    }
+  }
+  Ok
+}
+
+///|
+/// Saves bit reader state and returns buffered output or Await.
+fn save_and_yield(
+  s : InflaterState,
+  bits : UInt,
+  n_bits : Int,
+  pos : Int,
+) -> Decode {
+  s.bits = bits
+  s.n_bits = n_bits
+  s.input_pos = pos
+  let out_buf = s.out_buf
+  if out_buf.length() > 0 {
+    let out = out_buf.to_bytes()
+    out_buf.reset()
+    return Data(out)
+  }
+  Await
+}
+
+///|
+/// Saves state, marks finished, returns buffered output or End.
+fn save_and_end(
+  s : InflaterState,
+  bits : UInt,
+  n_bits : Int,
+  pos : Int,
+) -> Decode {
+  s.bits = bits
+  s.n_bits = n_bits
+  s.input_pos = pos
+  s.finished = true
+  let out_buf = s.out_buf
+  if out_buf.length() > 0 {
+    let out = out_buf.to_bytes()
+    out_buf.reset()
+    return Data(out)
+  }
+  End
+}
+
+///|
+/// Saves state and returns an error.
+fn save_and_fail(
+  s : InflaterState,
+  bits : UInt,
+  n_bits : Int,
+  pos : Int,
+  code : Int,
+) -> Decode {
+  s.bits = bits
+  s.n_bits = n_bits
+  s.input_pos = pos
+  let e = LzwError::InvalidCode("lzw: invalid code \{code}")
+  s.failed = Some(e)
+  Error(e)
+}
+
+///|
+fn decode_lsb(s : InflaterState) -> Decode {
   let input = s.input
   let input_len = input.length()
   let mut bits = s.bits
   let mut n_bits = s.n_bits
   let mut pos = s.input_pos
-  let out_buf = s.out_buf
   while true {
-    // Read enough bits for a code (LSB)
     while n_bits < s.width {
       if pos >= input_len {
-        // Save state and return
-        s.bits = bits
-        s.n_bits = n_bits
-        s.input_pos = pos
-        if out_buf.length() > 0 {
-          let out = out_buf.to_bytes()
-          out_buf.reset()
-          return Data(out)
-        }
-        return Await
+        return save_and_yield(s, bits, n_bits, pos)
       }
       bits = bits | (input[pos].to_uint() << n_bits)
       n_bits += 8
       pos += 1
     }
-    let mask = (1U << s.width) - 1U
-    let code = (bits & mask).reinterpret_as_int()
+    let code = (bits & ((1U << s.width) - 1U)).reinterpret_as_int()
     bits = bits >> s.width
     n_bits -= s.width
-    // Process the code
-    if code < clear {
-      // Literal
-      out_buf.write_byte(code.to_byte())
-      if s.last != DECODER_INVALID_CODE {
-        suffix.unsafe_set(s.hi, code.to_byte())
-        prefix.unsafe_set(s.hi, s.last)
-      }
-    } else if code == clear {
-      // Clear code — reset dictionary
-      s.width = 1 + s.lit_width
-      s.hi = s.eof_code
-      s.overflow = 1 << s.width
-      s.last = DECODER_INVALID_CODE
-      continue
-    } else if code == s.eof_code {
-      // End of stream
-      s.bits = bits
-      s.n_bits = n_bits
-      s.input_pos = pos
-      s.finished = true
-      if out_buf.length() > 0 {
-        let out = out_buf.to_bytes()
-        out_buf.reset()
-        return Data(out)
-      }
-      return End
-    } else if code <= s.hi {
-      // Dictionary code
-      let buf_len = decode_buf.length()
-      let mut c = code
-      let mut i = buf_len - 1
-      if code == s.hi && s.last != DECODER_INVALID_CODE {
-        c = s.last
-        while c >= clear {
-          c = prefix.unsafe_get(c)
-        }
-        decode_buf.unsafe_set(i, c.to_byte())
-        i -= 1
-        c = s.last
-      }
-      while c >= clear {
-        decode_buf.unsafe_set(i, suffix.unsafe_get(c))
-        i -= 1
-        c = prefix.unsafe_get(c)
-      }
-      decode_buf.unsafe_set(i, c.to_byte())
-      let decoded_len = buf_len - i
-      // Write decoded bytes to output
-      for j in 0..<decoded_len {
-        out_buf.write_byte(decode_buf[i + j])
-      }
-      if s.last != DECODER_INVALID_CODE {
-        suffix.unsafe_set(s.hi, c.to_byte())
-        prefix.unsafe_set(s.hi, s.last)
-      }
-    } else {
-      s.bits = bits
-      s.n_bits = n_bits
-      s.input_pos = pos
-      let e = LzwError::InvalidCode("lzw: invalid code \{code}")
-      s.failed = Some(e)
-      return Error(e)
-    }
-    s.last = code
-    s.hi += 1
-    if s.hi >= s.overflow {
-      if s.hi > s.overflow {
-        abort("unreachable")
-      }
-      if s.width == MAX_WIDTH {
-        s.last = DECODER_INVALID_CODE
-        s.hi -= 1
-      } else {
-        s.width += 1
-        s.overflow = 1 << s.width
-      }
+    match process_code(s, code) {
+      Clear => continue
+      Finished => return save_and_end(s, bits, n_bits, pos)
+      Invalid(c) => return save_and_fail(s, bits, n_bits, pos, c)
+      Ok => ()
     }
   }
-  // unreachable
   End
 }
 
 ///|
 fn decode_msb(s : InflaterState) -> Decode {
-  let suffix = s.suffix
-  let prefix = s.prefix
-  let decode_buf = s.decode_buf
-  let clear = s.clear
   let input = s.input
   let input_len = input.length()
   let mut bits = s.bits
   let mut n_bits = s.n_bits
   let mut pos = s.input_pos
-  let out_buf = s.out_buf
   while true {
-    // Read enough bits for a code (MSB)
     while n_bits < s.width {
       if pos >= input_len {
-        s.bits = bits
-        s.n_bits = n_bits
-        s.input_pos = pos
-        if out_buf.length() > 0 {
-          let out = out_buf.to_bytes()
-          out_buf.reset()
-          return Data(out)
-        }
-        return Await
+        return save_and_yield(s, bits, n_bits, pos)
       }
       bits = bits | (input[pos].to_uint() << (24 - n_bits))
       n_bits += 8
@@ -253,78 +291,11 @@ fn decode_msb(s : InflaterState) -> Decode {
     let code = (bits >> (32 - s.width)).reinterpret_as_int()
     bits = bits << s.width
     n_bits -= s.width
-    // Process the code (same logic as LSB)
-    if code < clear {
-      out_buf.write_byte(code.to_byte())
-      if s.last != DECODER_INVALID_CODE {
-        suffix.unsafe_set(s.hi, code.to_byte())
-        prefix.unsafe_set(s.hi, s.last)
-      }
-    } else if code == clear {
-      s.width = 1 + s.lit_width
-      s.hi = s.eof_code
-      s.overflow = 1 << s.width
-      s.last = DECODER_INVALID_CODE
-      continue
-    } else if code == s.eof_code {
-      s.bits = bits
-      s.n_bits = n_bits
-      s.input_pos = pos
-      s.finished = true
-      if out_buf.length() > 0 {
-        let out = out_buf.to_bytes()
-        out_buf.reset()
-        return Data(out)
-      }
-      return End
-    } else if code <= s.hi {
-      let buf_len = decode_buf.length()
-      let mut c = code
-      let mut i = buf_len - 1
-      if code == s.hi && s.last != DECODER_INVALID_CODE {
-        c = s.last
-        while c >= clear {
-          c = prefix.unsafe_get(c)
-        }
-        decode_buf.unsafe_set(i, c.to_byte())
-        i -= 1
-        c = s.last
-      }
-      while c >= clear {
-        decode_buf.unsafe_set(i, suffix.unsafe_get(c))
-        i -= 1
-        c = prefix.unsafe_get(c)
-      }
-      decode_buf.unsafe_set(i, c.to_byte())
-      let decoded_len = buf_len - i
-      for j in 0..<decoded_len {
-        out_buf.write_byte(decode_buf[i + j])
-      }
-      if s.last != DECODER_INVALID_CODE {
-        suffix.unsafe_set(s.hi, c.to_byte())
-        prefix.unsafe_set(s.hi, s.last)
-      }
-    } else {
-      s.bits = bits
-      s.n_bits = n_bits
-      s.input_pos = pos
-      let e = LzwError::InvalidCode("lzw: invalid code \{code}")
-      s.failed = Some(e)
-      return Error(e)
-    }
-    s.last = code
-    s.hi += 1
-    if s.hi >= s.overflow {
-      if s.hi > s.overflow {
-        abort("unreachable")
-      }
-      if s.width == MAX_WIDTH {
-        s.last = DECODER_INVALID_CODE
-        s.hi -= 1
-      } else {
-        s.width += 1
-        s.overflow = 1 << s.width
-      }
+    match process_code(s, code) {
+      Clear => continue
+      Finished => return save_and_end(s, bits, n_bits, pos)
+      Invalid(c) => return save_and_fail(s, bits, n_bits, pos, c)
+      Ok => ()
     }
   }
   End
