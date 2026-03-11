@@ -1,7 +1,7 @@
 ///|
 /// Streaming zlib compressor using signal protocol.
 ///
-/// Wraps @flate2.Deflater with zlib header (RFC 1950) and Adler-32 trailer.
+/// Wraps @flate.Deflater with zlib header (RFC 1950) and Adler-32 trailer.
 ///
 /// Usage:
 ///   let d = Deflater::new()
@@ -12,7 +12,7 @@
 ///     match d.encode(None) { Data(out) => write(out); End => break; .. }
 ///   }
 priv struct DeflaterState {
-  deflater : @flate2.Deflater
+  deflater : @flate.Deflater
   adler : @checksum.Adler32
   header : Bytes
   mut header_emitted : Bool
@@ -24,13 +24,13 @@ struct Deflater(DeflaterState)
 
 ///|
 pub fn Deflater::new(
-  level? : @flate2.CompressionLevel = DefaultCompression,
+  level? : @flate.CompressionLevel = DefaultCompression,
   dict? : Bytes = Bytes::default(),
 ) -> Deflater {
   let deflater = if dict.length() > 0 {
-    @flate2.Deflater::new(level~, dict~)
+    @flate.Deflater::new(level~, dict~)
   } else {
-    @flate2.Deflater::new(level~)
+    @flate.Deflater::new(level~)
   }
   Deflater({
     deflater,

@@ -135,7 +135,7 @@ fn main {
 fn compress_file(input_path : String, output_path : String) -> Int64 {
   let fin = fopen_read(path_to_cstr(input_path))
   let fout = fopen_write(path_to_cstr(output_path))
-  let deflater = @flate2.Deflater::new()
+  let deflater = @flate.Deflater::new()
   let read_buf = FixedArray::make(CHUNK_SIZE, b'\x00')
   let mut total_out = 0L
   // Feed chunks
@@ -181,7 +181,7 @@ fn compress_file(input_path : String, output_path : String) -> Int64 {
 fn decompress_file(input_path : String, output_path : String) -> Int64 {
   let fin = fopen_read(path_to_cstr(input_path))
   let fout = fopen_write(path_to_cstr(output_path))
-  let inflater = @flate2.Inflater::new()
+  let inflater = @flate.Inflater::new()
   let read_buf = FixedArray::make(CHUNK_SIZE, b'\x00')
   let mut total_out = 0L
   loop inflater.decode() {

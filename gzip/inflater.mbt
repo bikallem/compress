@@ -1,9 +1,9 @@
 ///|
 /// Streaming gzip decompressor using signal protocol.
 ///
-/// Wraps @flate2.Inflater with gzip header parsing and CRC-32/ISIZE verification.
+/// Wraps @flate.Inflater with gzip header parsing and CRC-32/ISIZE verification.
 priv struct InflaterState {
-  inflater : @flate2.Inflater
+  inflater : @flate.Inflater
   crc : @checksum.CRC32
   mut size : UInt
   mut phase : InflatePhase
@@ -27,7 +27,7 @@ struct Inflater(InflaterState)
 ///|
 pub fn Inflater::new() -> Inflater {
   Inflater({
-    inflater: @flate2.Inflater::new(),
+    inflater: @flate.Inflater::new(),
     crc: @checksum.CRC32::new(),
     size: 0U,
     phase: ParseHeader,
@@ -87,17 +87,17 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     ParseHeader => Await
     Inflate =>
       match s.inflater.decode() {
-        @flate2.Await => Await
-        @flate2.Data(out) => {
+        @flate.Await => Await
+        @flate.Data(out) => {
           s.crc.update(out[:])
           s.size = (s.size + out.length().reinterpret_as_uint()) & 0xFFFFFFFF_U
           Data(out)
         }
-        @flate2.End => {
+        @flate.End => {
           let remaining = s.inflater.remaining()
           verify_gzip_trailer(s, remaining)
         }
-        @flate2.Error(e) => fail_with(s, GzipError::DeflateError(e.to_string()))
+        @flate.Error(e) => fail_with(s, GzipError::DeflateError(e.to_string()))
       }
     VerifyTrailer(remaining) => verify_gzip_trailer(s, remaining)
     Done => End

@@ -1,9 +1,9 @@
 ///|
 /// Streaming gzip compressor using signal protocol.
 ///
-/// Wraps @flate2.Deflater with gzip header (RFC 1952) and CRC-32/ISIZE trailer.
+/// Wraps @flate.Deflater with gzip header (RFC 1952) and CRC-32/ISIZE trailer.
 priv struct DeflaterState {
-  deflater : @flate2.Deflater
+  deflater : @flate.Deflater
   crc : @checksum.CRC32
   mut size : UInt
   header : Bytes
@@ -16,11 +16,11 @@ struct Deflater(DeflaterState)
 
 ///|
 pub fn Deflater::new(
-  level? : @flate2.CompressionLevel = DefaultCompression,
+  level? : @flate.CompressionLevel = DefaultCompression,
   header? : Header = { ..Header::default() },
 ) -> Deflater {
   Deflater({
-    deflater: @flate2.Deflater::new(level~),
+    deflater: @flate.Deflater::new(level~),
     crc: @checksum.CRC32::new(),
     size: 0U,
     header: build_gzip_header(header, level),

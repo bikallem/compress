@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/flate2",
+  "bikallem/compress/flate",
   "moonbitlang/core/buffer",
 }
 

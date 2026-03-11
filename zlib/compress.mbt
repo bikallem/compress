@@ -2,7 +2,7 @@
 /// Compresses data using zlib format (RFC 1950).
 pub fn compress(
   data : Bytes,
-  level? : @flate2.CompressionLevel = DefaultCompression,
+  level? : @flate.CompressionLevel = DefaultCompression,
 ) -> Bytes raise ZlibError {
   compress_with_dict(data, Bytes::default(), level~)
 }
@@ -12,16 +12,16 @@ pub fn compress(
 pub fn compress_with_dict(
   data : Bytes,
   dict : Bytes,
-  level? : @flate2.CompressionLevel = DefaultCompression,
+  level? : @flate.CompressionLevel = DefaultCompression,
 ) -> Bytes raise ZlibError {
   let buf = @buffer.new(size_hint=data.length() + 12)
   buf.write_bytes(build_zlib_header(level, dict))
   // Compress with DEFLATE
   let compressed = try {
     if dict.length() > 0 {
-      @flate2.compress(data, level~)
+      @flate.compress(data, level~)
     } else {
-      @flate2.compress(data, level~)
+      @flate.compress(data, level~)
     }
   } catch {
     e => raise ZlibError::DeflateError(e.to_string())
@@ -34,7 +34,7 @@ pub fn compress_with_dict(
 }
 
 ///|
-fn build_zlib_header(level : @flate2.CompressionLevel, dict : Bytes) -> Bytes {
+fn build_zlib_header(level : @flate.CompressionLevel, dict : Bytes) -> Bytes {
   let buf = @buffer.new(size_hint=6)
   let cmf = (ZLIB_DEFAULT_CINFO << 4) | ZLIB_DEFLATE_METHOD
   let flevel = match level {

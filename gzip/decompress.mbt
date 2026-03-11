@@ -14,7 +14,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   }
   let deflate_data = Bytes::makei(footer_start - pos, fn(i) { data[pos + i] })
   // Decompress DEFLATE data
-  let decompressed = @flate2.decompress(deflate_data) catch {
+  let decompressed = @flate.decompress(deflate_data) catch {
     e => raise GzipError::DeflateError(e.to_string())
   }
   // Verify CRC-32 (4 bytes LE)

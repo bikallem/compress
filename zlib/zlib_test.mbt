@@ -41,7 +41,7 @@ test "zlib round-trip all zeros" {
 ///|
 test "zlib round-trip all compression levels" {
   let data = b"The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog."
-  let levels : Array[@flate2.CompressionLevel] = [
+  let levels : Array[@flate.CompressionLevel] = [
     NoCompression,
     BestSpeed,
     Level(5),

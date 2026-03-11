@@ -1,7 +1,7 @@
 ///|
 /// Streaming zlib decompressor using signal protocol.
 ///
-/// Wraps @flate2.Inflater with zlib header parsing and Adler-32 verification.
+/// Wraps @flate.Inflater with zlib header parsing and Adler-32 verification.
 ///
 /// Usage:
 ///   let d = Inflater::new()
@@ -12,7 +12,7 @@
 ///     Error(e) => ...
 ///   }
 priv struct InflaterState {
-  inflater : @flate2.Inflater
+  inflater : @flate.Inflater
   adler : @checksum.Adler32
   dict : Bytes
   mut phase : InflatePhase
@@ -35,9 +35,9 @@ struct Inflater(InflaterState)
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
   let inflater = if dict.length() > 0 {
-    @flate2.Inflater::new(dict~)
+    @flate.Inflater::new(dict~)
   } else {
-    @flate2.Inflater::new()
+    @flate.Inflater::new()
   }
   Inflater({
     inflater,
@@ -95,16 +95,16 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     ParseHeader => Await
     Inflate =>
       match s.inflater.decode() {
-        @flate2.Await => Await
-        @flate2.Data(out) => {
+        @flate.Await => Await
+        @flate.Data(out) => {
           s.adler.update(out[:])
           Data(out)
         }
-        @flate2.End => {
+        @flate.End => {
           let remaining = s.inflater.remaining()
           verify_trailer(s, remaining)
         }
-        @flate2.Error(e) => fail_with(s, ZlibError::DeflateError(e.to_string()))
+        @flate.Error(e) => fail_with(s, ZlibError::DeflateError(e.to_string()))
       }
     VerifyTrailer(remaining) => verify_trailer(s, remaining)
     Done => End

@@ -26,9 +26,9 @@ pub fn decompress_with_dict(
   // Decompress DEFLATE data
   let decompressed = try {
     if dict.length() > 0 {
-      @flate2.decompress_with_dict(deflate_data, dict)
+      @flate.decompress_with_dict(deflate_data, dict)
     } else {
-      @flate2.decompress(deflate_data)
+      @flate.decompress(deflate_data)
     }
   } catch {
     e => raise ZlibError::DeflateError(e.to_string())

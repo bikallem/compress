@@ -2,13 +2,13 @@
 /// Compresses data using gzip format (RFC 1952).
 pub fn compress(
   data : Bytes,
-  level? : @flate2.CompressionLevel = DefaultCompression,
+  level? : @flate.CompressionLevel = DefaultCompression,
   header? : Header = { ..Header::default() },
 ) -> Bytes raise GzipError {
   let buf = @buffer.new(size_hint=data.length() + 32)
   buf.write_bytes(build_gzip_header(header, level))
   // Compress with DEFLATE
-  let compressed = @flate2.compress(data, level~) catch {
+  let compressed = @flate.compress(data, level~) catch {
     e => raise GzipError::DeflateError(e.to_string())
   }
   buf.write_bytes(compressed)
@@ -24,7 +24,7 @@ pub fn compress(
 ///|
 fn build_gzip_header(
   header : Header,
-  level : @flate2.CompressionLevel,
+  level : @flate.CompressionLevel,
 ) -> Bytes {
   let buf = @buffer.new(size_hint=32)
   // Magic bytes

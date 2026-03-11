@@ -1,6 +1,6 @@
 import {
   "bikallem/compress/checksum",
-  "bikallem/compress/flate2",
+  "bikallem/compress/flate",
   "bikallem/compress/gzip",
   "bikallem/compress/lzw",
   "bikallem/compress/zlib",
