@@ -7,4 +7,8 @@ import {
 
 options(
   "is-main": true,
+  targets: {
+    "main.mbt": [ "native" ],
+    "main_wasm.mbt": [ "wasm", "wasm-gc", "js" ],
+  },
 )

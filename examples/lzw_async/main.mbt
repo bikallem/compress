@@ -8,7 +8,6 @@ fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
 }
 
 ///|
-#cfg(target="native")
 fn main {
   @moonasync.run_async_main(async fn() {
     let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
@@ -28,10 +27,4 @@ fn main {
       })
     })
   })
-}
-
-///|
-#cfg(target="wasm-gc")
-fn main {
-  println("This example requires --target native")
 }

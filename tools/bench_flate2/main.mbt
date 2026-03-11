@@ -16,11 +16,7 @@ extern "c" fn fread_into(
 
 ///|
 #borrow(data)
-extern "c" fn fwrite_bytes(
-  handle : Int64,
-  data : Bytes,
-  len : Int,
-) -> Unit = "bench_fwrite"
+extern "c" fn fwrite_bytes(handle : Int64, data : Bytes, len : Int) -> Unit = "bench_fwrite"
 
 ///|
 extern "c" fn fclose(handle : Int64) -> Unit = "bench_fclose"
@@ -126,9 +122,7 @@ fn main {
   println("")
   println("=== VALIDATE ===")
   if decompressed_size != input_size {
-    println(
-      "FAIL: size mismatch: got \{decompressed_size}, want \{input_size}",
-    )
+    println("FAIL: size mismatch: got \{decompressed_size}, want \{input_size}")
     return
   }
   let ok = validate_files(input_path, decompressed_path, input_size)
@@ -215,11 +209,7 @@ fn decompress_file(input_path : String, output_path : String) -> Int64 {
 }
 
 ///|
-fn validate_files(
-  path_a : String,
-  path_b : String,
-  size : Int64,
-) -> Bool {
+fn validate_files(path_a : String, path_b : String, size : Int64) -> Bool {
   let fa = fopen_read(path_to_cstr(path_a))
   let fb = fopen_read(path_to_cstr(path_b))
   let buf_a = FixedArray::make(CHUNK_SIZE, b'\x00')

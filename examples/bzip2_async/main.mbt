@@ -1,5 +1,4 @@
 ///|
-#cfg(target="native")
 fn main {
   @moonasync.run_async_main(async fn() {
     let original = b"Hello, bzip2 async streaming!"
@@ -21,10 +20,4 @@ fn main {
     assert_eq(rt_result, original)
     println("Async round-trip: OK (\{rt_result.length()} bytes)")
   })
-}
-
-///|
-#cfg(target="wasm-gc")
-fn main {
-  println("This example requires --target native")
 }

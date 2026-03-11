@@ -8,7 +8,6 @@ fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
 }
 
 ///|
-#cfg(target="native")
 fn main {
   @moonasync.run_async_main(async fn() {
     let original = repeat_bytes(b"gzip async example data. ", 200)
@@ -33,10 +32,4 @@ fn main {
       println("Header name: \"\{header.name}\"")
     })
   })
-}
-
-///|
-#cfg(target="wasm-gc")
-fn main {
-  println("This example requires --target native")
 }
