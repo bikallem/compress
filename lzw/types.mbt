@@ -31,3 +31,29 @@ const TABLE_SIZE : Int = 4 * (1 << 12)
 
 ///|
 const TABLE_MASK : Int = TABLE_SIZE - 1
+
+///|
+/// Decoder signals — returned by Inflater::decode().
+pub(all) enum Decode {
+  /// Need input. Call src(bytes) then decode() again.
+  Await
+  /// Produced output. Consume it, then decode() again.
+  Data(Bytes)
+  /// Stream complete.
+  End
+  /// Unrecoverable format error.
+  Error(LzwError)
+} derive(Show)
+
+///|
+/// Encoder signals — returned by Deflater::encode().
+pub(all) enum Encode {
+  /// Input consumed. Call encode(Some(more)) or encode(None) to finish.
+  Ok
+  /// Produced output. Consume it, then call encode() again with same arg.
+  Data(Bytes)
+  /// Final output flushed. Encoding complete.
+  End
+  /// Unrecoverable error.
+  Error(LzwError)
+} derive(Show)

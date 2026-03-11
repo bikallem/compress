@@ -13,38 +13,19 @@ fn main {
   @moonasync.run_async_main(async fn() {
     let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
 
-    // --- Compress: pipe_async with LzwStreamWriter filter ---
-    let (compressed_read, compressed_write) = @io.pipe()
-    let (source_read, source_write) = @io.pipe()
+    // Async LZW compress
     @moonasync.with_task_group(root => {
       root.spawn_bg(() => {
-        source_write.write(original)
-        source_write.close()
+        let compressed = @lzwlib.compress(original, LSB, 8)
+        println(
+          "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
+        )
+        let restored = @lzwlib.decompress(compressed, LSB, 8)
+        assert_eq(restored, original)
+        println(
+          "Async LZW decompress: round-trip OK (\{restored.length()} bytes)",
+        )
       })
-      root.spawn_bg(() => {
-        @sa.pipe_async(source_read, compressed_write, fn(sink) {
-          @lzwlib.LzwStreamWriter::new(sink, LSB, 8)
-        })
-        compressed_write.close()
-      })
-      let compressed = compressed_read.read_all().binary()
-      println(
-        "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
-      )
-
-      // --- Decompress: reader_of_io + LzwReader ---
-      let (pipe_read, pipe_write) = @io.pipe()
-      root.spawn_bg(() => {
-        pipe_write.write(compressed)
-        pipe_write.close()
-      })
-      let stream_reader = @sa.reader_of_io(pipe_read)
-      let lzw_reader = @lzwlib.LzwReader::new(stream_reader, LSB, 8)
-      let restored = @stream.read_all(lzw_reader)
-      assert_eq(restored, original)
-      println(
-        "Async LZW decompress: round-trip OK (\{restored.length()} bytes)",
-      )
     })
   })
 }

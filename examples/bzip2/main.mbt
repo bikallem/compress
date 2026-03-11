@@ -12,19 +12,35 @@ fn run() -> Unit raise {
   println("bzip2 decompressed: \{decompressed.length()} bytes, content OK")
 
   // --- Streaming API ---
-  let reader = @bz2.Bzip2Reader::new(
-    @stream.BytesReader::new(compressed, slice_length=16),
-  )
-  let stream_result = @stream.read_all(reader)
-  assert_eq(stream_result, b"Hello")
-  println("Streaming decompress: OK")
-
-  // --- Round-trip ---
+  let d = @bz2.Deflater::new()
   let original = b"Hello, bzip2 streaming!"
-  let rt_compressed = @bz2.compress(original)
-  let rt_reader = @bz2.Bzip2Reader::new(@stream.BytesReader::new(rt_compressed))
-  let rt_result = @stream.read_all(rt_reader)
-  assert_eq(rt_result, original)
+  match d.encode(Some(original)) {
+    Ok => ()
+    _ => ()
+  }
+  let cbuf = @buffer.new()
+  loop d.encode(None) {
+    Data(out) => {
+      cbuf.write_bytes(out)
+      continue d.encode(None)
+    }
+    End => break
+    _ => break
+  }
+  let rt_compressed = cbuf.to_bytes()
+  let inf = @bz2.Inflater::new()
+  inf.src(rt_compressed)
+  let dbuf = @buffer.new()
+  loop inf.decode() {
+    Await => break
+    Data(out) => {
+      dbuf.write_bytes(out)
+      continue inf.decode()
+    }
+    End => break
+    Error(_) => break
+  }
+  assert_eq(dbuf.to_bytes(), original)
   println("Round-trip: OK (\{rt_compressed.length()} bytes)")
 
   // --- Error handling ---

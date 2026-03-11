@@ -31,17 +31,35 @@ fn run() -> Unit raise {
   println("LZW litWidth=2: \{small.length()} -> \{compressed_2.length()} bytes")
 
   // --- Streaming API ---
-  let dest = @stream.BytesWriter::new()
-  let lzw_writer = @lzwlib.LzwStreamWriter::new(dest, LSB, 8)
-  @stream.pipe(@stream.BytesReader::new(original, slice_length=256), lzw_writer)
-  let stream_compressed = dest.content()
-  let reader = @lzwlib.LzwReader::new(
-    @stream.BytesReader::new(stream_compressed),
-    LSB,
-    8,
-  )
-  let stream_restored = @stream.read_all(reader)
-  assert_eq(stream_restored, original)
+  let d = @lzwlib.Deflater::new(LSB, 8)
+  let cbuf = @buffer.new()
+  match d.encode(Some(original)) {
+    Ok => ()
+    Data(out) => cbuf.write_bytes(out)
+    _ => ()
+  }
+  loop d.encode(None) {
+    Data(out) => {
+      cbuf.write_bytes(out)
+      continue d.encode(None)
+    }
+    End => break
+    _ => break
+  }
+  let stream_compressed = cbuf.to_bytes()
+  let inf = @lzwlib.Inflater::new(LSB, 8)
+  inf.src(stream_compressed)
+  let dbuf = @buffer.new()
+  loop inf.decode() {
+    Await => break
+    Data(out) => {
+      dbuf.write_bytes(out)
+      continue inf.decode()
+    }
+    End => break
+    Error(_) => break
+  }
+  assert_eq(dbuf.to_bytes(), original)
   println("Streaming: \{stream_compressed.length()} bytes, round-trip OK")
 }
 

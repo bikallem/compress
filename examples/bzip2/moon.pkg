@@ -1,6 +1,6 @@
 import {
   "bikallem/compress/bzip2" @bz2,
-  "bikallem/compress/stream",
+  "moonbitlang/core/buffer",
 }
 
 options(

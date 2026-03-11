@@ -1,9 +1,4 @@
 import {
   "bikallem/compress/internal/blit",
-  "bikallem/compress/stream",
   "moonbitlang/core/buffer",
 }
-
-import {
-  "bikallem/compress/stream",
-} for "test"

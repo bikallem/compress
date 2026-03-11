@@ -1,7 +1,7 @@
 ///|
 /// Decompresses bzip2-encoded data.
 pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
-  let br = Bzip2BitReader::new(@stream.BytesReader::new(data))
+  let br = Bzip2BitReader::new(data)
   let out = @buffer.new(size_hint=data.length() * 4)
   // Read stream header: 'B' 'Z' 'h' blockSize
   let m1 = br.read_bits(8)
