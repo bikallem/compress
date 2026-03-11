@@ -269,7 +269,6 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
   }
   self.w.write_fixed_symbol(END_BLOCK_MARKER)
   self.index = i
-  ()
 }
 
 ///|
@@ -287,9 +286,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
     if i + 3 < end {
       let match_head = self.insert_hash(i, hash_mask)
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = self.find_best_match(
-          i, match_head, max_chain,
-        )
+        let (length, offset) = self.find_best_match(i, match_head, max_chain)
         if length >= MIN_MATCH_LENGTH {
           self.tokens.push(Token::match_(length, offset))
           for j in 1..<length {
@@ -315,7 +312,6 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
     }
   }
   self.index = i
-  ()
 }
 
 ///|
@@ -342,9 +338,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     if i + 3 < end {
       let match_head = self.insert_hash(i, hash_mask)
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = self.find_best_match(
-          i, match_head, max_chain,
-        )
+        let (length, offset) = self.find_best_match(i, match_head, max_chain)
         if length >= MIN_MATCH_LENGTH {
           cur_len = length
           cur_dist = offset
@@ -388,7 +382,6 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     }
   }
   self.index = i
-  ()
 }
 
 ///|
