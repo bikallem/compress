@@ -116,19 +116,6 @@ fn DictDecoder::flush(self : DictDecoder) -> Bytes {
 }
 
 ///|
-/// Flush readable bytes into an OutputBuffer.
-fn DictDecoder::read_flush(self : DictDecoder, out : OutputBuffer) -> Unit {
-  if self.wr_pos > self.rd_pos {
-    out.write_fixed(self.hist, self.rd_pos, self.wr_pos - self.rd_pos)
-  }
-  if self.wr_pos == self.hist.length() {
-    self.wr_pos = 0
-    self.full = true
-  }
-  self.rd_pos = self.wr_pos
-}
-
-///|
 fn DictDecoder::hist_size(self : DictDecoder) -> Int {
   if self.full {
     self.hist.length()
