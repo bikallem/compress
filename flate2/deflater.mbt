@@ -8,27 +8,21 @@ priv enum DeflatePhase {
 
 ///|
 /// 4-byte hash for the hash chain, masked to hash_mask.
-fn hash4(window : FixedArray[Byte], pos : Int, hash_mask : Int) -> Int {
-  let v = window[pos].to_int() |
-    (window[pos + 1].to_int() << 8) |
-    (window[pos + 2].to_int() << 16) |
-    (window[pos + 3].to_int() << 24)
+fn Deflater::hash4(self : Deflater, pos : Int, hash_mask : Int) -> Int {
+  let v = self.window[pos].to_int() |
+    (self.window[pos + 1].to_int() << 8) |
+    (self.window[pos + 2].to_int() << 16) |
+    (self.window[pos + 3].to_int() << 24)
   ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
 }
 
 ///|
 /// Insert position into hash chain and return previous head.
-fn insert_hash(
-  window : FixedArray[Byte],
-  pos : Int,
-  head : FixedArray[Int],
-  prev : FixedArray[Int],
-  hash_mask : Int,
-) -> Int {
-  let h = hash4(window, pos, hash_mask)
-  let match_head = head[h]
-  prev[pos & WINDOW_MASK] = match_head
-  head[h] = pos
+fn Deflater::insert_hash(self : Deflater, pos : Int, hash_mask : Int) -> Int {
+  let h = self.hash4(pos, hash_mask)
+  let match_head = self.head[h]
+  self.prev[pos & WINDOW_MASK] = match_head
+  self.head[h] = pos
   match_head
 }
 
@@ -112,7 +106,7 @@ pub fn Deflater::new(
         if lvl >= 1 {
           let hash_mask = d.head.length() - 1
           for i in 0..<(dict_len - 3) {
-            ignore(insert_hash(d.window, i, d.head, d.prev, hash_mask))
+            ignore(d.insert_hash(i, hash_mask))
           }
         }
       }
@@ -239,9 +233,7 @@ fn Deflater::step_stored(self : Deflater) -> Unit {
 
 ///|
 fn Deflater::step_fast(self : Deflater) -> Unit {
-  let window = self.window
-  let head = self.head
-  let hash_mask = head.length() - 1
+  let hash_mask = self.head.length() - 1
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -252,27 +244,27 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
   self.w.start_fixed_block(false)
   while i < safe_end {
     if i + 3 < end {
-      let h = hash4(window, i, hash_mask)
-      let match_pos = head[h]
-      head[h] = i
+      let h = self.hash4(i, hash_mask)
+      let match_pos = self.head[h]
+      self.head[h] = i
       if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
         let max_len = if end - i < MAX_MATCH_LENGTH {
           end - i
         } else {
           MAX_MATCH_LENGTH
         }
-        let length = match_len_window(window, i, match_pos, max_len)
+        let length = self.match_len(i, match_pos, max_len)
         if length >= MIN_MATCH_LENGTH {
           self.w.write_match_fast(length, i - match_pos)
           if i + 4 < end {
-            head[hash4(window, i + 1, hash_mask)] = i + 1
+            self.head[self.hash4(i + 1, hash_mask)] = i + 1
           }
           i += length
           continue
         }
       }
     }
-    self.w.write_literal_fast(window[i])
+    self.w.write_literal_fast(self.window[i])
     i += 1
   }
   self.w.write_fixed_symbol(END_BLOCK_MARKER)
@@ -282,10 +274,7 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
 
 ///|
 fn Deflater::step_greedy(self : Deflater) -> Unit {
-  let window = self.window
-  let head = self.head
-  let prev = self.prev
-  let hash_mask = head.length() - 1
+  let hash_mask = self.head.length() - 1
   let max_chain = if self.level == 2 { 8 } else { 16 }
   let end = self.window_end
   let mut i = self.index
@@ -296,17 +285,17 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
   }
   while i < safe_end {
     if i + 3 < end {
-      let match_head = insert_hash(window, i, head, prev, hash_mask)
+      let match_head = self.insert_hash(i, hash_mask)
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = find_best_match_window(
-          window, end, i, match_head, prev, max_chain,
+        let (length, offset) = self.find_best_match(
+          i, match_head, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
           self.tokens.push(Token::match_(length, offset))
           for j in 1..<length {
             let pos = i + j
             if pos + 3 < end {
-              ignore(insert_hash(window, pos, head, prev, hash_mask))
+              ignore(self.insert_hash(pos, hash_mask))
             }
           }
           i += length
@@ -318,7 +307,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
         }
       }
     }
-    self.tokens.push(Token::literal(window[i]))
+    self.tokens.push(Token::literal(self.window[i]))
     i += 1
     if self.tokens.length() >= MAX_BLOCK_TOKENS {
       self.w.write_dynamic_block(self.tokens, false)
@@ -331,10 +320,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
 
 ///|
 fn Deflater::step_lazy(self : Deflater) -> Unit {
-  let window = self.window
-  let head = self.head
-  let prev = self.prev
-  let hash_mask = head.length() - 1
+  let hash_mask = self.head.length() - 1
   let max_chain = match self.level {
     4 => 32
     5 => 64
@@ -354,10 +340,10 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     let mut cur_len = 0
     let mut cur_dist = 0
     if i + 3 < end {
-      let match_head = insert_hash(window, i, head, prev, hash_mask)
+      let match_head = self.insert_hash(i, hash_mask)
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = find_best_match_window(
-          window, end, i, match_head, prev, max_chain,
+        let (length, offset) = self.find_best_match(
+          i, match_head, max_chain,
         )
         if length >= MIN_MATCH_LENGTH {
           cur_len = length
@@ -370,7 +356,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         self.tokens.push(Token::literal(self.prev_literal))
         self.prev_match_len = cur_len
         self.prev_match_dist = cur_dist
-        self.prev_literal = window[i]
+        self.prev_literal = self.window[i]
         i += 1
       } else {
         self.tokens.push(
@@ -380,7 +366,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         let skip_end = start + self.prev_match_len - 1
         for j in start..<skip_end {
           if j + 3 < end {
-            ignore(insert_hash(window, j, head, prev, hash_mask))
+            ignore(self.insert_hash(j, hash_mask))
           }
         }
         i = skip_end
@@ -390,10 +376,10 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       self.has_prev = true
       self.prev_match_len = cur_len
       self.prev_match_dist = cur_dist
-      self.prev_literal = window[i]
+      self.prev_literal = self.window[i]
       i += 1
     } else {
-      self.tokens.push(Token::literal(window[i]))
+      self.tokens.push(Token::literal(self.window[i]))
       i += 1
     }
     if self.tokens.length() >= MAX_BLOCK_TOKENS {
@@ -428,17 +414,16 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
     }
     return
   }
-  let window = self.window
   while self.index < self.window_end {
     if self.level <= 1 {
       self.w.start_fixed_block(false)
       while self.index < self.window_end {
-        self.w.write_literal_fast(window[self.index])
+        self.w.write_literal_fast(self.window[self.index])
         self.index += 1
       }
       self.w.write_fixed_symbol(END_BLOCK_MARKER)
     } else {
-      self.tokens.push(Token::literal(window[self.index]))
+      self.tokens.push(Token::literal(self.window[self.index]))
       self.index += 1
     }
   }
@@ -446,34 +431,30 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
 }
 
 ///|
-fn match_len_window(
-  data : FixedArray[Byte],
-  a : Int,
-  b : Int,
-  max_len : Int,
-) -> Int {
+fn Deflater::match_len(self : Deflater, a : Int, b : Int, max_len : Int) -> Int {
+  let window = self.window
   let mut len = 0
-  while len < max_len && data[a + len] == data[b + len] {
+  while len < max_len && window[a + len] == window[b + len] {
     len += 1
   }
   len
 }
 
 ///|
-fn find_best_match_window(
-  window : FixedArray[Byte],
-  window_end : Int,
+fn Deflater::find_best_match(
+  self : Deflater,
   cur : Int,
   match_head : Int,
-  prev : FixedArray[Int],
   max_chain : Int,
 ) -> (Int, Int) {
+  let window = self.window
+  let prev = self.prev
   let mut best_len = MIN_MATCH_LENGTH - 1
   let mut best_offset = 0
   let mut pos = match_head
   let mut chain_count = 0
-  let max_len = if window_end - cur < MAX_MATCH_LENGTH {
-    window_end - cur
+  let max_len = if self.window_end - cur < MAX_MATCH_LENGTH {
+    self.window_end - cur
   } else {
     MAX_MATCH_LENGTH
   }
@@ -487,7 +468,7 @@ fn find_best_match_window(
       chain_count += 1
       continue
     }
-    let length = match_len_window(window, cur, pos, max_len)
+    let length = self.match_len(cur, pos, max_len)
     if length > best_len {
       best_len = length
       best_offset = cur - pos
