@@ -350,7 +350,7 @@ fn rle_count_freqs(
           run -= count
         } else if run >= 3 {
           cl_freqs[17] += 1
-          run -= run
+          run = 0
         } else {
           cl_freqs[0] += 1
           run -= 1

@@ -7,6 +7,32 @@ priv enum DeflatePhase {
 }
 
 ///|
+/// 4-byte hash for the hash chain, masked to hash_mask.
+fn hash4(window : FixedArray[Byte], pos : Int, hash_mask : Int) -> Int {
+  let v = window[pos].to_int() |
+    (window[pos + 1].to_int() << 8) |
+    (window[pos + 2].to_int() << 16) |
+    (window[pos + 3].to_int() << 24)
+  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+}
+
+///|
+/// Insert position into hash chain and return previous head.
+fn insert_hash(
+  window : FixedArray[Byte],
+  pos : Int,
+  head : FixedArray[Int],
+  prev : FixedArray[Int],
+  hash_mask : Int,
+) -> Int {
+  let h = hash4(window, pos, hash_mask)
+  let match_head = head[h]
+  prev[pos & WINDOW_MASK] = match_head
+  head[h] = pos
+  match_head
+}
+
+///|
 const WINDOW_SIZE : Int = 1 << 15 // 32KB
 
 ///|
@@ -86,15 +112,7 @@ pub fn Deflater::new(
         if lvl >= 1 {
           let hash_mask = d.head.length() - 1
           for i in 0..<(dict_len - 3) {
-            let b0 = d.window[i].to_int()
-            let b1 = d.window[i + 1].to_int()
-            let b2 = d.window[i + 2].to_int()
-            let b3 = d.window[i + 3].to_int()
-            let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-            let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) &
-              hash_mask
-            d.prev[i & WINDOW_MASK] = d.head[h]
-            d.head[h] = i
+            ignore(insert_hash(d.window, i, d.head, d.prev, hash_mask))
           }
         }
       }
@@ -234,12 +252,7 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
   self.w.start_fixed_block(false)
   while i < safe_end {
     if i + 3 < end {
-      let b0 = window[i].to_int()
-      let b1 = window[i + 1].to_int()
-      let b2 = window[i + 2].to_int()
-      let b3 = window[i + 3].to_int()
-      let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+      let h = hash4(window, i, hash_mask)
       let match_pos = head[h]
       head[h] = i
       if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
@@ -252,14 +265,7 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
         if length >= MIN_MATCH_LENGTH {
           self.w.write_match_fast(length, i - match_pos)
           if i + 4 < end {
-            let nb0 = window[i + 1].to_int()
-            let nb1 = window[i + 2].to_int()
-            let nb2 = window[i + 3].to_int()
-            let nb3 = window[i + 4].to_int()
-            let nv = nb0 | (nb1 << 8) | (nb2 << 16) | (nb3 << 24)
-            let nh = ((nv & 0xFFFFFF) ^ (((nv >> 16) & 0xFF) * 0x1e35a7bd)) &
-              hash_mask
-            head[nh] = i + 1
+            head[hash4(window, i + 1, hash_mask)] = i + 1
           }
           i += length
           continue
@@ -290,15 +296,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
   }
   while i < safe_end {
     if i + 3 < end {
-      let b0 = window[i].to_int()
-      let b1 = window[i + 1].to_int()
-      let b2 = window[i + 2].to_int()
-      let b3 = window[i + 3].to_int()
-      let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
-      let match_head = head[h]
-      prev[i & WINDOW_MASK] = match_head
-      head[h] = i
+      let match_head = insert_hash(window, i, head, prev, hash_mask)
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
         let (length, offset) = find_best_match_window(
           window, end, i, match_head, prev, max_chain,
@@ -308,15 +306,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
           for j in 1..<length {
             let pos = i + j
             if pos + 3 < end {
-              let jb0 = window[pos].to_int()
-              let jb1 = window[pos + 1].to_int()
-              let jb2 = window[pos + 2].to_int()
-              let jb3 = window[pos + 3].to_int()
-              let jv = jb0 | (jb1 << 8) | (jb2 << 16) | (jb3 << 24)
-              let jh = ((jv & 0xFFFFFF) ^ (((jv >> 16) & 0xFF) * 0x1e35a7bd)) &
-                hash_mask
-              prev[pos & WINDOW_MASK] = head[jh]
-              head[jh] = pos
+              ignore(insert_hash(window, pos, head, prev, hash_mask))
             }
           }
           i += length
@@ -364,15 +354,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     let mut cur_len = 0
     let mut cur_dist = 0
     if i + 3 < end {
-      let b0 = window[i].to_int()
-      let b1 = window[i + 1].to_int()
-      let b2 = window[i + 2].to_int()
-      let b3 = window[i + 3].to_int()
-      let v = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-      let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
-      let match_head = head[h]
-      prev[i & WINDOW_MASK] = match_head
-      head[h] = i
+      let match_head = insert_hash(window, i, head, prev, hash_mask)
       if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
         let (length, offset) = find_best_match_window(
           window, end, i, match_head, prev, max_chain,
@@ -398,15 +380,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         let skip_end = start + self.prev_match_len - 1
         for j in start..<skip_end {
           if j + 3 < end {
-            let jb0 = window[j].to_int()
-            let jb1 = window[j + 1].to_int()
-            let jb2 = window[j + 2].to_int()
-            let jb3 = window[j + 3].to_int()
-            let jv = jb0 | (jb1 << 8) | (jb2 << 16) | (jb3 << 24)
-            let jh = ((jv & 0xFFFFFF) ^ (((jv >> 16) & 0xFF) * 0x1e35a7bd)) &
-              hash_mask
-            prev[j & WINDOW_MASK] = head[jh]
-            head[jh] = j
+            ignore(insert_hash(window, j, head, prev, hash_mask))
           }
         }
         i = skip_end
