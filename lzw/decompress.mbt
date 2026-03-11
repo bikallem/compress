@@ -18,7 +18,7 @@ pub fn decompress(
 
 ///|
 /// Internal LZW decompression state machine.
-priv struct LzwDecompressState {
+priv struct Decoder {
   lit_width : Int
   clear : Int
   eof : Int
@@ -37,7 +37,7 @@ priv struct LzwDecompressState {
 }
 
 ///|
-fn LzwDecompressState::new(lit_width : Int) -> LzwDecompressState {
+fn Decoder::new(lit_width : Int) -> Decoder {
   let clear = 1 << lit_width
   let eof = clear + 1
   let width = lit_width + 1
@@ -61,8 +61,8 @@ fn LzwDecompressState::new(lit_width : Int) -> LzwDecompressState {
 
 ///|
 /// Flush output buffer to result.
-fn LzwDecompressState::flush(
-  self : LzwDecompressState,
+fn Decoder::flush(
+  self : Decoder,
   result : OutputBuffer,
 ) -> Unit {
   if self.o > 0 {
@@ -73,8 +73,8 @@ fn LzwDecompressState::flush(
 
 ///|
 /// Process a decoded code and update dictionary.
-fn LzwDecompressState::process_code(
-  self : LzwDecompressState,
+fn Decoder::process_code(
+  self : Decoder,
   code : Int,
   result : OutputBuffer,
 ) -> Bool raise LzwError {
@@ -158,7 +158,7 @@ fn LzwDecompressState::process_code(
 ///|
 /// LSB-specific decompression — avoids match on order in hot loop.
 fn decompress_lsb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
-  let state = LzwDecompressState::new(lit_width)
+  let state = Decoder::new(lit_width)
   let result = OutputBuffer::new(data.length() * 4)
   let data_len = data.length()
   // Extract bit-reader state to locals for the hot loop
@@ -189,7 +189,7 @@ fn decompress_lsb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
 ///|
 /// MSB-specific decompression — avoids match on order in hot loop.
 fn decompress_msb(data : Bytes, lit_width : Int) -> Bytes raise LzwError {
-  let state = LzwDecompressState::new(lit_width)
+  let state = Decoder::new(lit_width)
   let result = OutputBuffer::new(data.length() * 4)
   let data_len = data.length()
   let mut bits = state.bits

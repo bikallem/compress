@@ -6,7 +6,7 @@
 ///   match d.encode(Some(data)) { Ok => ...; Data(out) => ... }
 ///   match d.encode(None) { Data(out) => ...; End => ... }
 priv struct DeflaterState {
-  state : LzwCompressState
+  state : Encoder
   mut finished : Bool
 }
 
@@ -21,7 +21,7 @@ pub fn Deflater::new(
   guard lit_width >= 2 && lit_width <= 8 else {
     raise LzwError::InvalidLitWidth(lit_width)
   }
-  Deflater({ state: LzwCompressState::new(order, lit_width), finished: false })
+  Deflater({ state: Encoder::new(order, lit_width), finished: false })
 }
 
 ///|

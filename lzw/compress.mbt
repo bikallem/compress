@@ -10,14 +10,14 @@ pub fn compress(
   guard lit_width >= 2 && lit_width <= 8 else {
     raise LzwError::InvalidLitWidth(lit_width)
   }
-  let state = LzwCompressState::new(order, lit_width)
+  let state = Encoder::new(order, lit_width)
   state.write(data)
   state.close()
 }
 
 ///|
 /// Internal LZW compression state machine.
-priv struct LzwCompressState {
+priv struct Encoder {
   order : BitOrder
   lit_width : Int
   buf : @buffer.Buffer
@@ -31,7 +31,7 @@ priv struct LzwCompressState {
 }
 
 ///|
-fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState {
+fn Encoder::new(order : BitOrder, lit_width : Int) -> Encoder {
   let lw = lit_width
   {
     order,
@@ -48,7 +48,7 @@ fn LzwCompressState::new(order : BitOrder, lit_width : Int) -> LzwCompressState 
 }
 
 ///|
-fn LzwCompressState::write_code(self : LzwCompressState, code : Int) -> Unit {
+fn Encoder::write_code(self : Encoder, code : Int) -> Unit {
   let c = code.reinterpret_as_uint()
   match self.order {
     LSB => {
@@ -75,7 +75,7 @@ fn LzwCompressState::write_code(self : LzwCompressState, code : Int) -> Unit {
 ///|
 /// Increments hi and handles overflow/clear code emission.
 /// Returns true if a clear code was emitted and the caller should continue.
-fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
+fn Encoder::inc_hi(self : Encoder) -> Bool {
   self.hi += 1
   if self.hi == self.overflow {
     self.width += 1
@@ -97,7 +97,7 @@ fn LzwCompressState::inc_hi(self : LzwCompressState) -> Bool {
 }
 
 ///|
-fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
+fn Encoder::write(self : Encoder, data : Bytes) -> Unit {
   if data.length() == 0 {
     return
   }
@@ -146,7 +146,7 @@ fn LzwCompressState::write(self : LzwCompressState, data : Bytes) -> Unit {
 }
 
 ///|
-fn LzwCompressState::close(self : LzwCompressState) -> Bytes {
+fn Encoder::close(self : Encoder) -> Bytes {
   // Write the saved code if valid
   if self.saved_code != INVALID_CODE {
     self.write_code(self.saved_code)
