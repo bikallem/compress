@@ -171,7 +171,11 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
   // Copy from input directly
   while rem > 0 {
     let chunk = bb.next_bytes(
-      if rem < dd.avail_write() { rem } else { dd.avail_write() },
+      if rem < dd.avail_write() {
+        rem
+      } else {
+        dd.avail_write()
+      },
     )
     if chunk.length() == 0 {
       self.phase = StoredCopy(rem)
@@ -234,7 +238,7 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   for i in 0..<hclen {
     cl_lengths[code_order[i]] = bb.read_unchecked(3)
   }
-  let cl_decoder = try HuffmanDecoder::build(cl_lengths) catch {
+  let cl_decoder = HuffmanDecoder::build(cl_lengths) catch {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
   }
   let total = hlit + hdist
@@ -330,10 +334,10 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   for j in 0..<hdist {
     dist_lengths[j] = lengths[hlit + j]
   }
-  let lit_dec = try HuffmanDecoder::build(lit_lengths) catch {
+  let lit_dec = HuffmanDecoder::build(lit_lengths) catch {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
   }
-  let dist_dec = try HuffmanDecoder::build(dist_lengths) catch {
+  let dist_dec = HuffmanDecoder::build(dist_lengths) catch {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
   }
   self.phase = HuffmanLoop(lit_dec, dist_dec)

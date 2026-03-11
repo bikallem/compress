@@ -26,8 +26,9 @@ fn BitBuf::set_input(self : BitBuf, data : Bytes) -> Unit {
 fn BitBuf::fill(self : BitBuf) -> Unit {
   let input = self.input
   let input_len = input.length()
-  let (buf, count, pos) = for buf = self.buf, count = self.count, pos = self.pos
-    count <= 56 && pos < input_len {
+  let (buf, count, pos) = for buf = self.buf, count = self.count, pos = self.pos; count <=
+                             56 &&
+                             pos < input_len; {
     continue buf | (input[pos].to_uint64() << count), count + 8, pos + 1
   } nobreak {
     (buf, count, pos)

@@ -17,15 +17,16 @@ test "compress hello" {
 ///|
 test "compress levels" {
   let data : Bytes = b"Hello, World! Hello, World! Hello, World!"
-  for lvl in [
-    @flate2.NoCompression,
-    @flate2.BestSpeed,
-    @flate2.Level(2),
-    @flate2.Level(3),
-    @flate2.Level(4),
-    @flate2.DefaultCompression,
-    @flate2.BestCompression,
-  ] {
+  for
+    lvl in [
+      @flate2.NoCompression,
+      @flate2.BestSpeed,
+      @flate2.Level(2),
+      @flate2.Level(3),
+      @flate2.Level(4),
+      @flate2.DefaultCompression,
+      @flate2.BestCompression,
+    ] {
     let compressed = @flate2.compress(data, level=lvl)
     let decompressed = @flate2.decompress(compressed)
     inspect(decompressed == data, content="true")

@@ -25,13 +25,14 @@ test "round-trip: all compression levels" {
     Bytes::makei(10000, fn(i) { (i % 26 + 65).to_byte() }),
   ]
   for data in test_data {
-    for lvl in [
-      @flate2.NoCompression,
-      @flate2.BestSpeed,
-      @flate2.Level(3),
-      @flate2.DefaultCompression,
-      @flate2.BestCompression,
-    ] {
+    for
+      lvl in [
+        @flate2.NoCompression,
+        @flate2.BestSpeed,
+        @flate2.Level(3),
+        @flate2.DefaultCompression,
+        @flate2.BestCompression,
+      ] {
       let compressed = @flate2.compress(data, level=lvl)
       let decompressed = @flate2.decompress(compressed)
       inspect(decompressed == data, content="true")
@@ -62,7 +63,7 @@ test "signal protocol: chunked input" {
   let buf = @buffer.new()
   let mut pos = 0
   loop d.decode() {
-    Await => {
+    Await =>
       if pos >= compressed.length() {
         // Should not happen for valid data
         inspect(false, content="true")
@@ -72,7 +73,6 @@ test "signal protocol: chunked input" {
         pos += 1
         continue d.decode()
       }
-    }
     Data(chunk) => {
       buf.write_bytes(chunk)
       continue d.decode()

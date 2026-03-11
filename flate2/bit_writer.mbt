@@ -75,7 +75,8 @@ fn BitWriter::write_match_fast(
   self.write_bits_lsb(lentry >> 4, (lentry & 0xFU).reinterpret_as_int())
   if length_extra_bits > 0 {
     self.write_bits_lsb(
-      length_extra_val.reinterpret_as_uint(), length_extra_bits,
+      length_extra_val.reinterpret_as_uint(),
+      length_extra_bits,
     )
   }
   let didx = (offset - 1) * 2
@@ -189,7 +190,8 @@ fn BitWriter::write_dynamic_block(
         self.write_bits_lsb(lentry >> 5, (lentry & 0x1FU).reinterpret_as_int())
         if length_extra_bits > 0 {
           self.write_bits_lsb(
-            length_extra_val.reinterpret_as_uint(), length_extra_bits,
+            length_extra_val.reinterpret_as_uint(),
+            length_extra_bits,
           )
         }
         let didx = (dist - 1) * 2
@@ -200,7 +202,8 @@ fn BitWriter::write_dynamic_block(
         self.write_bits_lsb(dentry >> 5, (dentry & 0x1FU).reinterpret_as_int())
         if dist_extra_bits > 0 {
           self.write_bits_lsb(
-            dist_extra_val.reinterpret_as_uint(), dist_extra_bits,
+            dist_extra_val.reinterpret_as_uint(),
+            dist_extra_bits,
           )
         }
       } else {

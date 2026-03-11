@@ -69,7 +69,11 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
     }
     if dst_pos < dst_end {
       @blit.blit_fixed_array(
-        hist, dst_pos, hist, dst_pos - dist, dst_end - dst_pos,
+        hist,
+        dst_pos,
+        hist,
+        dst_pos - dist,
+        dst_end - dst_pos,
       )
     }
   } else {
@@ -126,5 +130,9 @@ fn DictDecoder::read_flush(self : DictDecoder, out : OutputBuffer) -> Unit {
 
 ///|
 fn DictDecoder::hist_size(self : DictDecoder) -> Int {
-  if self.full { self.hist.length() } else { self.wr_pos }
+  if self.full {
+    self.hist.length()
+  } else {
+    self.wr_pos
+  }
 }

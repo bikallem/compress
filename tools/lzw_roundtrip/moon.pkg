@@ -1,7 +1,7 @@
 import {
   "bikallem/compress/checksum",
   "bikallem/compress/lzw",
-  "moonbitlang/async" @moonasync,
+  // "moonbitlang/async" @moonasync,
   "moonbitlang/async/fs" @fs,
   "moonbitlang/core/env",
   "moonbitlang/core/strconv",
