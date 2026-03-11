@@ -8,23 +8,21 @@ fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
 }
 
 ///|
-fn main {
-  @moonasync.run_async_main(async fn() {
-    let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
+async fn main {
+  let original = repeat_bytes(b"ABABABABABABABABABAB", 50)
 
-    // Async LZW compress
-    @moonasync.with_task_group(root => {
-      root.spawn_bg(() => {
-        let compressed = @lzwlib.compress(original, LSB, 8)
-        println(
-          "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
-        )
-        let restored = @lzwlib.decompress(compressed, LSB, 8)
-        assert_eq(restored, original)
-        println(
-          "Async LZW decompress: round-trip OK (\{restored.length()} bytes)",
-        )
-      })
+  // Async LZW compress
+  @moonasync.with_task_group(root => {
+    root.spawn_bg(() => {
+      let compressed = @lzwlib.compress(original, LSB, 8)
+      println(
+        "Async LZW compress: \{original.length()} -> \{compressed.length()} bytes",
+      )
+      let restored = @lzwlib.decompress(compressed, LSB, 8)
+      assert_eq(restored, original)
+      println(
+        "Async LZW decompress: round-trip OK (\{restored.length()} bytes)",
+      )
     })
   })
 }

@@ -150,24 +150,29 @@ test "bench flate compress default text_100mb" (b : @bench.T) {
 }
 
 ///|
+fn deflate_with_dict(data : Bytes, dict : Bytes) -> Bytes {
+  let d = @flate.Deflater::new(dict~)
+  let buf = @buffer.new()
+  match d.encode(Some(data)) {
+    Data(out) => buf.write_bytes(out)
+    _ => ()
+  }
+  loop d.encode(None) {
+    Data(out) => {
+      buf.write_bytes(out)
+      continue d.encode(None)
+    }
+    _ => break
+  }
+  buf.to_bytes()
+}
+
+///|
 test "bench flate compress dict text_10kb" (b : @bench.T) {
   let dict : Bytes = b"The quick brown fox jumps over the lazy dog. "
   let data = gen_text(10240)
   b.bench(name="flate_compress_dict_10kb", fn() {
-    let d = @flate.Deflater::new(dict~)
-    let buf = @buffer.new()
-    match d.encode(Some(data)) {
-      Data(out) => buf.write_bytes(out)
-      _ => ()
-    }
-    loop d.encode(None) {
-      Data(out) => {
-        buf.write_bytes(out)
-        continue d.encode(None)
-      }
-      _ => break
-    }
-    b.keep(buf.to_bytes())
+    b.keep(deflate_with_dict(data, dict))
   })
 }
 
@@ -176,19 +181,6 @@ test "bench flate compress dict text_100kb" (b : @bench.T) {
   let dict : Bytes = b"The quick brown fox jumps over the lazy dog. "
   let data = gen_text(102400)
   b.bench(name="flate_compress_dict_100kb", fn() {
-    let d = @flate.Deflater::new(dict~)
-    let buf = @buffer.new()
-    match d.encode(Some(data)) {
-      Data(out) => buf.write_bytes(out)
-      _ => ()
-    }
-    loop d.encode(None) {
-      Data(out) => {
-        buf.write_bytes(out)
-        continue d.encode(None)
-      }
-      _ => break
-    }
-    b.keep(buf.to_bytes())
+    b.keep(deflate_with_dict(data, dict))
   })
 }
