@@ -119,3 +119,30 @@ test "streaming bzip2 deflater + inflater round-trip" {
   }
   assert_eq(dbuf.to_bytes(), original)
 }
+
+///|
+test "streaming bzip2 inflater byte-at-a-time" {
+  let original = b"Byte-at-a-time streaming stress test for bzip2 inflater!"
+  let compressed = @bzip2.compress(original)
+  let d = @bzip2.Inflater::new()
+  let buf = @buffer.new()
+  let mut offset = 0
+  loop d.decode() {
+    Await => {
+      if offset >= compressed.length() {
+        fail("unexpected Await: all data consumed")
+      }
+      let chunk = Bytes::makei(1, fn(_i) { compressed[offset] })
+      d.src(chunk)
+      offset += 1
+      continue d.decode()
+    }
+    Data(out) => {
+      buf.write_bytes(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), original)
+}
