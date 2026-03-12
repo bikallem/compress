@@ -338,45 +338,33 @@ fn write_block(
 
 ///|
 /// Compute Huffman code lengths for bzip2 (simple approach).
+/// All symbols must get a valid code length, so zero-frequency symbols
+/// are given frequency 1 to include them in the Huffman tree.
 fn bzip2_compute_lengths(
   freqs : FixedArray[Int],
   n : Int,
   max_len : Int,
 ) -> FixedArray[Int] {
   let lengths = FixedArray::make(n, 0)
-  // Count active symbols
-  let mut active = 0
-  for i in 0..<n {
-    if freqs[i] > 0 {
-      active += 1
-    }
-  }
-  if active == 0 {
-    // All symbols get length 1 (shouldn't happen with EOB)
+  if n < 2 {
     for i in 0..<n {
       lengths[i] = 1
     }
     return lengths
   }
-  if active == 1 {
-    for i in 0..<n {
-      if freqs[i] > 0 {
-        lengths[i] = 1
-      }
-    }
-    return lengths
-  }
-  // Build sorted pairs (freq, symbol)
-  let sorted = FixedArray::make(active, (0, 0))
-  let mut idx = 0
-  for i in 0..<n {
+  // Ensure all symbols have frequency >= 1 so the Huffman tree
+  // covers the full alphabet without overflowing the code space.
+  let adj_freqs = FixedArray::makei(n, fn(i) {
     if freqs[i] > 0 {
-      sorted[idx] = (freqs[i], i)
-      idx += 1
+      freqs[i]
+    } else {
+      1
     }
-  }
+  })
+  // Build sorted pairs (freq, symbol)
+  let sorted = FixedArray::makei(n, fn(i) { (adj_freqs[i], i) })
   // Insertion sort by frequency
-  for i in 1..<active {
+  for i in 1..<n {
     let key = sorted[i]
     let mut j = i - 1
     while j >= 0 && sorted[j].0 > key.0 {
@@ -386,18 +374,18 @@ fn bzip2_compute_lengths(
     sorted[j + 1] = key
   }
   // Two-queue Huffman tree
-  let leaf_freq = FixedArray::makei(active, fn(i) { sorted[i].0 })
-  let total_nodes = 2 * active - 1
+  let leaf_freq = FixedArray::makei(n, fn(i) { sorted[i].0 })
+  let total_nodes = 2 * n - 1
   let parent = FixedArray::make(total_nodes, -1)
   let node_freq = FixedArray::make(total_nodes, 0)
-  for i in 0..<active {
+  for i in 0..<n {
     node_freq[i] = leaf_freq[i]
   }
   let mut leaf_ptr = 0
-  let mut int_ptr = active
-  let mut next_node = active
-  for _ in 0..<(active - 1) {
-    let left = if leaf_ptr < active &&
+  let mut int_ptr = n
+  let mut next_node = n
+  for _ in 0..<(n - 1) {
+    let left = if leaf_ptr < n &&
       (int_ptr >= next_node || leaf_freq[leaf_ptr] <= node_freq[int_ptr]) {
       let r = leaf_ptr
       leaf_ptr += 1
@@ -407,7 +395,7 @@ fn bzip2_compute_lengths(
       int_ptr += 1
       r
     }
-    let right = if leaf_ptr < active &&
+    let right = if leaf_ptr < n &&
       (int_ptr >= next_node || leaf_freq[leaf_ptr] <= node_freq[int_ptr]) {
       let r = leaf_ptr
       leaf_ptr += 1
@@ -429,18 +417,12 @@ fn bzip2_compute_lengths(
       depths[i] = depths[parent[i]] + 1
     }
   }
-  for i in 0..<active {
+  for i in 0..<n {
     lengths[sorted[i].1] = depths[i]
   }
   // Clamp to max_len
   for i in 0..<n {
     if lengths[i] > max_len {
-      lengths[i] = max_len
-    }
-  }
-  // Assign length 1 to zero-frequency symbols that still need codes
-  for i in 0..<n {
-    if freqs[i] == 0 && lengths[i] == 0 {
       lengths[i] = max_len
     }
   }
