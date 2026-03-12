@@ -146,3 +146,44 @@ test "streaming bzip2 inflater byte-at-a-time" {
   }
   assert_eq(buf.to_bytes(), original)
 }
+
+///|
+test "streaming bzip2 deflater emits blocks incrementally" {
+  // Use level 1 (100KB blocks) and feed 250KB to get at least 2 block flushes
+  let d = @bzip2.Deflater::new(level=1)
+  let chunk = Bytes::makei(50000, fn(i) { (i % 251).to_byte() })
+  let cbuf = @buffer.new()
+  let mut data_signals = 0
+  // Feed 5 chunks of 50KB = 250KB total, triggers 2 block flushes
+  for _ in 0..<5 {
+    match d.encode(Some(chunk)) {
+      Ok => ()
+      Data(out) => {
+        cbuf.write_bytes(out)
+        data_signals += 1
+      }
+      _ => fail("unexpected signal")
+    }
+  }
+  // Should have gotten at least 1 Data signal from mid-stream block flushes
+  assert_true(data_signals >= 1)
+  // Finish
+  loop d.encode(None) {
+    Data(out) => {
+      cbuf.write_bytes(out)
+      continue d.encode(None)
+    }
+    End => break
+    _ => fail("unexpected signal from encode(None)")
+  }
+  // Verify round-trip
+  let original = {
+    let b = @buffer.new()
+    for _ in 0..<5 {
+      b.write_bytes(chunk)
+    }
+    b.to_bytes()
+  }
+  let decompressed = @bzip2.decompress(cbuf.to_bytes())
+  assert_eq(decompressed, original)
+}

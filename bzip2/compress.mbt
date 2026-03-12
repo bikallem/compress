@@ -20,17 +20,8 @@ pub fn compress(data : Bytes, level? : Int = 9) -> Bytes raise Bzip2Error {
     } else {
       data.length()
     }
-    // RLE1 encode
-    let rle1 = rle1_encode(data, offset, end)
-    // BWT
-    let (bwt_data, orig_ptr) = bwt_transform(rle1)
-    // MTF + RLE2
-    let (symbols, num_in_use, in_use) = mtf_rle2_encode(bwt_data)
-    // Block CRC (on the original block data before RLE1)
-    let block_crc = bzip2_crc32_range(data, offset, end)
+    let block_crc = compress_block(bw, data, offset, end)
     stream_crc = ((stream_crc << 1) | (stream_crc >> 31)) ^ block_crc
-    // Write block
-    write_block(bw, symbols, num_in_use, in_use, orig_ptr, block_crc)
     offset = end
   }
   // End of stream marker: 0x177245385090
@@ -41,6 +32,22 @@ pub fn compress(data : Bytes, level? : Int = 9) -> Bytes raise Bzip2Error {
   bw.write_bits(stream_crc & 0xFFFFU, 16)
   bw.flush()
   bw.to_bytes()
+}
+
+///|
+/// Compresses a single block of data. Returns the block CRC.
+fn compress_block(
+  bw : Bzip2BitWriter,
+  data : Bytes,
+  start : Int,
+  end : Int,
+) -> UInt {
+  let rle1 = rle1_encode(data, start, end)
+  let (bwt_data, orig_ptr) = bwt_transform(rle1)
+  let (symbols, num_in_use, in_use) = mtf_rle2_encode(bwt_data)
+  let block_crc = bzip2_crc32_range(data, start, end)
+  write_block(bw, symbols, num_in_use, in_use, orig_ptr, block_crc)
+  block_crc
 }
 
 ///|
@@ -564,6 +571,18 @@ fn Bzip2BitWriter::flush(self : Bzip2BitWriter) -> Unit {
     self.bits = 0U
     self.n_bits = 0
   }
+}
+
+///|
+/// Extract accumulated complete bytes without flushing partial bits.
+fn Bzip2BitWriter::take_output(self : Bzip2BitWriter) -> Bytes {
+  if self.pos == 0 {
+    return Bytes::default()
+  }
+  let result = @blit.make_uninit(self.pos)
+  @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
+  self.pos = 0
+  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|
