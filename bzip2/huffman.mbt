@@ -93,23 +93,6 @@ fn Bzip2HuffmanDecoder::build(
 }
 
 ///|
-fn Bzip2HuffmanDecoder::decode(
-  self : Bzip2HuffmanDecoder,
-  br : Bzip2BitReader,
-) -> Int raise Bzip2Error {
-  let mut code = 0
-  for i in 1..<=self.max_len {
-    let bit = br.read_bits(1).reinterpret_as_int()
-    code = (code << 1) | bit
-    if i >= self.min_len && code <= self.limits[i] {
-      return self.perms[self.bases[i] + code]
-    }
-  } nobreak {
-    raise Bzip2Error::CorruptData("invalid bzip2 Huffman code")
-  }
-}
-
-///|
 /// Streaming Huffman decode using BitBuf. Returns None if not enough bits.
 /// Requires ensure(max_len) before calling to avoid mid-symbol suspension.
 fn Bzip2HuffmanDecoder::try_decode(
