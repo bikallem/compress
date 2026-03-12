@@ -72,6 +72,26 @@ jobs:
           name: bench-results
           path: bench_results.json
 
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install dependencies
+        run: moon install
+
+      - name: Run parity tests
+        run: make parity
+
   memcheck:
     runs-on: ubuntu-latest
     steps:

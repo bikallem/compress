@@ -1,0 +1,17 @@
+import {
+  "bikallem/compress/bzip2",
+  "bikallem/compress/flate",
+  "bikallem/compress/gzip",
+  "bikallem/compress/lzw",
+  "bikallem/compress/zlib",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/env",
+}
+
+options(
+  "is-main": true,
+  "native-stub": [ "file_io_stub.c" ],
+  targets: {
+    "main.mbt": [ "native" ],
+  },
+)
