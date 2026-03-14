@@ -3,14 +3,16 @@
 pub fn decompress(data : Bytes) -> Bytes raise CompressError {
   let d = Inflater::new()
   d.src(data)
-  let buf = @buffer.new()
+  let capacity = if data.length() * 2 > 32768 {
+    data.length() * 2
+  } else {
+    32768
+  }
+  d.sink = Some(OutputSink::new(capacity))
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
-    Data(chunk) => {
-      buf.write_bytes(chunk)
-      continue d.decode()
-    }
-    End => buf.to_bytes()
+    Data(_) => continue d.decode()
+    End => d.take_output()
     Error(e) => raise e
   }
 }
@@ -23,14 +25,16 @@ pub fn decompress_with_dict(
 ) -> Bytes raise CompressError {
   let d = Inflater::new(dict~)
   d.src(data)
-  let buf = @buffer.new()
+  let capacity = if data.length() * 2 > 32768 {
+    data.length() * 2
+  } else {
+    32768
+  }
+  d.sink = Some(OutputSink::new(capacity))
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
-    Data(chunk) => {
-      buf.write_bytes(chunk)
-      continue d.decode()
-    }
-    End => buf.to_bytes()
+    Data(_) => continue d.decode()
+    End => d.take_output()
     Error(e) => raise e
   }
 }

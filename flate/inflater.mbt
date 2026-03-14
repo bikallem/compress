@@ -29,6 +29,7 @@ struct Inflater {
   mut phase : InflatePhase
   mut final_block : Bool
   mut pending_output : Bytes // buffered Data to emit before resuming
+  mut sink : OutputSink? // None = streaming, Some = direct output
 }
 
 ///|
@@ -44,6 +45,7 @@ pub fn Inflater::new(dict? : Bytes) -> Inflater {
     phase: BlockHeader,
     final_block: false,
     pending_output: Bytes::default(),
+    sink: None,
   }
 }
 
@@ -88,6 +90,25 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
 /// After End: bytes from input not consumed by the DEFLATE stream.
 pub fn Inflater::remaining(self : Inflater) -> Bytes {
   self.bb.remaining()
+}
+
+///|
+fn Inflater::emit_output(self : Inflater) -> Bytes {
+  match self.sink {
+    Some(sink) => {
+      self.dd.flush_to(sink)
+      Bytes::default()
+    }
+    None => self.dd.flush()
+  }
+}
+
+///|
+fn Inflater::take_output(self : Inflater) -> Bytes {
+  match self.sink {
+    Some(sink) => sink.to_bytes()
+    None => Bytes::default()
+  }
 }
 
 ///|
@@ -141,7 +162,7 @@ fn Inflater::decode_stored_init(self : Inflater) -> Decode {
 ///|
 fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
   if remaining == 0 {
-    let flushed = self.dd.flush()
+    let flushed = self.emit_output()
     if self.final_block {
       self.phase = Done
       if flushed.length() > 0 {
@@ -168,9 +189,12 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
     bb.count -= 8
     rem -= 1
     if dd.wr_pos == hist_len {
-      let flushed = dd.flush()
+      let flushed = self.emit_output()
       self.phase = StoredCopy(rem)
-      return Data(flushed)
+      if flushed.length() > 0 {
+        return Data(flushed)
+      }
+      continue
     }
   }
   // Copy from input directly
@@ -185,7 +209,7 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
     if chunk.length() == 0 {
       self.phase = StoredCopy(rem)
       // Flush any pending output before requesting more input
-      let flushed = dd.flush()
+      let flushed = self.emit_output()
       if flushed.length() > 0 {
         self.pending_output = Bytes::default()
         return Data(flushed)
@@ -198,13 +222,16 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
     dd.wr_pos += chunk.length()
     rem -= chunk.length()
     if dd.wr_pos == hist_len {
-      let flushed = dd.flush()
+      let flushed = self.emit_output()
       self.phase = StoredCopy(rem)
-      return Data(flushed)
+      if flushed.length() > 0 {
+        return Data(flushed)
+      }
+      continue
     }
   }
   // All copied
-  let flushed = dd.flush()
+  let flushed = self.emit_output()
   if self.final_block {
     self.phase = Done
     if flushed.length() > 0 {
@@ -385,7 +412,7 @@ fn Inflater::decode_huffman_loop(
       bb.count = count
       bb.pos = pos
       dd.wr_pos = wr_pos
-      let flushed = dd.flush()
+      let flushed = self.emit_output()
       wr_pos = dd.wr_pos
       self.phase = HuffmanLoop(lit_dec, dist_dec)
       if flushed.length() > 0 {
@@ -413,7 +440,7 @@ fn Inflater::decode_huffman_loop(
         bb.count = count
         bb.pos = pos
         dd.wr_pos = wr_pos
-        let flushed = dd.flush()
+        let flushed = self.emit_output()
         self.phase = HuffmanLoop(lit_dec, dist_dec)
         if flushed.length() > 0 {
           return Data(flushed)
@@ -439,7 +466,7 @@ fn Inflater::decode_huffman_loop(
           s
         }
         None => {
-          let flushed = dd.flush()
+          let flushed = self.emit_output()
           wr_pos = dd.wr_pos
           self.phase = HuffmanLoop(lit_dec, dist_dec)
           if flushed.length() > 0 {
@@ -457,17 +484,20 @@ fn Inflater::decode_huffman_loop(
         bb.count = count
         bb.pos = pos
         dd.wr_pos = wr_pos
-        let flushed = dd.flush()
+        let flushed = self.emit_output()
         wr_pos = dd.wr_pos
         self.phase = HuffmanLoop(lit_dec, dist_dec)
-        return Data(flushed)
+        if flushed.length() > 0 {
+          return Data(flushed)
+        }
+        continue
       }
     } else if sym == END_BLOCK_MARKER {
       bb.buf = buf
       bb.count = count
       bb.pos = pos
       dd.wr_pos = wr_pos
-      let flushed = dd.flush()
+      let flushed = self.emit_output()
       if self.final_block {
         self.phase = Done
         if flushed.length() > 0 {
@@ -495,7 +525,7 @@ fn Inflater::decode_huffman_loop(
       let extra = length_extra.unsafe_get(length_code)
       if extra > 0 {
         if not(bb.ensure(extra)) {
-          let flushed = dd.flush()
+          let flushed = self.emit_output()
           self.phase = HuffmanMatchLen(lit_dec, dist_dec, length_code, extra)
           if flushed.length() > 0 {
             return Data(flushed)
@@ -661,14 +691,20 @@ fn Inflater::do_copy(
     let n = dd.write_copy(dist, remaining)
     remaining -= n
     if dd.wr_pos == hist_len {
-      let flushed = dd.flush()
+      let flushed = self.emit_output()
       if remaining > 0 {
         self.phase = HuffmanMatchCopy(lit_dec, dist_dec, dist, remaining)
-        return Data(flushed)
+        if flushed.length() > 0 {
+          return Data(flushed)
+        }
+        continue
       }
       // Copy complete, resume Huffman loop
       self.phase = HuffmanLoop(lit_dec, dist_dec)
-      return Data(flushed)
+      if flushed.length() > 0 {
+        return Data(flushed)
+      }
+      break
     }
   }
   // Copy complete without filling window, continue Huffman loop

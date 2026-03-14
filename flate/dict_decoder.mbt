@@ -116,10 +116,57 @@ fn DictDecoder::flush(self : DictDecoder) -> Bytes {
 }
 
 ///|
+fn DictDecoder::flush_to(self : DictDecoder, sink : OutputSink) -> Unit {
+  if self.wr_pos > self.rd_pos {
+    let len = self.wr_pos - self.rd_pos
+    sink.ensure_capacity(len)
+    @blit.blit_fixed_array(sink.buf, sink.pos, self.hist, self.rd_pos, len)
+    sink.pos += len
+  }
+  if self.wr_pos == self.hist.length() {
+    self.wr_pos = 0
+    self.full = true
+  }
+  self.rd_pos = self.wr_pos
+}
+
+///|
 fn DictDecoder::hist_size(self : DictDecoder) -> Int {
   if self.full {
     self.hist.length()
   } else {
     self.wr_pos
   }
+}
+
+///|
+priv struct OutputSink {
+  mut buf : FixedArray[Byte]
+  mut pos : Int
+}
+
+///|
+fn OutputSink::new(capacity : Int) -> OutputSink {
+  { buf: @blit.make_uninit(capacity), pos: 0 }
+}
+
+///|
+fn OutputSink::ensure_capacity(self : OutputSink, additional : Int) -> Unit {
+  let required = self.pos + additional
+  if required > self.buf.length() {
+    let mut new_cap = self.buf.length() * 2
+    if new_cap < required {
+      new_cap = required
+    }
+    let new_buf = @blit.make_uninit(new_cap)
+    @blit.blit_fixed_array(new_buf, 0, self.buf, 0, self.pos)
+    self.buf = new_buf
+  }
+}
+
+///|
+fn OutputSink::to_bytes(self : OutputSink) -> Bytes {
+  let result = @blit.make_uninit(self.pos)
+  @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
+  result.unsafe_reinterpret_as_bytes()
 }
