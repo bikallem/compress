@@ -93,6 +93,14 @@ pub fn Inflater::remaining(self : Inflater) -> Bytes {
 }
 
 ///|
+/// Enable zero-copy direct output mode. Decoded bytes accumulate in
+/// an internal buffer instead of being returned as individual Data chunks.
+/// Call `take_output()` after `End` to retrieve the result.
+fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
+  self.sink = Some(OutputSink::new(capacity))
+}
+
+///|
 fn Inflater::emit_output(self : Inflater) -> Bytes {
   match self.sink {
     Some(sink) => {

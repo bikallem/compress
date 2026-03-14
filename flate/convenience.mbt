@@ -8,7 +8,7 @@ pub fn decompress(data : Bytes) -> Bytes raise CompressError {
   } else {
     32768
   }
-  d.sink = Some(OutputSink::new(capacity))
+  d.enable_direct_output(capacity)
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
     Data(_) => continue d.decode()
@@ -30,7 +30,7 @@ pub fn decompress_with_dict(
   } else {
     32768
   }
-  d.sink = Some(OutputSink::new(capacity))
+  d.enable_direct_output(capacity)
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
     Data(_) => continue d.decode()
