@@ -57,5 +57,3 @@ test "bench gzip compress default text_1mb" (b : @bench.T) {
 test "bench gzip compress default text_10mb" (b : @bench.T) {
   bench_gzip_compress(b, name="gzip_compress_default_10mb", 10485760)
 }
-
-

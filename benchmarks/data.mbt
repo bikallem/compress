@@ -25,6 +25,35 @@ fn gen_random(size : Int) -> Bytes {
 }
 
 ///|
+/// Compress setup helpers — return only compressed bytes so source is freed.
+fn flate_compress_setup(
+  size : Int,
+  gen? : (Int) -> Bytes = gen_text,
+) -> Bytes raise {
+  @flate.compress(gen(size))
+}
+
+///|
+fn gzip_compress_setup(size : Int) -> Bytes raise {
+  @gzip.compress(gen_text(size))
+}
+
+///|
+fn zlib_compress_setup(size : Int) -> Bytes raise {
+  @zlib.compress(gen_text(size))
+}
+
+///|
+fn lzw_compress_setup(size : Int) -> Bytes raise {
+  @lzw.compress(gen_text(size), @lzw.LSB, 8)
+}
+
+///|
+fn bzip2_compress_setup(size : Int) -> Bytes raise {
+  @bzip2.compress(gen_text(size))
+}
+
+///|
 fn bench_flate_compress(
   b : @bench.T,
   name~ : String,
@@ -43,8 +72,7 @@ fn bench_flate_decompress(
   size : Int,
   gen? : (Int) -> Bytes = gen_text,
 ) -> Unit raise {
-  let data = gen(size)
-  let compressed = @flate.compress(data)
+  let compressed = flate_compress_setup(size, gen~)
   b.bench(name~, fn() { b.keep(try! @flate.decompress(compressed)) })
 }
 
@@ -65,8 +93,7 @@ fn bench_gzip_decompress(
   name~ : String,
   size : Int,
 ) -> Unit raise {
-  let data = gen_text(size)
-  let compressed = @gzip.compress(data)
+  let compressed = gzip_compress_setup(size)
   b.bench(name~, fn() { b.keep(try! @gzip.decompress(compressed)) })
 }
 
@@ -87,8 +114,7 @@ fn bench_zlib_decompress(
   name~ : String,
   size : Int,
 ) -> Unit raise {
-  let data = gen_text(size)
-  let compressed = @zlib.compress(data)
+  let compressed = zlib_compress_setup(size)
   b.bench(name~, fn() { b.keep(try! @zlib.decompress(compressed)) })
 }
 
@@ -99,10 +125,15 @@ fn bench_lzw_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
 }
 
 ///|
-fn bench_lzw_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
-  let data = gen_text(size)
-  let compressed = @lzw.compress(data, @lzw.LSB, 8)
-  b.bench(name~, fn() { b.keep(try! @lzw.decompress(compressed, @lzw.LSB, 8)) })
+fn bench_lzw_decompress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+) -> Unit raise {
+  let compressed = lzw_compress_setup(size)
+  b.bench(name~, fn() {
+    b.keep(try! @lzw.decompress(compressed, @lzw.LSB, 8))
+  })
 }
 
 ///|
@@ -117,12 +148,6 @@ fn bench_bzip2_decompress(
   name~ : String,
   size : Int,
 ) -> Unit raise {
-  let data = gen_text(size)
-  let compressed = @bzip2.compress(data)
-  // Validate roundtrip before benchmarking
-  let check = @bzip2.decompress(compressed)
-  guard check.length() == data.length() else {
-    fail("bzip2 roundtrip size mismatch: \{check.length()} != \{data.length()}")
-  }
+  let compressed = bzip2_compress_setup(size)
   b.bench(name~, fn() { b.keep(try! @bzip2.decompress(compressed)) })
 }

@@ -34,6 +34,11 @@ test "bench bzip2 decompress text_1mb" (b : @bench.T) {
 }
 
 ///|
+test "bench bzip2 decompress text_10mb" (b : @bench.T) {
+  bench_bzip2_decompress(b, name="bzip2_decompress_10mb", 10485760)
+}
+
+///|
 test "bench bzip2 compress default text_1mb" (b : @bench.T) {
   bench_bzip2_compress(b, name="bzip2_compress_default_1mb", 1048576)
 }
