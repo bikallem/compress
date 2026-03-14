@@ -1,20 +1,20 @@
 ///|
 /// Generate repeated text data of approximately the given size.
-fn gen_text(size : Int) -> Bytes {
+pub fn gen_text(size : Int) -> Bytes {
   let phrase = b"The quick brown fox jumps over the lazy dog. "
   Bytes::makei(size, fn(i) { phrase[i % phrase.length()] })
 }
 
 ///|
 /// Generate all-zero data.
-fn gen_zeros(size : Int) -> Bytes {
+pub fn gen_zeros(size : Int) -> Bytes {
   Bytes::make(size, 0)
 }
 
 ///|
 /// Generate pseudo-random data (incompressible).
 /// Uses glibc LCG constants for reproducible output; >>16 avoids low-bit patterns.
-fn gen_random(size : Int) -> Bytes {
+pub fn gen_random(size : Int) -> Bytes {
   let buf = FixedArray::make(size, b'\x00')
   for i = 0, state = 0x12345678U; i < size; {
     let next_state = state * 1103515245U + 12345U
@@ -22,132 +22,4 @@ fn gen_random(size : Int) -> Bytes {
     continue i + 1, next_state
   }
   Bytes::from_array(buf)
-}
-
-///|
-/// Compress setup helpers — return only compressed bytes so source is freed.
-fn flate_compress_setup(
-  size : Int,
-  gen? : (Int) -> Bytes = gen_text,
-) -> Bytes raise {
-  @flate.compress(gen(size))
-}
-
-///|
-fn gzip_compress_setup(size : Int) -> Bytes raise {
-  @gzip.compress(gen_text(size))
-}
-
-///|
-fn zlib_compress_setup(size : Int) -> Bytes raise {
-  @zlib.compress(gen_text(size))
-}
-
-///|
-fn lzw_compress_setup(size : Int) -> Bytes raise {
-  @lzw.compress(gen_text(size), @lzw.LSB, 8)
-}
-
-///|
-fn bzip2_compress_setup(size : Int) -> Bytes raise {
-  @bzip2.compress(gen_text(size))
-}
-
-///|
-fn bench_flate_compress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-  level? : @flate.CompressionLevel = DefaultCompression,
-  gen? : (Int) -> Bytes = gen_text,
-) -> Unit {
-  let data = gen(size)
-  b.bench(name~, fn() { b.keep(try! @flate.compress(data, level~)) })
-}
-
-///|
-fn bench_flate_decompress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-  gen? : (Int) -> Bytes = gen_text,
-) -> Unit raise {
-  let compressed = flate_compress_setup(size, gen~)
-  b.bench(name~, fn() { b.keep(try! @flate.decompress(compressed)) })
-}
-
-///|
-fn bench_gzip_compress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-  level? : @flate.CompressionLevel = DefaultCompression,
-) -> Unit {
-  let data = gen_text(size)
-  b.bench(name~, fn() { b.keep(try! @gzip.compress(data, level~)) })
-}
-
-///|
-fn bench_gzip_decompress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-) -> Unit raise {
-  let compressed = gzip_compress_setup(size)
-  b.bench(name~, fn() { b.keep(try! @gzip.decompress(compressed)) })
-}
-
-///|
-fn bench_zlib_compress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-  level? : @flate.CompressionLevel = DefaultCompression,
-) -> Unit {
-  let data = gen_text(size)
-  b.bench(name~, fn() { b.keep(try! @zlib.compress(data, level~)) })
-}
-
-///|
-fn bench_zlib_decompress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-) -> Unit raise {
-  let compressed = zlib_compress_setup(size)
-  b.bench(name~, fn() { b.keep(try! @zlib.decompress(compressed)) })
-}
-
-///|
-fn bench_lzw_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
-  let data = gen_text(size)
-  b.bench(name~, fn() { b.keep(try! @lzw.compress(data, @lzw.LSB, 8)) })
-}
-
-///|
-fn bench_lzw_decompress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-) -> Unit raise {
-  let compressed = lzw_compress_setup(size)
-  b.bench(name~, fn() {
-    b.keep(try! @lzw.decompress(compressed, @lzw.LSB, 8))
-  })
-}
-
-///|
-fn bench_bzip2_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
-  let data = gen_text(size)
-  b.bench(name~, fn() { b.keep(try! @bzip2.compress(data)) })
-}
-
-///|
-fn bench_bzip2_decompress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-) -> Unit raise {
-  let compressed = bzip2_compress_setup(size)
-  b.bench(name~, fn() { b.keep(try! @bzip2.decompress(compressed)) })
 }

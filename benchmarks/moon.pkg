@@ -1,10 +1,1 @@
-import {
-  "bikallem/compress/bzip2",
-  "bikallem/compress/checksum",
-  "bikallem/compress/flate",
-  "bikallem/compress/gzip",
-  "bikallem/compress/lzw",
-  "bikallem/compress/zlib",
-  "moonbitlang/core/buffer",
-  "moonbitlang/core/bench",
-}
+

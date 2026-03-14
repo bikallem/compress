@@ -100,7 +100,10 @@ cd "$REPO_ROOT"
 
 echo "=== Running MoonBit benchmarks (current) ==="
 MOON_RAW=$(mktemp)
-moon bench -p benchmarks --target native --release 2>&1 | tee "$MOON_RAW"
+for pkg in benchmarks/checksum benchmarks/flate benchmarks/gzip benchmarks/zlib benchmarks/lzw benchmarks/bzip2 benchmarks/streaming; do
+  echo "--- $pkg ---"
+  moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$MOON_RAW"
+done
 echo ""
 
 # Parse current results
@@ -123,7 +126,10 @@ if $RUN_PREV; then
   fi
   git checkout HEAD~1 -q
   moon install -q 2>/dev/null || true
-  moon bench -p benchmarks --target native --release 2>&1 | tee "$PREV_RAW"
+  for pkg in benchmarks/checksum benchmarks/flate benchmarks/gzip benchmarks/zlib benchmarks/lzw benchmarks/bzip2 benchmarks/streaming; do
+    echo "--- $pkg ---"
+    moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$PREV_RAW"
+  done
   git checkout - -q
   if $STASHED; then
     git stash pop -q || true

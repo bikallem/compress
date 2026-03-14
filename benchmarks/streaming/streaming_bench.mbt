@@ -1,5 +1,5 @@
 ///|
-/// Helper: compress data, then decompress via L1 streaming protocol with chunked input.
+/// Helper: decompress via L1 streaming protocol with chunked input.
 fn inflate_streaming(compressed : Bytes, chunk_size : Int) -> Bytes {
   let inf = @flate.Inflater::new()
   let buf = @buffer.new()
@@ -87,7 +87,7 @@ fn lzw_inflate_streaming(compressed : Bytes, chunk_size : Int) -> Bytes {
 
 ///|
 test "bench flate decompress streaming 1mb" (b : @bench.T) {
-  let data = gen_text(1048576)
+  let data = @benchmarks.gen_text(1048576)
   let compressed = @flate.compress(data)
   b.bench(name="flate_decompress_streaming_1mb", fn() {
     b.keep(inflate_streaming(compressed, 4096))
@@ -96,7 +96,7 @@ test "bench flate decompress streaming 1mb" (b : @bench.T) {
 
 ///|
 test "bench flate compress streaming 1mb" (b : @bench.T) {
-  let data = gen_text(1048576)
+  let data = @benchmarks.gen_text(1048576)
   b.bench(name="flate_compress_streaming_1mb", fn() {
     b.keep(deflate_streaming(data, 4096))
   })
@@ -104,7 +104,7 @@ test "bench flate compress streaming 1mb" (b : @bench.T) {
 
 ///|
 test "bench lzw decompress streaming 1mb" (b : @bench.T) {
-  let data = gen_text(1048576)
+  let data = @benchmarks.gen_text(1048576)
   let compressed = @lzw.compress(data, @lzw.LSB, 8)
   b.bench(name="lzw_decompress_streaming_1mb", fn() {
     b.keep(lzw_inflate_streaming(compressed, 4096))
@@ -113,7 +113,7 @@ test "bench lzw decompress streaming 1mb" (b : @bench.T) {
 
 ///|
 test "bench flate decompress streaming 10mb" (b : @bench.T) {
-  let data = gen_text(10485760)
+  let data = @benchmarks.gen_text(10485760)
   let compressed = @flate.compress(data)
   b.bench(name="flate_decompress_streaming_10mb", fn() {
     b.keep(inflate_streaming(compressed, 4096))
@@ -122,7 +122,7 @@ test "bench flate decompress streaming 10mb" (b : @bench.T) {
 
 ///|
 test "bench flate compress streaming 10mb" (b : @bench.T) {
-  let data = gen_text(10485760)
+  let data = @benchmarks.gen_text(10485760)
   b.bench(name="flate_compress_streaming_10mb", fn() {
     b.keep(deflate_streaming(data, 4096))
   })

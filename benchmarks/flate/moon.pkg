@@ -1,0 +1,6 @@
+import {
+  "bikallem/compress/benchmarks",
+  "bikallem/compress/flate" @fl,
+  "moonbitlang/core/bench",
+  "moonbitlang/core/buffer",
+}

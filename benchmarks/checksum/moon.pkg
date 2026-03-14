@@ -1,0 +1,5 @@
+import {
+  "bikallem/compress/benchmarks",
+  "bikallem/compress/checksum" @cksum,
+  "moonbitlang/core/bench",
+}
