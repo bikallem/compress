@@ -56,10 +56,11 @@ jobs:
         run: moon test --target ${{ matrix.target }}
       
       - name: Parity Tests
+        if: runner.os == 'Linux' && matrix.target == 'native'
         run: make parity
-      
+
       - name: Roundtrip Tests
-        run: make roundtrip
+        run: moon test --target ${{ matrix.target }} --filter "*round*trip*"
 
   # bench:
   #   runs-on: ubuntu-latest
