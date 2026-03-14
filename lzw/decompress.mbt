@@ -9,14 +9,12 @@ pub fn decompress(
 ) -> Bytes raise LzwError {
   let inf = Inflater::new(order, lit_width)
   inf.src(data)
-  let buf = @buffer.new(size_hint=data.length() * 4)
+  let capacity = (data.length() * 4).max(32768)
+  inf.enable_direct_output(capacity)
   loop inf.decode() {
     Await => raise LzwError::UnexpectedEOF
-    Data(chunk) => {
-      buf.write_bytes(chunk)
-      continue inf.decode()
-    }
-    End => buf.to_bytes()
+    Data(_) => continue inf.decode()
+    End => inf.take_output()
     Error(e) => raise e
   }
 }

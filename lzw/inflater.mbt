@@ -33,6 +33,7 @@ priv struct InflaterState {
   mut out_pos : Int
   mut finished : Bool
   mut failed : LzwError?
+  mut sink : @output_sink.OutputSink? // None = streaming, Some = direct output
 }
 
 ///|
@@ -65,10 +66,11 @@ pub fn Inflater::new(
     n_bits: 0,
     input: Bytes::default(),
     input_pos: 0,
-    out_buf: FixedArray::make(8192, b'\x00'),
+    out_buf: FixedArray::make(32768, b'\x00'),
     out_pos: 0,
     finished: false,
     failed: None,
+    sink: None,
   })
 }
 
@@ -94,8 +96,10 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   }
   // Emit any buffered output first
   if s.out_pos > 0 {
-    let out = out_buf_to_bytes(s)
-    return Data(out)
+    let out = flush_output(s)
+    if out.length() > 0 {
+      return Data(out)
+    }
   }
   match s.order {
     LSB => decode_lsb(s)
@@ -104,13 +108,39 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
 }
 
 ///|
-/// Convert FixedArray output buffer to Bytes and reset position.
-fn out_buf_to_bytes(s : InflaterState) -> Bytes {
+/// Flush output buffer. In direct mode, drains to sink and returns empty Bytes.
+/// In streaming mode, allocates and returns a new Bytes.
+fn flush_output(s : InflaterState) -> Bytes {
   let len = s.out_pos
-  let result = @blit.make_uninit(len)
-  @blit.blit_fixed_array(result, 0, s.out_buf, 0, len)
-  s.out_pos = 0
-  result.unsafe_reinterpret_as_bytes()
+  if len == 0 {
+    return Bytes::default()
+  }
+  match s.sink {
+    Some(sink) => {
+      sink.write_fixed(s.out_buf, 0, len)
+      s.out_pos = 0
+      Bytes::default()
+    }
+    None => {
+      let result = @blit.make_uninit(len)
+      @blit.blit_fixed_array(result, 0, s.out_buf, 0, len)
+      s.out_pos = 0
+      result.unsafe_reinterpret_as_bytes()
+    }
+  }
+}
+
+///|
+fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
+  self.0.sink = Some(@output_sink.OutputSink::new(capacity))
+}
+
+///|
+fn Inflater::take_output(self : Inflater) -> Bytes {
+  match self.0.sink {
+    Some(sink) => sink.to_bytes()
+    None => Bytes::default()
+  }
 }
 
 ///|
@@ -216,8 +246,10 @@ fn save_and_yield(
   s.n_bits = n_bits
   s.input_pos = pos
   if s.out_pos > 0 {
-    let out = out_buf_to_bytes(s)
-    return Data(out)
+    let out = flush_output(s)
+    if out.length() > 0 {
+      return Data(out)
+    }
   }
   Await
 }
@@ -235,8 +267,10 @@ fn save_and_end(
   s.input_pos = pos
   s.finished = true
   if s.out_pos > 0 {
-    let out = out_buf_to_bytes(s)
-    return Data(out)
+    let out = flush_output(s)
+    if out.length() > 0 {
+      return Data(out)
+    }
   }
   End
 }
@@ -284,9 +318,16 @@ fn decode_lsb(s : InflaterState) -> Decode {
       Finished => return save_and_end(s, bits, n_bits, pos)
       Invalid(c) => return save_and_fail(s, bits, n_bits, pos, c)
       Ok =>
-        // Yield early when output buffer is nearly full to avoid overflow
         if s.out_pos > out_buf_len - 4096 {
-          return save_and_yield(s, bits, n_bits, pos)
+          match s.sink {
+            Some(_) => {
+              // Direct mode: flush to sink and continue decoding
+              ignore(flush_output(s))
+            }
+            None =>
+              // Streaming mode: yield output to caller
+              return save_and_yield(s, bits, n_bits, pos)
+          }
         }
     }
   }
@@ -320,7 +361,10 @@ fn decode_msb(s : InflaterState) -> Decode {
       Invalid(c) => return save_and_fail(s, bits, n_bits, pos, c)
       Ok =>
         if s.out_pos > out_buf_len - 4096 {
-          return save_and_yield(s, bits, n_bits, pos)
+          match s.sink {
+            Some(_) => ignore(flush_output(s))
+            None => return save_and_yield(s, bits, n_bits, pos)
+          }
         }
     }
   }
