@@ -37,9 +37,11 @@
 #ifdef _MSC_VER
 #define TARGET_PCLMUL_SSE41
 #define TARGET_SSSE3
+#define ALIGNED16 __declspec(align(16))
 #else
 #define TARGET_PCLMUL_SSE41 __attribute__((target("pclmul,sse4.1")))
 #define TARGET_SSSE3        __attribute__((target("ssse3")))
+#define ALIGNED16 __attribute__((aligned(16)))
 #endif
 
 /* ─── CPUID detection ─── */
@@ -88,13 +90,13 @@ static uint32_t crc32_clmul(uint32_t crc, const uint8_t *buf, int32_t len) {
     if (len < 64) return 0; /* too short for CLMUL, signal fallback */
 
     /* Aligned fold constants from chromium/zlib. */
-    static const uint64_t __attribute__((aligned(16)))
+    ALIGNED16 static const uint64_t
         k1k2[] = { 0x0154442bd4, 0x01c6e41596 };
-    static const uint64_t __attribute__((aligned(16)))
+    ALIGNED16 static const uint64_t
         k3k4[] = { 0x01751997d0, 0x00ccaa009e };
-    static const uint64_t __attribute__((aligned(16)))
+    ALIGNED16 static const uint64_t
         k5k0[] = { 0x0163cd6124, 0x0000000000 };
-    static const uint64_t __attribute__((aligned(16)))
+    ALIGNED16 static const uint64_t
         kpoly[] = { 0x01db710641, 0x01f7011641 };
 
     __m128i x0, x1, x2, x3, x4, x5, y5, y6, y7, y8;

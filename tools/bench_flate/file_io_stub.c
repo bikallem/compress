@@ -2,6 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <unistd.h>
+#endif
 #include "moonbit.h"
 
 // File I/O for benchmarking (native target only).
@@ -44,13 +50,26 @@ MOONBIT_FFI_EXPORT int64_t bench_file_size(int64_t handle) {
 }
 
 MOONBIT_FFI_EXPORT int64_t bench_clock_ns(void) {
+#ifdef _WIN32
+  LARGE_INTEGER freq, count;
+  QueryPerformanceFrequency(&freq);
+  QueryPerformanceCounter(&count);
+  return (int64_t)((double)count.QuadPart / freq.QuadPart * 1e9);
+#else
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+#endif
 }
 
-// Get RSS from /proc/self/statm (Linux only)
 MOONBIT_FFI_EXPORT int64_t bench_rss_bytes(void) {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS pmc;
+  if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+    return (int64_t)pmc.WorkingSetSize;
+  return 0;
+#else
+  // /proc/self/statm (Linux only)
   FILE *f = fopen("/proc/self/statm", "r");
   if (!f) return 0;
   long pages, rss;
@@ -60,4 +79,5 @@ MOONBIT_FFI_EXPORT int64_t bench_rss_bytes(void) {
   }
   fclose(f);
   return (int64_t)rss * 4096;
+#endif
 }
