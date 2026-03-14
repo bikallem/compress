@@ -320,10 +320,9 @@ fn decode_lsb(s : InflaterState) -> Decode {
       Ok =>
         if s.out_pos > out_buf_len - 4096 {
           match s.sink {
-            Some(_) => {
+            Some(_) =>
               // Direct mode: flush to sink and continue decoding
               ignore(flush_output(s))
-            }
             None =>
               // Streaming mode: yield output to caller
               return save_and_yield(s, bits, n_bits, pos)
