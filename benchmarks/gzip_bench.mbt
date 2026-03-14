@@ -49,6 +49,21 @@ test "bench gzip decompress text_100mb" (b : @bench.T) {
 }
 
 ///|
+test "bench gzip decompress text_500mb" (b : @bench.T) {
+  bench_gzip_decompress(b, name="gzip_decompress_500mb", 524288000)
+}
+
+///|
+test "bench gzip decompress text_1gb" (b : @bench.T) {
+  bench_gzip_decompress(b, name="gzip_decompress_1gb", 1073741824)
+}
+
+///|
+test "bench gzip compress default text_500mb" (b : @bench.T) {
+  bench_gzip_compress(b, name="gzip_compress_default_500mb", 524288000)
+}
+
+///|
 test "bench gzip compress default text_100kb" (b : @bench.T) {
   bench_gzip_compress(b, name="gzip_compress_default_100kb", 102400)
 }

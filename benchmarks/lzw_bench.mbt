@@ -39,6 +39,11 @@ test "bench lzw decompress LSB text_100mb" (b : @bench.T) {
 }
 
 ///|
+test "bench lzw decompress LSB text_500mb" (b : @bench.T) {
+  bench_lzw_decompress(b, name="lzw_decompress_lsb_500mb", 524288000)
+}
+
+///|
 test "bench lzw compress LSB text_100kb" (b : @bench.T) {
   bench_lzw_compress(b, name="lzw_compress_lsb_100kb", 102400)
 }
