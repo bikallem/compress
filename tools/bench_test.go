@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"compress/bzip2"
 	"compress/flate"
 	"compress/gzip"
 	"compress/lzw"
@@ -9,6 +10,7 @@ import (
 	"hash/adler32"
 	"hash/crc32"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -142,6 +144,18 @@ func BenchmarkFlateCompressBest_10kb(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
 		w, _ := flate.NewWriter(&buf, flate.BestCompression)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkFlateCompressSpeed_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := flate.NewWriter(&buf, flate.BestSpeed)
 		w.Write(data)
 		w.Close()
 	}
@@ -359,6 +373,18 @@ func BenchmarkGzipCompressDefault_10kb(b *testing.B) {
 	}
 }
 
+func BenchmarkGzipCompressSpeed_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+		w.Write(data)
+		w.Close()
+	}
+}
+
 func BenchmarkGzipDecompress_1kb(b *testing.B) {
 	data := genText(1024)
 	var cbuf bytes.Buffer
@@ -505,6 +531,18 @@ func BenchmarkGzipCompressDefault_100mb(b *testing.B) {
 
 // --- zlib ---
 
+func BenchmarkZlibCompressDefault_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := zlib.NewWriter(&buf)
+		w.Write(data)
+		w.Close()
+	}
+}
+
 func BenchmarkZlibCompressDefault_10kb(b *testing.B) {
 	data := genText(10240)
 	b.SetBytes(int64(len(data)))
@@ -514,6 +552,34 @@ func BenchmarkZlibCompressDefault_10kb(b *testing.B) {
 		w := zlib.NewWriter(&buf)
 		w.Write(data)
 		w.Close()
+	}
+}
+
+func BenchmarkZlibCompressSpeed_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := zlib.NewWriterLevel(&buf, zlib.BestSpeed)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkZlibDecompress_1kb(b *testing.B) {
+	data := genText(1024)
+	var cbuf bytes.Buffer
+	w := zlib.NewWriter(&cbuf)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r, _ := zlib.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+		r.Close()
 	}
 }
 
@@ -817,7 +883,7 @@ func BenchmarkLzwCompressLSB_100mb(b *testing.B) {
 
 // --- Dict benchmarks ---
 
-func BenchmarkFlateCompressDict10KB(b *testing.B) {
+func BenchmarkFlateCompressDict_10kb(b *testing.B) {
 	dict := []byte("The quick brown fox jumps over the lazy dog. ")
 	data := genText(10240)
 	b.ResetTimer()
@@ -829,7 +895,7 @@ func BenchmarkFlateCompressDict10KB(b *testing.B) {
 	}
 }
 
-func BenchmarkFlateCompressDict100KB(b *testing.B) {
+func BenchmarkFlateCompressDict_100kb(b *testing.B) {
 	dict := []byte("The quick brown fox jumps over the lazy dog. ")
 	data := genText(102400)
 	b.ResetTimer()
@@ -842,12 +908,240 @@ func BenchmarkFlateCompressDict100KB(b *testing.B) {
 }
 
 // --- bzip2 ---
-// NOTE: Go's compress/bzip2 package only provides a decompressor, not a compressor.
-// Without a compressor, we cannot generate test data for decompression benchmarks
-// in pure Go. To add bzip2 decompression benchmarks, either:
-//   - Use pre-compressed bzip2 golden files from the MoonBit test suite, or
-//   - Add a third-party bzip2 compressor dependency (e.g., dsnet/compress/bzip2).
-// For now, bzip2 benchmarks are omitted from the Go benchmark suite.
+// Go's compress/bzip2 only provides a decompressor.
+// We use the system bzip2 command to generate compressed test data.
+
+func bzip2Compress(data []byte) ([]byte, error) {
+	cmd := exec.Command("bzip2", "-c")
+	cmd.Stdin = bytes.NewReader(data)
+	return cmd.Output()
+}
+
+func BenchmarkBzip2CompressDefault_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("bzip2", "-c")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkBzip2CompressDefault_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("bzip2", "-c")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkBzip2CompressDefault_100kb(b *testing.B) {
+	data := genText(102400)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("bzip2", "-c")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkBzip2CompressDefault_1mb(b *testing.B) {
+	data := genText(1048576)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("bzip2", "-c")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkBzip2Decompress_1kb(b *testing.B) {
+	data := genText(1024)
+	compressed, err := bzip2Compress(data)
+	if err != nil {
+		b.Skip("bzip2 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bzip2.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBzip2Decompress_10kb(b *testing.B) {
+	data := genText(10240)
+	compressed, err := bzip2Compress(data)
+	if err != nil {
+		b.Skip("bzip2 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bzip2.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBzip2Decompress_100kb(b *testing.B) {
+	data := genText(102400)
+	compressed, err := bzip2Compress(data)
+	if err != nil {
+		b.Skip("bzip2 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bzip2.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBzip2Decompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	compressed, err := bzip2Compress(data)
+	if err != nil {
+		b.Skip("bzip2 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bzip2.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBzip2Decompress_10mb(b *testing.B) {
+	data := genText(10485760)
+	compressed, err := bzip2Compress(data)
+	if err != nil {
+		b.Skip("bzip2 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bzip2.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+// --- Streaming benchmarks ---
+// These feed data in 4096-byte chunks to match the MoonBit streaming benchmarks.
+
+type chunkedReader struct {
+	data      []byte
+	chunkSize int
+	offset    int
+}
+
+func (r *chunkedReader) Read(p []byte) (int, error) {
+	if r.offset >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := r.chunkSize
+	if remaining := len(r.data) - r.offset; remaining < n {
+		n = remaining
+	}
+	if len(p) < n {
+		n = len(p)
+	}
+	copy(p, r.data[r.offset:r.offset+n])
+	r.offset += n
+	return n, nil
+}
+
+func BenchmarkFlateCompressStreaming_1mb(b *testing.B) {
+	data := genText(1048576)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := flate.NewWriter(&buf, flate.DefaultCompression)
+		for off := 0; off < len(data); off += 4096 {
+			end := off + 4096
+			if end > len(data) {
+				end = len(data)
+			}
+			w.Write(data[off:end])
+		}
+		w.Close()
+	}
+}
+
+func BenchmarkFlateCompressStreaming_10mb(b *testing.B) {
+	data := genText(10485760)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w, _ := flate.NewWriter(&buf, flate.DefaultCompression)
+		for off := 0; off < len(data); off += 4096 {
+			end := off + 4096
+			if end > len(data) {
+				end = len(data)
+			}
+			w.Write(data[off:end])
+		}
+		w.Close()
+	}
+}
+
+func BenchmarkFlateDecompressStreaming_1mb(b *testing.B) {
+	data := genText(1048576)
+	var cbuf bytes.Buffer
+	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cr := &chunkedReader{data: compressed, chunkSize: 4096}
+		r := flate.NewReader(cr)
+		io.ReadAll(r)
+		r.Close()
+	}
+}
+
+func BenchmarkFlateDecompressStreaming_10mb(b *testing.B) {
+	data := genText(10485760)
+	var cbuf bytes.Buffer
+	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cr := &chunkedReader{data: compressed, chunkSize: 4096}
+		r := flate.NewReader(cr)
+		io.ReadAll(r)
+		r.Close()
+	}
+}
+
+func BenchmarkLzwDecompressStreaming_1mb(b *testing.B) {
+	data := genText(1048576)
+	var cbuf bytes.Buffer
+	w := lzw.NewWriter(&cbuf, lzw.LSB, 8)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cr := &chunkedReader{data: compressed, chunkSize: 4096}
+		r := lzw.NewReader(cr, lzw.LSB, 8)
+		io.ReadAll(r)
+		r.Close()
+	}
+}
 
 // --- 500MB / 1GB decompress benchmarks ---
 

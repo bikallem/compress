@@ -1,0 +1,5 @@
+import {
+  "bikallem/compress/benchmarks",
+  "bikallem/compress/lzw" @lw,
+  "moonbitlang/core/bench",
+}
