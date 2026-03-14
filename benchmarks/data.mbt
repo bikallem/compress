@@ -23,3 +23,94 @@ fn gen_random(size : Int) -> Bytes {
   }
   Bytes::from_array(buf)
 }
+
+///|
+fn bench_flate_compress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+  level? : @flate.CompressionLevel = DefaultCompression,
+  gen? : (Int) -> Bytes = gen_text,
+) -> Unit {
+  let data = gen(size)
+  b.bench(name~, fn() { b.keep(try! @flate.compress(data, level~)) })
+}
+
+///|
+fn bench_flate_decompress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+  gen? : (Int) -> Bytes = gen_text,
+) -> Unit raise {
+  let data = gen(size)
+  let compressed = @flate.compress(data)
+  b.bench(name~, fn() { b.keep(try! @flate.decompress(compressed)) })
+}
+
+///|
+fn bench_gzip_compress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+  level? : @flate.CompressionLevel = DefaultCompression,
+) -> Unit {
+  let data = gen_text(size)
+  b.bench(name~, fn() { b.keep(try! @gzip.compress(data, level~)) })
+}
+
+///|
+fn bench_gzip_decompress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+) -> Unit raise {
+  let data = gen_text(size)
+  let compressed = @gzip.compress(data)
+  b.bench(name~, fn() { b.keep(try! @gzip.decompress(compressed)) })
+}
+
+///|
+fn bench_zlib_compress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+  level? : @flate.CompressionLevel = DefaultCompression,
+) -> Unit {
+  let data = gen_text(size)
+  b.bench(name~, fn() { b.keep(try! @zlib.compress(data, level~)) })
+}
+
+///|
+fn bench_zlib_decompress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+) -> Unit raise {
+  let data = gen_text(size)
+  let compressed = @zlib.compress(data)
+  b.bench(name~, fn() { b.keep(try! @zlib.decompress(compressed)) })
+}
+
+///|
+fn bench_lzw_compress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+) -> Unit {
+  let data = gen_text(size)
+  b.bench(name~, fn() { b.keep(try! @lzw.compress(data, @lzw.LSB, 8)) })
+}
+
+///|
+fn bench_lzw_decompress(
+  b : @bench.T,
+  name~ : String,
+  size : Int,
+) -> Unit raise {
+  let data = gen_text(size)
+  let compressed = @lzw.compress(data, @lzw.LSB, 8)
+  b.bench(name~, fn() {
+    b.keep(try! @lzw.decompress(compressed, @lzw.LSB, 8))
+  })
+}
