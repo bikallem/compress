@@ -29,7 +29,7 @@ struct Inflater {
   mut phase : InflatePhase
   mut final_block : Bool
   mut pending_output : Bytes // buffered Data to emit before resuming
-  mut sink : OutputSink? // None = streaming, Some = direct output
+  mut sink : @output_sink.OutputSink? // None = streaming, Some = direct output
 }
 
 ///|
@@ -97,7 +97,7 @@ pub fn Inflater::remaining(self : Inflater) -> Bytes {
 /// an internal buffer instead of being returned as individual Data chunks.
 /// Call `take_output()` after `End` to retrieve the result.
 fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
-  self.sink = Some(OutputSink::new(capacity))
+  self.sink = Some(@output_sink.OutputSink::new(capacity))
 }
 
 ///|
