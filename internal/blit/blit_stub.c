@@ -1,6 +1,27 @@
 #include <string.h>
 #include "moonbit.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+static __inline int ctzll_msvc(uint64_t val) {
+  unsigned long idx;
+#ifdef _WIN64
+  _BitScanForward64(&idx, val);
+#else
+  if ((uint32_t)val != 0) {
+    _BitScanForward(&idx, (uint32_t)val);
+  } else {
+    _BitScanForward(&idx, (uint32_t)(val >> 32));
+    idx += 32;
+  }
+#endif
+  return (int)idx;
+}
+#define CTZ64(x) ctzll_msvc(x)
+#else
+#define CTZ64(x) __builtin_ctzll(x)
+#endif
+
 // Fast byte array blit using memmove (vectorized by libc).
 // FixedArray[Byte] has the same layout as Bytes (moonbit_bytes_t).
 MOONBIT_FFI_EXPORT void bikallem_compress_internal_blit_blit_fixed_array(
@@ -34,7 +55,7 @@ MOONBIT_FFI_EXPORT int32_t bikallem_compress_internal_blit_match_length(
     uint64_t diff = va ^ vb;
     if (diff != 0) {
       // Find first differing byte
-      return i + __builtin_ctzll(diff) / 8;
+      return i + CTZ64(diff) / 8;
     }
     i += 8;
   }
