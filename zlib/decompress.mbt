@@ -73,4 +73,3 @@ fn parse_zlib_header(data : Bytes, dict : Bytes) -> (Int, Bool) raise ZlibError 
   }
   (data_start, fdict != 0)
 }
-

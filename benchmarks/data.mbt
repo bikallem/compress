@@ -93,24 +93,14 @@ fn bench_zlib_decompress(
 }
 
 ///|
-fn bench_lzw_compress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-) -> Unit {
+fn bench_lzw_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
   let data = gen_text(size)
   b.bench(name~, fn() { b.keep(try! @lzw.compress(data, @lzw.LSB, 8)) })
 }
 
 ///|
-fn bench_lzw_decompress(
-  b : @bench.T,
-  name~ : String,
-  size : Int,
-) -> Unit raise {
+fn bench_lzw_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
   let data = gen_text(size)
   let compressed = @lzw.compress(data, @lzw.LSB, 8)
-  b.bench(name~, fn() {
-    b.keep(try! @lzw.decompress(compressed, @lzw.LSB, 8))
-  })
+  b.bench(name~, fn() { b.keep(try! @lzw.decompress(compressed, @lzw.LSB, 8)) })
 }

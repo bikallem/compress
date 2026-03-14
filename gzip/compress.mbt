@@ -75,4 +75,3 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
   }
   buf.to_bytes()
 }
-

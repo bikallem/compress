@@ -20,7 +20,12 @@ test "bench gzip decompress text_10kb" (b : @bench.T) {
 
 ///|
 test "bench gzip compress best_speed text_10kb" (b : @bench.T) {
-  bench_gzip_compress(b, name="gzip_compress_speed_10kb", 10240, level=BestSpeed)
+  bench_gzip_compress(
+    b,
+    name="gzip_compress_speed_10kb",
+    10240,
+    level=BestSpeed,
+  )
 }
 
 ///|

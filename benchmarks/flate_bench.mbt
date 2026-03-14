@@ -10,12 +10,22 @@ test "bench flate compress default text_10kb" (b : @bench.T) {
 
 ///|
 test "bench flate compress best_speed text_10kb" (b : @bench.T) {
-  bench_flate_compress(b, name="flate_compress_speed_10kb", 10240, level=BestSpeed)
+  bench_flate_compress(
+    b,
+    name="flate_compress_speed_10kb",
+    10240,
+    level=BestSpeed,
+  )
 }
 
 ///|
 test "bench flate compress best_compression text_10kb" (b : @bench.T) {
-  bench_flate_compress(b, name="flate_compress_best_10kb", 10240, level=BestCompression)
+  bench_flate_compress(
+    b,
+    name="flate_compress_best_10kb",
+    10240,
+    level=BestCompression,
+  )
 }
 
 ///|
@@ -25,17 +35,33 @@ test "bench flate decompress text_10kb" (b : @bench.T) {
 
 ///|
 test "bench flate compress zeros_10kb" (b : @bench.T) {
-  bench_flate_compress(b, name="flate_compress_zeros_10kb", 10240, gen=gen_zeros)
+  bench_flate_compress(
+    b,
+    name="flate_compress_zeros_10kb",
+    10240,
+    gen=gen_zeros,
+  )
 }
 
 ///|
 test "bench flate compress random_10kb" (b : @bench.T) {
-  bench_flate_compress(b, name="flate_compress_random_10kb", 10240, level=BestSpeed, gen=gen_random)
+  bench_flate_compress(
+    b,
+    name="flate_compress_random_10kb",
+    10240,
+    level=BestSpeed,
+    gen=gen_random,
+  )
 }
 
 ///|
 test "bench flate compress best_speed text_1kb" (b : @bench.T) {
-  bench_flate_compress(b, name="flate_compress_speed_1kb", 1024, level=BestSpeed)
+  bench_flate_compress(
+    b,
+    name="flate_compress_speed_1kb",
+    1024,
+    level=BestSpeed,
+  )
 }
 
 ///|
@@ -45,7 +71,12 @@ test "bench flate decompress text_1kb" (b : @bench.T) {
 
 ///|
 test "bench flate decompress zeros_10kb" (b : @bench.T) {
-  bench_flate_decompress(b, name="flate_decompress_zeros_10kb", 10240, gen=gen_zeros)
+  bench_flate_decompress(
+    b,
+    name="flate_decompress_zeros_10kb",
+    10240,
+    gen=gen_zeros,
+  )
 }
 
 ///|

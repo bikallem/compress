@@ -59,4 +59,3 @@ fn build_zlib_header(level : @flate.CompressionLevel, dict : Bytes) -> Bytes {
   }
   buf.to_bytes()
 }
-

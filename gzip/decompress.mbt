@@ -96,4 +96,3 @@ fn parse_gzip_header(data : Bytes) -> (Int, Header) raise GzipError {
   }
   (pos, Header::{ name, comment, extra, mod_time: mtime, os })
 }
-

@@ -20,7 +20,12 @@ test "bench zlib decompress text_10kb" (b : @bench.T) {
 
 ///|
 test "bench zlib compress best_speed text_10kb" (b : @bench.T) {
-  bench_zlib_compress(b, name="zlib_compress_speed_10kb", 10240, level=BestSpeed)
+  bench_zlib_compress(
+    b,
+    name="zlib_compress_speed_10kb",
+    10240,
+    level=BestSpeed,
+  )
 }
 
 ///|
