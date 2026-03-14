@@ -1,6 +1,6 @@
 ///|
 /// ZlibError represents errors during zlib compression/decompression.
-pub suberror ZlibError {
+pub(all) suberror ZlibError {
   InvalidHeader(String)
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   NeedDictionary(UInt)

@@ -8,7 +8,7 @@ pub async fn decompress(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
     Await => {
       let n = reader.read(buf)
       if n == 0 {
-        fail("bzip2: unexpected EOF in compressed stream")
+        raise @bzip2.Bzip2Error::UnexpectedEOF
       }
       let chunk = Bytes::makei(n, fn(i) { buf[i] })
       inf.src(chunk)

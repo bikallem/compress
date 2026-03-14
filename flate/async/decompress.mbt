@@ -15,7 +15,7 @@ pub async fn decompress(
     Await => {
       let n = reader.read(buf)
       if n == 0 {
-        fail("flate: unexpected EOF in compressed stream")
+        raise @flate.CompressError::UnexpectedEOF
       }
       let chunk = Bytes::makei(n, fn(i) { buf[i] })
       inf.src(chunk)

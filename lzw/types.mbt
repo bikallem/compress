@@ -8,7 +8,7 @@ pub(all) enum BitOrder {
 } derive(Eq, Show)
 
 ///|
-pub suberror LzwError {
+pub(all) suberror LzwError {
   InvalidLitWidth(Int)
   InvalidCode(String)
   UnexpectedEOF

@@ -15,7 +15,7 @@ pub async fn decompress(
     Await => {
       let n = reader.read(buf)
       if n == 0 {
-        fail("zlib: unexpected EOF in compressed stream")
+        raise @zlib.ZlibError::UnexpectedEOF
       }
       let chunk = Bytes::makei(n, fn(i) { buf[i] })
       inf.src(chunk)

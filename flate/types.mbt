@@ -48,7 +48,7 @@ fn CompressionLevel::to_int(self : CompressionLevel) -> Int {
 }
 
 ///|
-pub suberror CompressError {
+pub(all) suberror CompressError {
   CorruptInput(String)
   InvalidLevel(Int)
   UnexpectedEOF

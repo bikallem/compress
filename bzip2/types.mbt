@@ -1,6 +1,6 @@
 ///|
 /// Bzip2Error represents errors during bzip2 decompression.
-pub suberror Bzip2Error {
+pub(all) suberror Bzip2Error {
   InvalidHeader(String)
   CorruptData(String)
   ChecksumMismatch(expected~ : UInt, got~ : UInt)

@@ -13,7 +13,7 @@ pub async fn decompress(
     Await => {
       let n = reader.read(buf)
       if n == 0 {
-        fail("lzw: unexpected EOF in compressed stream")
+        raise @lzw.LzwError::UnexpectedEOF
       }
       let chunk = Bytes::makei(n, fn(i) { buf[i] })
       inf.src(chunk)

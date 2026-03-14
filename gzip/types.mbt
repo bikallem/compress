@@ -1,6 +1,6 @@
 ///|
 /// GzipError represents errors during gzip compression/decompression.
-pub suberror GzipError {
+pub(all) suberror GzipError {
   InvalidHeader(String)
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   SizeMismatch(expected~ : UInt, got~ : UInt)
