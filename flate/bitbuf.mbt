@@ -61,7 +61,7 @@ fn BitBuf::read_unchecked(self : BitBuf, n : Int) -> Int {
 ///|
 /// Try to read n bits. Returns None if insufficient bits.
 fn BitBuf::read(self : BitBuf, n : Int) -> Int? {
-  if not(self.ensure(n)) {
+  if !self.ensure(n) {
     return None
   }
   Some(self.read_unchecked(n))

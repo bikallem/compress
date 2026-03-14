@@ -48,7 +48,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
   }
   match data {
     Some(chunk) => {
-      if not(s.header_written) {
+      if !s.header_written {
         write_stream_header(s)
       }
       // Feed chunk into block buffer, compressing full blocks
@@ -84,7 +84,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
       }
     }
     None => {
-      if not(s.header_written) {
+      if !s.header_written {
         write_stream_header(s)
       }
       // Compress remaining block data

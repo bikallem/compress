@@ -52,7 +52,7 @@ let length_encode_table : FixedArray[Int] = {
         break
       }
     }
-    if not(found) {
+    if !found {
       t[idx * 3] = 285
       t[idx * 3 + 1] = 0
       t[idx * 3 + 2] = 0

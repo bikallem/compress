@@ -119,7 +119,7 @@ fn Inflater::fail(self : Inflater, e : CompressError) -> Decode {
 
 ///|
 fn Inflater::decode_block_header(self : Inflater) -> Decode {
-  if not(self.bb.ensure(3)) {
+  if !self.bb.ensure(3) {
     return Await
   }
   let bfinal = self.bb.read_unchecked(1)
@@ -145,7 +145,7 @@ fn Inflater::decode_block_header(self : Inflater) -> Decode {
 ///|
 fn Inflater::decode_stored_init(self : Inflater) -> Decode {
   self.bb.align_to_byte()
-  if not(self.bb.ensure(32)) {
+  if !self.bb.ensure(32) {
     return Await
   }
   let len = self.bb.read_unchecked(16)
@@ -250,14 +250,14 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
 fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   let bb = self.bb
   // Need at least 14 bits for HLIT(5) + HDIST(5) + HCLEN(4)
-  if not(bb.ensure(14)) {
+  if !bb.ensure(14) {
     return Await
   }
   let hlit = bb.read_unchecked(5) + 257
   let hdist = bb.read_unchecked(5) + 1
   let hclen = bb.read_unchecked(4) + 4
   // Need 3 bits per code length
-  if not(bb.ensure(hclen * 3)) {
+  if !bb.ensure(hclen * 3) {
     // This is tricky — we've already consumed the header bits.
     // For simplicity, require enough input to parse the whole dynamic header.
     return self.fail(
@@ -524,7 +524,7 @@ fn Inflater::decode_huffman_loop(
       }
       let extra = length_extra.unsafe_get(length_code)
       if extra > 0 {
-        if not(bb.ensure(extra)) {
+        if !bb.ensure(extra) {
           let flushed = self.emit_output()
           self.phase = HuffmanMatchLen(lit_dec, dist_dec, length_code, extra)
           if flushed.length() > 0 {
@@ -553,7 +553,7 @@ fn Inflater::decode_huffman_match_len(
   length_code : Int,
   extra : Int,
 ) -> Decode {
-  if not(self.bb.ensure(extra)) {
+  if !self.bb.ensure(extra) {
     return Await
   }
   let extra_val = self.bb.read_unchecked(extra)
@@ -611,7 +611,7 @@ fn Inflater::decode_huffman_match_dist_inline(
   }
   let dextra = dist_extra.unsafe_get(dist_sym)
   if dextra > 0 {
-    if not(bb.ensure(dextra)) {
+    if !bb.ensure(dextra) {
       // dist_sym already decoded — save it so we don't re-decode on resume
       self.phase = HuffmanMatchDistExtra(
         lit_dec, dist_dec, length, dist_sym, dextra,
@@ -661,7 +661,7 @@ fn Inflater::decode_huffman_match_dist_extra(
   dist_sym : Int,
   dextra : Int,
 ) -> Decode {
-  if not(self.bb.ensure(dextra)) {
+  if !self.bb.ensure(dextra) {
     return Await
   }
   let dextra_val = self.bb.read_unchecked(dextra)

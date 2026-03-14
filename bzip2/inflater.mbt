@@ -176,7 +176,7 @@ fn step(s : Decoder) -> Decode {
 ///|
 fn step_stream_header(s : Decoder) -> Decode {
   // Need 32 bits: 'B' 'Z' 'h' level — ensure all before consuming any
-  if not(s.bb.ensure(32)) {
+  if !s.bb.ensure(32) {
     return Await
   }
   let m1 = s.bb.read_unchecked(8)
@@ -202,7 +202,7 @@ fn step_stream_header(s : Decoder) -> Decode {
 ///|
 fn step_block_magic(s : Decoder) -> Decode {
   // Need 48 bits: two 24-bit values
-  if not(s.bb.ensure(48)) {
+  if !s.bb.ensure(48) {
     return Await
   }
   let magic_hi = s.bb.read_unchecked(24)
@@ -222,7 +222,7 @@ fn step_block_magic(s : Decoder) -> Decode {
 fn step_block_header(s : Decoder) -> Decode {
   // CRC (32) + randomized (1) + orig_ptr (24) = 57 bits
   // Ensure 57 bits — BitBuf accumulates up to 64 bits so this works
-  if not(s.bb.ensure(57)) {
+  if !s.bb.ensure(57) {
     return Await
   }
   let crc_hi = s.bb.read_unchecked(16)
@@ -277,7 +277,7 @@ fn step_read_symbol_map_groups(s : Decoder) -> Decode {
 ///|
 fn step_read_tree_params(s : Decoder) -> Decode {
   // 3 bits: num_trees + 15 bits: num_selectors = 18 bits
-  if not(s.bb.ensure(18)) {
+  if !s.bb.ensure(18) {
     return Await
   }
   s.num_trees = s.bb.read_unchecked(3).reinterpret_as_int()
@@ -327,7 +327,7 @@ fn step_read_selector_unary(s : Decoder) -> Decode {
   // Read unary-coded selector: count 1-bits, terminated by 0
   while true {
     guard s.bb.read_bit() is Some(bit) else { return Await }
-    if not(bit) {
+    if !bit {
       break
     }
     s.selector_j += 1
@@ -375,11 +375,11 @@ fn step_read_tree_lengths(s : Decoder) -> Decode {
 fn step_read_tree_length_delta(s : Decoder) -> Decode {
   while s.length_idx < s.alpha_size {
     // Each iteration reads 1-2 bits: ensure 2 so we never suspend mid-step
-    if not(s.bb.ensure(2)) {
+    if !s.bb.ensure(2) {
       return Await
     }
     let cont = s.bb.read_unchecked(1) != 0U
-    if not(cont) {
+    if !cont {
       // Accept current length for this symbol
       if s.current_length < 1 || s.current_length > BZIP2_MAX_CODE_LEN {
         return fail(s, Bzip2Error::CorruptData("invalid code length"))
@@ -551,7 +551,7 @@ fn finish_block(s : Decoder) -> Decode {
 ///|
 fn step_end_of_stream(s : Decoder) -> Decode {
   // Read 32-bit stream CRC
-  if not(s.bb.ensure(32)) {
+  if !s.bb.ensure(32) {
     return Await
   }
   let stored_crc = (s.bb.read_unchecked(16) << 16) | s.bb.read_unchecked(16)

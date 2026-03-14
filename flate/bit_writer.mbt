@@ -156,7 +156,7 @@ fn BitWriter::write_dynamic_block(
         break
       }
     }
-    if not(has_dist) {
+    if !has_dist {
       dist_freqs[0] = 1
     }
   }

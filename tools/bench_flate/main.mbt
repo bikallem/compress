@@ -233,7 +233,7 @@ fn validate_files(path_a : String, path_b : String, size : Int64) -> Bool {
         break
       }
     }
-    if not(ok) {
+    if !ok {
       break
     }
     offset += na.to_int64()

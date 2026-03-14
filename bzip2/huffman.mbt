@@ -99,7 +99,7 @@ fn Bzip2HuffmanDecoder::try_decode(
   self : Bzip2HuffmanDecoder,
   bb : BitBuf,
 ) -> Int? {
-  if not(bb.ensure(self.max_len)) {
+  if !bb.ensure(self.max_len) {
     return None
   }
   let mut code = 0

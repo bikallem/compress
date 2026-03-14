@@ -52,14 +52,14 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
       s.adler.update(input[:])
       match s.deflater.encode(Some(input)) {
         Ok =>
-          if not(s.header_emitted) {
+          if !s.header_emitted {
             s.header_emitted = true
             Data(s.header)
           } else {
             Ok
           }
         Data(out) =>
-          if not(s.header_emitted) {
+          if !s.header_emitted {
             s.header_emitted = true
             Data(s.header + out)
           } else {
@@ -72,7 +72,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
     None =>
       match s.deflater.encode(None) {
         Data(out) =>
-          if not(s.header_emitted) {
+          if !s.header_emitted {
             s.header_emitted = true
             Data(s.header + out)
           } else {
@@ -81,7 +81,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
         End => {
           s.finished = true
           let trailer = adler32_trailer(s.adler.checksum())
-          if not(s.header_emitted) {
+          if !s.header_emitted {
             s.header_emitted = true
             Data(s.header + trailer)
           } else {

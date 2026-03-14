@@ -62,7 +62,7 @@ fn BitBuf::read_unchecked(self : BitBuf, n : Int) -> UInt {
 ///|
 /// Try to read n bits MSB-first. Returns None if insufficient bits.
 fn BitBuf::read(self : BitBuf, n : Int) -> UInt? {
-  if not(self.ensure(n)) {
+  if !self.ensure(n) {
     return None
   }
   Some(self.read_unchecked(n))
