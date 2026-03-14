@@ -1,6 +1,17 @@
 ///|
+/// Shared 100MB text buffer. Generated once, sliced for smaller sizes.
+let shared_text_100mb : Bytes = {
+  let phrase = b"The quick brown fox jumps over the lazy dog. "
+  Bytes::makei(104857600, fn(i) { phrase[i % phrase.length()] })
+}
+
+///|
 /// Generate repeated text data of approximately the given size.
+/// Returns the shared buffer directly when size matches to avoid copies.
 fn gen_text(size : Int) -> Bytes {
+  if size == 104857600 {
+    return shared_text_100mb
+  }
   let phrase = b"The quick brown fox jumps over the lazy dog. "
   Bytes::makei(size, fn(i) { phrase[i % phrase.length()] })
 }

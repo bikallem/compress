@@ -57,3 +57,4 @@ test "bench lzw compress LSB text_10mb" (b : @bench.T) {
 test "bench lzw compress LSB text_100mb" (b : @bench.T) {
   bench_lzw_compress(b, name="lzw_compress_lsb_100mb", 104857600)
 }
+

@@ -67,3 +67,4 @@ test "bench zlib compress default text_10mb" (b : @bench.T) {
 test "bench zlib compress default text_100mb" (b : @bench.T) {
   bench_zlib_compress(b, name="zlib_compress_default_100mb", 104857600)
 }
+
