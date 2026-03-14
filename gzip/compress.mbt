@@ -14,10 +14,10 @@ pub fn compress(
   buf.write_bytes(compressed)
   // CRC-32 (4 bytes LE)
   let crc = @checksum.crc32(data[:])
-  write_uint32_le(buf, crc)
+  @endian.write_uint32_le(buf, crc)
   // ISIZE (4 bytes LE) - original size mod 2^32
   let isize = data.length().reinterpret_as_uint() & 0xFFFFFFFF_U
-  write_uint32_le(buf, isize)
+  @endian.write_uint32_le(buf, isize)
   buf.to_bytes()
 }
 
@@ -42,7 +42,7 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
   }
   buf.write_byte(flg.to_byte())
   // MTIME (4 bytes LE)
-  write_uint32_le(buf, header.mod_time)
+  @endian.write_uint32_le(buf, header.mod_time)
   // XFL (extra flags based on compression level)
   let xfl : Byte = match level {
     BestCompression => 2
@@ -76,10 +76,3 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
   buf.to_bytes()
 }
 
-///|
-fn write_uint32_le(buf : @buffer.Buffer, v : UInt) -> Unit {
-  buf.write_byte((v & 0xFFU).to_byte())
-  buf.write_byte(((v >> 8) & 0xFFU).to_byte())
-  buf.write_byte(((v >> 16) & 0xFFU).to_byte())
-  buf.write_byte(((v >> 24) & 0xFFU).to_byte())
-}

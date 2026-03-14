@@ -28,7 +28,7 @@ pub fn decompress(
     e => raise ZlibError::DeflateError(e.to_string())
   }
   // Verify Adler-32 checksum (big-endian in footer)
-  let expected_checksum = read_uint32_be(data, deflate_end)
+  let expected_checksum = @endian.read_uint32_be(data, deflate_end)
   let actual_checksum = @checksum.adler32(decompressed[:])
   if actual_checksum != expected_checksum {
     raise ZlibError::ChecksumMismatch(
@@ -61,7 +61,7 @@ fn parse_zlib_header(data : Bytes, dict : Bytes) -> (Int, Bool) raise ZlibError 
     if data.length() < 10 {
       raise ZlibError::UnexpectedEOF
     }
-    let dict_id = read_uint32_be(data, 2)
+    let dict_id = @endian.read_uint32_be(data, 2)
     data_start = 6
     if dict.length() == 0 {
       raise ZlibError::NeedDictionary(dict_id)
@@ -74,10 +74,3 @@ fn parse_zlib_header(data : Bytes, dict : Bytes) -> (Int, Bool) raise ZlibError 
   (data_start, fdict != 0)
 }
 
-///|
-fn read_uint32_be(data : Bytes, offset : Int) -> UInt {
-  (data[offset].to_uint() << 24) |
-  (data[offset + 1].to_uint() << 16) |
-  (data[offset + 2].to_uint() << 8) |
-  data[offset + 3].to_uint()
-}

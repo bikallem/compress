@@ -30,7 +30,7 @@ pub fn compress(
   buf.write_bytes(compressed)
   // Adler-32 of original data (big-endian)
   let checksum = @checksum.adler32(data[:])
-  write_uint32_be(buf, checksum)
+  @endian.write_uint32_be(buf, checksum)
   buf.to_bytes()
 }
 
@@ -55,15 +55,8 @@ fn build_zlib_header(level : @flate.CompressionLevel, dict : Bytes) -> Bytes {
   buf.write_byte(flg.to_byte())
   if dict.length() > 0 {
     let dict_checksum = @checksum.adler32(dict[:])
-    write_uint32_be(buf, dict_checksum)
+    @endian.write_uint32_be(buf, dict_checksum)
   }
   buf.to_bytes()
 }
 
-///|
-fn write_uint32_be(buf : @buffer.Buffer, v : UInt) -> Unit {
-  buf.write_byte(((v >> 24) & 0xFFU).to_byte())
-  buf.write_byte(((v >> 16) & 0xFFU).to_byte())
-  buf.write_byte(((v >> 8) & 0xFFU).to_byte())
-  buf.write_byte((v & 0xFFU).to_byte())
-}
