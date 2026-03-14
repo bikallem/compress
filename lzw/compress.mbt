@@ -7,12 +7,17 @@ pub fn compress(
   order : BitOrder,
   lit_width : Int,
 ) -> Bytes raise LzwError {
-  guard lit_width >= 2 && lit_width <= 8 else {
-    raise LzwError::InvalidLitWidth(lit_width)
+  let def = Deflater::new(order, lit_width)
+  let buf = @buffer.new(size_hint=256)
+  match def.encode(Some(data)) {
+    Data(chunk) => buf.write_bytes(chunk)
+    _ => ()
   }
-  let state = Encoder::new(order, lit_width)
-  state.write(data)
-  state.close()
+  match def.encode(None) {
+    Data(chunk) => buf.write_bytes(chunk)
+    _ => ()
+  }
+  buf.to_bytes()
 }
 
 ///|
