@@ -1,4 +1,5 @@
 import {
+  "bikallem/compress/bzip2",
   "bikallem/compress/checksum",
   "bikallem/compress/flate",
   "bikallem/compress/gzip",

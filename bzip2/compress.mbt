@@ -86,7 +86,7 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
     return (b"", 0)
   }
   // Build suffix array using simple doubling algorithm
-  let sa = suffix_array(data)
+  let sa = sort_rotations(data)
   // BWT: last column = data[(sa[i] + n - 1) % n]
   let bwt = Bytes::makei(n, fn(i) { data[(sa[i] + n - 1) % n] })
   // Find original pointer: position where sa[i] == 0
@@ -101,16 +101,22 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
 }
 
 ///|
-/// Simple suffix array construction using doubling.
-fn suffix_array(data : Bytes) -> FixedArray[Int] {
+/// Sort rotations of data lexicographically for BWT using prefix doubling.
+/// Returns indices sorted by their corresponding circular rotation.
+fn sort_rotations(data : Bytes) -> FixedArray[Int] {
   let n = data.length()
+  if n == 0 {
+    return []
+  }
+  if n == 1 {
+    return [0]
+  }
   let sa = FixedArray::makei(n, fn(i) { i })
   let rank = FixedArray::makei(n, fn(i) { data[i].to_int() })
+  let new_rank = FixedArray::make(n, 0)
   let tmp = FixedArray::make(n, 0)
   let mut k = 1
   while k < n {
-    // Sort by (rank[i], rank[i+k])
-    // Use radix sort for speed
     let max_rank = {
       let mut m = 0
       for i in 0..<n {
@@ -120,28 +126,27 @@ fn suffix_array(data : Bytes) -> FixedArray[Int] {
       }
       m + 1
     }
-    // Sort by second key first
-    let count = FixedArray::make(max_rank + 1, 0)
+    // Radix sort by second key (rank[(i+k) % n]), stable
+    // For circular rotations, there is no sentinel — always use rank[(i+k) % n]
+    let count = FixedArray::make(max_rank, 0)
     for i in 0..<n {
-      let r2 = if sa[i] + k < n { rank[sa[i] + k] + 1 } else { 0 }
-      count[r2] += 1
+      count[rank[(sa[i] + k) % n]] += 1
     }
     let mut sum = 0
-    for i in 0..<=max_rank {
+    for i in 0..<max_rank {
       let c = count[i]
       count[i] = sum
       sum += c
     }
-    let sa2 = FixedArray::make(n, 0)
     for i in 0..<n {
-      let r2 = if sa[i] + k < n { rank[sa[i] + k] + 1 } else { 0 }
-      sa2[count[r2]] = sa[i]
+      let r2 = rank[(sa[i] + k) % n]
+      tmp[count[r2]] = sa[i]
       count[r2] += 1
     }
-    // Sort by first key (stable)
-    let count2 = FixedArray::make(max_rank + 1, 0)
+    // Radix sort by first key (rank[i]), stable
+    let count2 = FixedArray::make(max_rank, 0)
     for i in 0..<n {
-      count2[rank[sa2[i]]] += 1
+      count2[rank[tmp[i]]] += 1
     }
     sum = 0
     for i in 0..<max_rank {
@@ -150,22 +155,20 @@ fn suffix_array(data : Bytes) -> FixedArray[Int] {
       sum += c
     }
     for i in 0..<n {
-      let r1 = rank[sa2[i]]
-      sa[count2[r1]] = sa2[i]
+      let r1 = rank[tmp[i]]
+      sa[count2[r1]] = tmp[i]
       count2[r1] += 1
     }
     // Recompute ranks
-    tmp[sa[0]] = 0
+    new_rank[sa[0]] = 0
     for i in 1..<n {
-      let prev_r1 = rank[sa[i - 1]]
-      let curr_r1 = rank[sa[i]]
-      let prev_r2 = if sa[i - 1] + k < n { rank[sa[i - 1] + k] } else { -1 }
-      let curr_r2 = if sa[i] + k < n { rank[sa[i] + k] } else { -1 }
-      tmp[sa[i]] = tmp[sa[i - 1]] +
-        (if curr_r1 != prev_r1 || curr_r2 != prev_r2 { 1 } else { 0 })
+      let prev = sa[i - 1]
+      let curr = sa[i]
+      let same = rank[prev] == rank[curr] &&
+        rank[(prev + k) % n] == rank[(curr + k) % n]
+      new_rank[curr] = new_rank[prev] + (if same { 0 } else { 1 })
     }
-    FixedArray::unsafe_blit(rank, 0, tmp, 0, n)
-    // Check if all ranks are unique
+    FixedArray::unsafe_blit(rank, 0, new_rank, 0, n)
     if rank[sa[n - 1]] == n - 1 {
       break
     }

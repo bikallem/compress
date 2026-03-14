@@ -41,44 +41,13 @@ fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
     lf[i] = cum[c] + occ[c]
     occ[c] += 1
   }
-  // Reconstruct original string by following LF chain.
-  // In bzip2, orig_ptr is the row in the sorted rotation matrix where the
-  // original string appears. We output characters by following LF mapping:
-  // the i-th character of the original is L[LF^i(orig_ptr)].
-  // But since LF maps L position → F position, and F[i] = L[LF^{-1}(i)],
-  // we need to follow the chain carefully.
-  //
-  // Standard approach: output[i] = L[pos], pos = LF[pos]
-  // But we need to find the right starting position.
-  // orig_ptr is the index in the sorted rotations where the original starts.
-  // The first character of the original = F[orig_ptr].
-  // F[orig_ptr] = data[T[orig_ptr]] where T is the inverse of LF.
-  //
-  // Simpler: use the T vector (inverse BWT transform vector).
-  // T[i] = LF^{-1}(i): the position in L that maps to sorted position i.
-  let t_vec = FixedArray::make(length, 0)
-  let pos2 = FixedArray::make(256, 0)
-  for i in 0..<256 {
-    pos2[i] = cum[i]
-  }
-  for i in 0..<length {
-    let c = data[i]
-    t_vec[pos2[c]] = i
-    pos2[c] += 1
-  }
-  // Now t_vec[sorted_pos] = L_pos: F[sorted_pos] corresponds to L[t_vec[sorted_pos]]
-  // Follow chain: start at orig_ptr, output L[t_vec[pos]], then pos = lf[t_vec[pos]]...
-  // Actually, simpler: just compute the output array directly.
-  // decoded[0] = F[orig_ptr], decoded[1] = F[lf[t_vec[orig_ptr]]], ...
-  // No, let me use the well-known algorithm from the bzip2 source:
-  //
   // Merge data and LF into a single array: tt[i] = (lf[i] << 8) | data[i]
   // Then follow: pos = orig_ptr; for each output char: c = tt[pos] & 0xFF; pos = tt[pos] >> 8
   let tt_merged = FixedArray::make(length, 0)
   for i in 0..<length {
     tt_merged[i] = (lf[i] << 8) | data[i]
   }
-  // Output in reverse order since LF goes backwards
+  // Output in reverse order since LF walks the text backwards
   let output = FixedArray::make(length, b'\x00')
   let mut pos = orig_ptr
   for i = length - 1; i >= 0; i = i - 1 {
