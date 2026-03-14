@@ -100,21 +100,6 @@ test "bench flate decompress text_100mb" (b : @bench.T) {
 }
 
 ///|
-test "bench flate decompress text_500mb" (b : @bench.T) {
-  bench_flate_decompress(b, name="flate_decompress_500mb", 524288000)
-}
-
-///|
-test "bench flate decompress text_1gb" (b : @bench.T) {
-  bench_flate_decompress(b, name="flate_decompress_1gb", 1073741824)
-}
-
-///|
-test "bench flate compress default text_500mb" (b : @bench.T) {
-  bench_flate_compress(b, name="flate_compress_default_500mb", 524288000)
-}
-
-///|
 test "bench flate compress default text_100kb" (b : @bench.T) {
   bench_flate_compress(b, name="flate_compress_default_100kb", 102400)
 }
