@@ -66,7 +66,7 @@ let dist_encode_table : FixedArray[Int] = {
   let size = MAX_MATCH_OFFSET
   let t = FixedArray::make(size * 2, 0)
   for d in 1..<=MAX_MATCH_OFFSET {
-    for i = 0; i < dist_base.length(); i = i + 1 {
+    for i in 0..<dist_base.length() {
       let next_base = if i + 1 < dist_base.length() {
         dist_base[i + 1]
       } else {

@@ -1,7 +1,7 @@
 ///|
 fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
   let buf = @buffer.new(size_hint=b.length() * n)
-  for i = 0; i < n; i = i + 1 {
+  for _ in 0..<n {
     buf.write_bytes(b)
   }
   buf.to_bytes()
