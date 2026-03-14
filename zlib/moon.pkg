@@ -1,6 +1,5 @@
 import {
   "bikallem/compress/checksum",
   "bikallem/compress/flate",
-  "bikallem/compress/internal/endian",
   "moonbitlang/core/buffer",
 }

@@ -18,13 +18,13 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
     e => raise GzipError::DeflateError(e.to_string())
   }
   // Verify CRC-32 (4 bytes LE)
-  let expected_crc = @endian.read_uint32_le(data, footer_start)
+  let expected_crc = data.unsafe_read_uint32_le(footer_start)
   let actual_crc = @checksum.crc32(decompressed[:])
   if actual_crc != expected_crc {
     raise GzipError::ChecksumMismatch(expected=expected_crc, got=actual_crc)
   }
   // Verify ISIZE (4 bytes LE) - original size mod 2^32
-  let expected_size = @endian.read_uint32_le(data, footer_start + 4)
+  let expected_size = data.unsafe_read_uint32_le(footer_start + 4)
   let actual_size = decompressed.length().reinterpret_as_uint() & 0xFFFFFFFF_U
   if actual_size != expected_size {
     raise GzipError::SizeMismatch(expected=expected_size, got=actual_size)
@@ -42,7 +42,7 @@ fn parse_gzip_header(data : Bytes) -> (Int, Header) raise GzipError {
     raise GzipError::InvalidHeader("unsupported compression method \{data[2]}")
   }
   let flg = data[3].to_int()
-  let mtime = @endian.read_uint32_le(data, 4)
+  let mtime = data.unsafe_read_uint32_le(4)
   let os = data[9]
   let mut pos = 10
   // FEXTRA
