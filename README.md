@@ -157,6 +157,35 @@ h.update(chunk2[:])
 let result = h.checksum()
 ```
 
+## Performance
+
+Benchmarked on the native backend against Go's `compress/flate` (the reference implementation this library is ported from). Ratio < 1 means MoonBit is faster.
+
+### Decompression
+
+Zero-copy direct output mode eliminates intermediate allocations — the decode loop runs start-to-finish without yielding, writing directly into a single output buffer.
+
+| Size | MoonBit | Go | Ratio |
+|------|---------|------|-------|
+| 1 KB | 0.72 us | 4.82 us | 0.15x |
+| 10 KB | 4.97 us | 11.8 us | 0.42x |
+| 100 KB | 26.8 us | 55.2 us | 0.49x |
+| 1 MB | 249 us | 1,092 us | 0.23x |
+| 10 MB | 4.06 ms | 10.8 ms | 0.38x |
+
+Throughput scales linearly — 1,750-2,400 MB/s from 100 MB to 10 GB with constant 4 MB RSS (streaming file-based benchmark).
+
+### Compression
+
+| Size | MoonBit | Go | Ratio |
+|------|---------|------|-------|
+| 1 KB | 18.1 us | 93.4 us | 0.19x |
+| 10 KB | 72.2 us | 115 us | 0.63x |
+| 100 KB | 645 us | 322 us | 2.00x |
+| 1 MB | 6,840 us | 2,219 us | 3.08x |
+
+Compression at small sizes is faster than Go; at larger sizes Go's more mature hash chain implementation is faster.
+
 ## Features
 
 - Pure MoonBit — no FFI required (optional native blit acceleration)
@@ -164,7 +193,7 @@ let result = h.checksum()
 - Dynamic Huffman coding with optimal fixed/dynamic block selection
 - Level-differentiated compression: fast greedy (1-3), lazy matching (4-9)
 - Slicing-by-8 CRC-32, SIMD-style unrolled Adler-32
-- Two-level Huffman table decompression
+- Two-level Huffman table decompression with zero-copy direct output
 - Signal protocol streaming — no callbacks, no trait objects, explicit control flow
 - Cross-validated against Go's `compress/*` stdlib
 
