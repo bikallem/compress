@@ -3,17 +3,18 @@
 pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
   let inf = Inflater::new()
   inf.src(data)
-  let out = @buffer.new(size_hint=data.length() * 4)
+  let capacity = (data.length() * 4).max(32768)
+  let sink = @output_sink.OutputSink::new(capacity)
   loop inf.decode() {
     Await => raise Bzip2Error::UnexpectedEOF
     Data(chunk) => {
-      out.write_bytes(chunk)
+      sink.write_bytes(chunk)
       continue inf.decode()
     }
     End => break
     Error(e) => raise e
   }
-  out.to_bytes()
+  sink.to_bytes()
 }
 
 ///|
@@ -85,11 +86,9 @@ fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
     output[i] = (entry & 0xFF).to_byte()
     pos = entry >> 8
   }
-  let result = @buffer.new(size_hint=length)
-  for i in 0..<length {
-    result.write_byte(output[i])
-  }
-  result.to_bytes()
+  let result = @blit.make_uninit(length)
+  @blit.blit_fixed_array(result, 0, output, 0, length)
+  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|
