@@ -10,7 +10,17 @@ pub fn compress(
   // Compress with DEFLATE
   let compressed = try {
     if dict.length() > 0 {
-      @flate.compress(data, level~)
+      let def = @flate.Deflater::new(level~, dict~)
+      let buf = @buffer.new()
+      match def.encode(Some(data)) {
+        Data(chunk) => buf.write_bytes(chunk)
+        _ => ()
+      }
+      match def.encode(None) {
+        Data(chunk) => buf.write_bytes(chunk)
+        _ => ()
+      }
+      buf.to_bytes()
     } else {
       @flate.compress(data, level~)
     }
