@@ -3,11 +3,7 @@
 pub fn decompress(data : Bytes) -> Bytes raise CompressError {
   let d = Inflater::new()
   d.src(data)
-  let capacity = if data.length() * 2 > 32768 {
-    data.length() * 2
-  } else {
-    32768
-  }
+  let capacity = (data.length() * 2).max(32768)
   d.enable_direct_output(capacity)
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
@@ -25,11 +21,7 @@ pub fn decompress_with_dict(
 ) -> Bytes raise CompressError {
   let d = Inflater::new(dict~)
   d.src(data)
-  let capacity = if data.length() * 2 > 32768 {
-    data.length() * 2
-  } else {
-    32768
-  }
+  let capacity = (data.length() * 2).max(32768)
   d.enable_direct_output(capacity)
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF

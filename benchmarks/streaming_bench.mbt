@@ -6,12 +6,12 @@ fn inflate_streaming(compressed : Bytes, chunk_size : Int) -> Bytes {
   let mut offset = 0
   let len = compressed.length()
   // Feed first chunk
-  let first_n = if len < chunk_size { len } else { chunk_size }
+  let first_n = len.min(chunk_size)
   inf.src(Bytes::makei(first_n, fn(i) { compressed[offset + i] }))
   offset += first_n
   loop inf.decode() {
     Await => {
-      let n = if len - offset < chunk_size { len - offset } else { chunk_size }
+      let n = (len - offset).min(chunk_size)
       if n > 0 {
         inf.src(Bytes::makei(n, fn(i) { compressed[offset + i] }))
         offset += n
@@ -37,7 +37,7 @@ fn deflate_streaming(data : Bytes, chunk_size : Int) -> Bytes {
   let mut offset = 0
   let len = data.length()
   while offset < len {
-    let n = if len - offset < chunk_size { len - offset } else { chunk_size }
+    let n = (len - offset).min(chunk_size)
     let chunk = Bytes::makei(n, fn(i) { data[offset + i] })
     offset += n
     match def.encode(Some(chunk)) {
@@ -62,12 +62,12 @@ fn lzw_inflate_streaming(compressed : Bytes, chunk_size : Int) -> Bytes {
   let buf = @buffer.new()
   let mut offset = 0
   let len = compressed.length()
-  let first_n = if len < chunk_size { len } else { chunk_size }
+  let first_n = len.min(chunk_size)
   inf.src(Bytes::makei(first_n, fn(i) { compressed[offset + i] }))
   offset += first_n
   loop inf.decode() {
     Await => {
-      let n = if len - offset < chunk_size { len - offset } else { chunk_size }
+      let n = (len - offset).min(chunk_size)
       if n > 0 {
         inf.src(Bytes::makei(n, fn(i) { compressed[offset + i] }))
         offset += n
