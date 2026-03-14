@@ -11,3 +11,4 @@ testdata/moonbit_golden
 dhat.out.*
 massif.out
 .claude/settings.json
+.beads/
