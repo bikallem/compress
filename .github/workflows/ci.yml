@@ -14,6 +14,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Disable auto CRLF
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - name: Install MoonBit (Unix)
@@ -22,6 +26,10 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install MoonBit (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -29,10 +37,6 @@ jobs:
           Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
           irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
           "$env:USERPROFILE\.moon\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
-
-      - name: Setup MSVC (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install dependencies
         run: moon update
