@@ -349,7 +349,7 @@ fn step_read_tree_lengths(s : Decoder) -> Decode {
     s.group_pos = 0
     s.group_no = -1
     s.current_tree_idx = 0
-        // Initialize MTF list
+    // Initialize MTF list
     let mut k = 0
     for i in 0..<256 {
       if s.in_use[i] {
@@ -436,7 +436,7 @@ fn step_decode_symbols(s : Decoder) -> Decode {
       s.run_power = 1
       s.run_len += (sym + 1) * s.run_power
       s.run_power *= 2
-            s.phase = DecodeRunSymbols
+      s.phase = DecodeRunSymbols
       return step(s)
     }
     // Regular symbol: MTF decode

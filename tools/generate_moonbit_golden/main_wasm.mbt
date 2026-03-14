@@ -1,3 +1,4 @@
+///|
 fn main {
   let _ : @bzip2.Deflater? = None
   let _ : @flate.Deflater? = None

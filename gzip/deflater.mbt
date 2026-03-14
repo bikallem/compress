@@ -94,4 +94,3 @@ fn gzip_trailer(crc : UInt, size : UInt) -> Bytes {
     }
   })
 }
-

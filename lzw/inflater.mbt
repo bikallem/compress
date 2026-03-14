@@ -28,8 +28,9 @@ priv struct InflaterState {
   // Input
   mut input : Bytes
   mut input_pos : Int
-  // Output accumulator
-  out_buf : @buffer.Buffer
+  // Output accumulator — FixedArray avoids Buffer overhead
+  out_buf : FixedArray[Byte]
+  mut out_pos : Int
   mut finished : Bool
   mut failed : LzwError?
 }
@@ -64,7 +65,8 @@ pub fn Inflater::new(
     n_bits: 0,
     input: Bytes::default(),
     input_pos: 0,
-    out_buf: @buffer.new(),
+    out_buf: FixedArray::make(8192, b'\x00'),
+    out_pos: 0,
     finished: false,
     failed: None,
   })
@@ -91,15 +93,24 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     return End
   }
   // Emit any buffered output first
-  if s.out_buf.length() > 0 {
-    let out = s.out_buf.to_bytes()
-    s.out_buf.reset()
+  if s.out_pos > 0 {
+    let out = out_buf_to_bytes(s)
     return Data(out)
   }
   match s.order {
     LSB => decode_lsb(s)
     MSB => decode_msb(s)
   }
+}
+
+///|
+/// Convert FixedArray output buffer to Bytes and reset position.
+fn out_buf_to_bytes(s : InflaterState) -> Bytes {
+  let len = s.out_pos
+  let result = @blit.make_uninit(len)
+  @blit.blit_fixed_array(result, 0, s.out_buf, 0, len)
+  s.out_pos = 0
+  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|
@@ -122,7 +133,8 @@ fn process_code(s : InflaterState, code : Int) -> CodeResult {
   let clear = s.clear
   let out_buf = s.out_buf
   if code < clear {
-    out_buf.write_byte(code.to_byte())
+    out_buf.unsafe_set(s.out_pos, code.to_byte())
+    s.out_pos += 1
     if s.last != DECODER_INVALID_CODE {
       s.suffix.unsafe_set(s.hi, code.to_byte())
       s.prefix.unsafe_set(s.hi, s.last)
@@ -158,9 +170,9 @@ fn process_code(s : InflaterState, code : Int) -> CodeResult {
     }
     decode_buf.unsafe_set(i, c.to_byte())
     let decoded_len = buf_len - i
-    for j in 0..<decoded_len {
-      out_buf.write_byte(decode_buf[i + j])
-    }
+    // Bulk copy from decode_buf to output buffer
+    @blit.blit_fixed_array(out_buf, s.out_pos, decode_buf, i, decoded_len)
+    s.out_pos += decoded_len
     if s.last != DECODER_INVALID_CODE {
       suffix.unsafe_set(s.hi, c.to_byte())
       prefix.unsafe_set(s.hi, s.last)
@@ -196,10 +208,8 @@ fn save_and_yield(
   s.bits = bits
   s.n_bits = n_bits
   s.input_pos = pos
-  let out_buf = s.out_buf
-  if out_buf.length() > 0 {
-    let out = out_buf.to_bytes()
-    out_buf.reset()
+  if s.out_pos > 0 {
+    let out = out_buf_to_bytes(s)
     return Data(out)
   }
   Await
@@ -217,10 +227,8 @@ fn save_and_end(
   s.n_bits = n_bits
   s.input_pos = pos
   s.finished = true
-  let out_buf = s.out_buf
-  if out_buf.length() > 0 {
-    let out = out_buf.to_bytes()
-    out_buf.reset()
+  if s.out_pos > 0 {
+    let out = out_buf_to_bytes(s)
     return Data(out)
   }
   End
@@ -250,6 +258,7 @@ fn decode_lsb(s : InflaterState) -> Decode {
   let mut bits = s.bits
   let mut n_bits = s.n_bits
   let mut pos = s.input_pos
+  let out_buf_len = s.out_buf.length()
   while true {
     while n_bits < s.width {
       if pos >= input_len {
@@ -259,14 +268,19 @@ fn decode_lsb(s : InflaterState) -> Decode {
       n_bits += 8
       pos += 1
     }
-    let code = (bits & ((1U << s.width) - 1U)).reinterpret_as_int()
-    bits = bits >> s.width
-    n_bits -= s.width
+    let width = s.width
+    let code = (bits & ((1U << width) - 1U)).reinterpret_as_int()
+    bits = bits >> width
+    n_bits -= width
     match process_code(s, code) {
       Clear => continue
       Finished => return save_and_end(s, bits, n_bits, pos)
       Invalid(c) => return save_and_fail(s, bits, n_bits, pos, c)
-      Ok => ()
+      Ok =>
+        // Yield early when output buffer is nearly full to avoid overflow
+        if s.out_pos > out_buf_len - 4096 {
+          return save_and_yield(s, bits, n_bits, pos)
+        }
     }
   }
   End
@@ -279,6 +293,7 @@ fn decode_msb(s : InflaterState) -> Decode {
   let mut bits = s.bits
   let mut n_bits = s.n_bits
   let mut pos = s.input_pos
+  let out_buf_len = s.out_buf.length()
   while true {
     while n_bits < s.width {
       if pos >= input_len {
@@ -288,14 +303,18 @@ fn decode_msb(s : InflaterState) -> Decode {
       n_bits += 8
       pos += 1
     }
-    let code = (bits >> (32 - s.width)).reinterpret_as_int()
-    bits = bits << s.width
-    n_bits -= s.width
+    let width = s.width
+    let code = (bits >> (32 - width)).reinterpret_as_int()
+    bits = bits << width
+    n_bits -= width
     match process_code(s, code) {
       Clear => continue
       Finished => return save_and_end(s, bits, n_bits, pos)
       Invalid(c) => return save_and_fail(s, bits, n_bits, pos, c)
-      Ok => ()
+      Ok =>
+        if s.out_pos > out_buf_len - 4096 {
+          return save_and_yield(s, bits, n_bits, pos)
+        }
     }
   }
   End

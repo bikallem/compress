@@ -155,9 +155,7 @@ fn Deflater::feed(self : Deflater, data : Bytes) -> Encode {
     } else {
       space
     }
-    for i in 0..<n {
-      self.window[self.window_end + i] = data[offset + i]
-    }
+    @blit.blit_bytes(self.window, self.window_end, data, offset, n)
     self.window_end += n
     offset += n
     self.step()
@@ -433,12 +431,7 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
 
 ///|
 fn Deflater::match_len(self : Deflater, a : Int, b : Int, max_len : Int) -> Int {
-  let window = self.window
-  let mut len = 0
-  while len < max_len && window[a + len] == window[b + len] {
-    len += 1
-  }
-  len
+  @blit.match_length(self.window, a, self.window, b, max_len)
 }
 
 ///|

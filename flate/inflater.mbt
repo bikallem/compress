@@ -361,11 +361,32 @@ fn Inflater::decode_huffman_loop(
   let hist_len = hist.length()
   let chunk_mask = (1UL << HUFFMAN_CHUNK_BITS) - 1UL
   let lit_chunks = lit_dec.chunks
+  let lit_min_bits = lit_dec.min_bits
+  let lit_max_bits = lit_dec.max_bits
+  let lit_links = lit_dec.links
+  let link_suffix_mask = (1 << (lit_max_bits - HUFFMAN_CHUNK_BITS)) - 1
+  // Cache bit reader and dict decoder state in locals for register allocation
+  let input = bb.input
+  let input_len = input.length()
+  let mut buf = bb.buf
+  let mut count = bb.count
+  let mut pos = bb.pos
+  let mut wr_pos = dd.wr_pos
   while true {
-    bb.fill()
-    if bb.count < lit_dec.min_bits {
-      // Need more input — flush any pending output first
+    // Inline fill(): pack bytes from input into bit accumulator
+    while count <= 56 && pos < input_len {
+      buf = buf | (input[pos].to_uint64() << count)
+      count += 8
+      pos += 1
+    }
+    if count < lit_min_bits {
+      // Write back locals and flush
+      bb.buf = buf
+      bb.count = count
+      bb.pos = pos
+      dd.wr_pos = wr_pos
       let flushed = dd.flush()
+      wr_pos = dd.wr_pos
       self.phase = HuffmanLoop(lit_dec, dist_dec)
       if flushed.length() > 0 {
         return Data(flushed)
@@ -373,22 +394,25 @@ fn Inflater::decode_huffman_loop(
       return Await
     }
     // Inline Huffman decode for literal/length
-    let entry = lit_chunks.unsafe_get((bb.buf & chunk_mask).to_int())
+    let entry = lit_chunks.unsafe_get((buf & chunk_mask).to_int())
     let sym = if (entry & 0x80U) == 0U &&
-      bb.count >= (entry & 0xFFU).reinterpret_as_int() {
+      count >= (entry & 0xFFU).reinterpret_as_int() {
       let n = (entry & 0xFFU).reinterpret_as_int()
       let s = (entry >> 8).reinterpret_as_int()
-      bb.buf = bb.buf >> n
-      bb.count -= n
+      buf = buf >> n
+      count -= n
       s
     } else if (entry & 0x80U) != 0U {
       let link_idx = (entry >> 8).reinterpret_as_int()
-      let link_table = lit_dec.links.unsafe_get(link_idx)
-      let suffix = (bb.buf >> HUFFMAN_CHUNK_BITS).to_int() &
-        ((1 << (lit_dec.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
+      let link_table = lit_links.unsafe_get(link_idx)
+      let suffix = (buf >> HUFFMAN_CHUNK_BITS).to_int() & link_suffix_mask
       let link_entry = link_table.unsafe_get(suffix)
       let n = (link_entry & 0xFFU).reinterpret_as_int()
-      if bb.count < n {
+      if count < n {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
         let flushed = dd.flush()
         self.phase = HuffmanLoop(lit_dec, dist_dec)
         if flushed.length() > 0 {
@@ -397,15 +421,26 @@ fn Inflater::decode_huffman_loop(
         return Await
       }
       let s = (link_entry >> 8).reinterpret_as_int()
-      bb.buf = bb.buf >> n
-      bb.count -= n
+      buf = buf >> n
+      count -= n
       s
     } else {
-      // Not enough bits for direct decode
+      // Not enough bits — write back locals, use slow path
+      bb.buf = buf
+      bb.count = count
+      bb.pos = pos
+      dd.wr_pos = wr_pos
       match lit_dec.decode(bb) {
-        Some(s) => s
+        Some(s) => {
+          // Re-read after decode modified bb
+          buf = bb.buf
+          count = bb.count
+          pos = bb.pos
+          s
+        }
         None => {
           let flushed = dd.flush()
+          wr_pos = dd.wr_pos
           self.phase = HuffmanLoop(lit_dec, dist_dec)
           if flushed.length() > 0 {
             return Data(flushed)
@@ -415,14 +450,23 @@ fn Inflater::decode_huffman_loop(
       }
     }
     if sym < 256 {
-      hist.unsafe_set(dd.wr_pos, sym.to_byte())
-      dd.wr_pos += 1
-      if dd.wr_pos == hist_len {
+      hist.unsafe_set(wr_pos, sym.to_byte())
+      wr_pos += 1
+      if wr_pos == hist_len {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
         let flushed = dd.flush()
+        wr_pos = dd.wr_pos
         self.phase = HuffmanLoop(lit_dec, dist_dec)
         return Data(flushed)
       }
     } else if sym == END_BLOCK_MARKER {
+      bb.buf = buf
+      bb.count = count
+      bb.pos = pos
+      dd.wr_pos = wr_pos
       let flushed = dd.flush()
       if self.final_block {
         self.phase = Done
@@ -437,7 +481,11 @@ fn Inflater::decode_huffman_loop(
       }
       return self.decode_block_header()
     } else {
-      // Length/distance pair
+      // Length/distance pair — write back locals, delegate to existing methods
+      bb.buf = buf
+      bb.count = count
+      bb.pos = pos
+      dd.wr_pos = wr_pos
       let length_code = sym - 257
       if length_code >= length_base.length() {
         return self.fail(
@@ -447,7 +495,6 @@ fn Inflater::decode_huffman_loop(
       let extra = length_extra.unsafe_get(length_code)
       if extra > 0 {
         if not(bb.ensure(extra)) {
-          // Suspend — need more bits for length extra
           let flushed = dd.flush()
           self.phase = HuffmanMatchLen(lit_dec, dist_dec, length_code, extra)
           if flushed.length() > 0 {

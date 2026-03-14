@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/bzip2/async"
+
+import {
+  "moonbitlang/async/io",
+}
+
+// Values
+pub async fn compress(&@io.Reader, &@io.Writer, level? : Int) -> Unit
+
+pub async fn decompress(&@io.Reader, &@io.Writer) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+

@@ -12,6 +12,8 @@ pub fn fill_bytes(FixedArray[Byte], Int, Byte, Int) -> Unit
 
 pub fn make_uninit(Int) -> FixedArray[Byte]
 
+pub fn match_length(FixedArray[Byte], Int, FixedArray[Byte], Int, Int) -> Int
+
 // Errors
 
 // Types and methods

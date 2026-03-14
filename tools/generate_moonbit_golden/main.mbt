@@ -107,12 +107,12 @@ fn flate_level(level : Int) -> @flate.CompressionLevel {
 ///|
 fn main {
   let args = @env.args()
-  let out_dir = if args.length() > 1 { args[1] } else { "testdata/moonbit_golden" }
-  let golden_dir = if args.length() > 2 {
-    args[2]
+  let out_dir = if args.length() > 1 {
+    args[1]
   } else {
-    "testdata/golden"
+    "testdata/moonbit_golden"
   }
+  let golden_dir = if args.length() > 2 { args[2] } else { "testdata/golden" }
   // Input names and files (must match Go generator)
   let input_names = ["empty", "hello", "repeated", "zeros_10k", "mixed_1k"]
   let entries : Array[Entry] = []
@@ -127,9 +127,7 @@ fn main {
     let (name, data) = pair
     for level in [1, 6, 9] {
       let out_name = "deflate_\{name}_level\{level}.bin"
-      let compressed = try {
-        @flate.compress(data, level=flate_level(level))
-      } catch {
+      let compressed = @flate.compress(data, level=flate_level(level)) catch {
         e => {
           println("ERROR deflate \{name} level\{level}: \{e}")
           continue
@@ -152,9 +150,7 @@ fn main {
     let (name, data) = pair
     for level in [1, 6, 9] {
       let out_name = "gzip_\{name}_level\{level}.bin"
-      let compressed = try {
-        @gzip.compress(data, level=flate_level(level))
-      } catch {
+      let compressed = @gzip.compress(data, level=flate_level(level)) catch {
         e => {
           println("ERROR gzip \{name} level\{level}: \{e}")
           continue
@@ -177,9 +173,7 @@ fn main {
     let (name, data) = pair
     for level in [1, 6, 9] {
       let out_name = "zlib_\{name}_level\{level}.bin"
-      let compressed = try {
-        @zlib.compress(data, level=flate_level(level))
-      } catch {
+      let compressed = @zlib.compress(data, level=flate_level(level)) catch {
         e => {
           println("ERROR zlib \{name} level\{level}: \{e}")
           continue
@@ -204,9 +198,7 @@ fn main {
       continue
     }
     let out_name = "lzw_\{name}.bin"
-    let compressed = try {
-      @lzw.compress(data, @lzw.LSB, 8)
-    } catch {
+    let compressed = @lzw.compress(data, @lzw.LSB, 8) catch {
       e => {
         println("ERROR lzw \{name}: \{e}")
         continue
@@ -231,9 +223,7 @@ fn main {
     }
     for level in [1, 9] {
       let out_name = "bzip2_\{name}_level\{level}.bin"
-      let compressed = try {
-        @bzip2.compress(data, level~)
-      } catch {
+      let compressed = @bzip2.compress(data, level~) catch {
         e => {
           println("ERROR bzip2 \{name} level\{level}: \{e}")
           continue
@@ -261,8 +251,11 @@ fn main {
     manifest.write_string(e.to_json())
   }
   manifest.write_string("\n]\n")
-  write_file("\{out_dir}/manifest.json", Bytes::makei(manifest.to_string().length(), fn(i) {
-    manifest.to_string()[i].to_int().to_byte()
-  }))
+  write_file(
+    "\{out_dir}/manifest.json",
+    Bytes::makei(manifest.to_string().length(), fn(i) {
+      manifest.to_string()[i].to_int().to_byte()
+    }),
+  )
   println("Generated \{entries.length()} MoonBit golden files in \{out_dir}")
 }

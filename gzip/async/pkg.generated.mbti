@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/gzip/async"
+
+import {
+  "bikallem/compress/flate",
+  "bikallem/compress/gzip",
+  "moonbitlang/async/io",
+}
+
+// Values
+pub async fn compress(&@io.Reader, &@io.Writer, level? : @flate.CompressionLevel, header? : @gzip.Header) -> Unit
+
+pub async fn decompress(&@io.Reader, &@io.Writer) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+
