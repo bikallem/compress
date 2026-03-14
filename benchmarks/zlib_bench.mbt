@@ -44,11 +44,6 @@ test "bench zlib decompress text_10mb" (b : @bench.T) {
 }
 
 ///|
-test "bench zlib decompress text_100mb" (b : @bench.T) {
-  bench_zlib_decompress(b, name="zlib_decompress_100mb", 104857600)
-}
-
-///|
 test "bench zlib compress default text_100kb" (b : @bench.T) {
   bench_zlib_compress(b, name="zlib_compress_default_100kb", 102400)
 }
@@ -63,8 +58,4 @@ test "bench zlib compress default text_10mb" (b : @bench.T) {
   bench_zlib_compress(b, name="zlib_compress_default_10mb", 10485760)
 }
 
-///|
-test "bench zlib compress default text_100mb" (b : @bench.T) {
-  bench_zlib_compress(b, name="zlib_compress_default_100mb", 104857600)
-}
 
