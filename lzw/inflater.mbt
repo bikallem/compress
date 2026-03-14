@@ -133,9 +133,12 @@ fn process_code(s : InflaterState, code : Int) -> CodeResult {
   let clear = s.clear
   let out_buf = s.out_buf
   if code < clear {
+    // SAFETY: out_buf is sized to MAX_WIDTH * hist.length(); out_pos < out_buf.length()
+    // because process_code is called in a loop that flushes when out_pos approaches capacity.
     out_buf.unsafe_set(s.out_pos, code.to_byte())
     s.out_pos += 1
     if s.last != DECODER_INVALID_CODE {
+      // SAFETY: s.hi < s.overflow <= 1 << MAX_WIDTH = 4096 = suffix/prefix array length
       s.suffix.unsafe_set(s.hi, code.to_byte())
       s.prefix.unsafe_set(s.hi, s.last)
     }
@@ -155,6 +158,8 @@ fn process_code(s : InflaterState, code : Int) -> CodeResult {
     let mut c = code
     let mut i = buf_len - 1
     if code == s.hi && s.last != DECODER_INVALID_CODE {
+      // SAFETY: c walks the prefix chain which always terminates at a literal < clear.
+      // prefix[c] was set when c was added to the dictionary, so c is always a valid index.
       c = s.last
       while c >= clear {
         c = prefix.unsafe_get(c)
@@ -163,6 +168,8 @@ fn process_code(s : InflaterState, code : Int) -> CodeResult {
       i -= 1
       c = s.last
     }
+    // SAFETY: c walks prefix chain; clear <= c <= s.hi < 4096 = array length.
+    // i decrements from buf_len-1; chain length bounded by dictionary size.
     while c >= clear {
       decode_buf.unsafe_set(i, suffix.unsafe_get(c))
       i -= 1
