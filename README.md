@@ -38,24 +38,28 @@ moon add bikallem/compress
 Every package provides one-shot `compress`/`decompress` functions for simple use cases:
 
 ```moonbit
-// DEFLATE
+// DEFLATE (level defaults to DefaultCompression)
 let compressed = @flate.compress(data)
+let compressed = @flate.compress(data, level=BestSpeed)
 let decompressed = @flate.decompress(compressed)
 
 // gzip
 let compressed = @gzip.compress(data)
+let compressed = @gzip.compress(data, level=BestCompression, header={ name: "data.txt", ..Header::default() })
 let (decompressed, header) = @gzip.decompress(compressed)
 
-// zlib
+// zlib (supports preset dictionaries)
 let compressed = @zlib.compress(data)
+let compressed = @zlib.compress(data, dict=my_dict, level=BestSpeed)
 let decompressed = @zlib.decompress(compressed)
 
 // LZW
 let compressed = @lzw.compress(data, LSB, 8)
 let decompressed = @lzw.decompress(compressed, LSB, 8)
 
-// bzip2
+// bzip2 (level 1-9, controls block size)
 let compressed = @bzip2.compress(data)
+let compressed = @bzip2.compress(data, level=9)
 let decompressed = @bzip2.decompress(compressed)
 
 // Checksums
@@ -108,6 +112,8 @@ gzip and zlib deflaters/inflaters handle headers, checksums, and trailers automa
 ```moonbit
 // gzip with custom header
 let d = @gzip.Deflater::new(header={ name: "data.txt", ..Header::default() })
+// Access the header after decompression
+let header = inflater.header()
 
 // zlib with preset dictionary
 let d = @zlib.Deflater::new(dict=my_dict)
@@ -116,6 +122,13 @@ let i = @zlib.Inflater::new(dict=my_dict)
 // LZW with bit order and literal width
 let d = @lzw.Deflater::new(MSB, 8)
 let i = @lzw.Inflater::new(MSB, 8)
+
+// bzip2
+let d = @bzip2.Deflater::new(level=9)
+let i = @bzip2.Inflater::new()
+
+// Get remaining unprocessed input after decompression
+let leftover = inflater.remaining()
 ```
 
 ## Compression Levels
@@ -147,6 +160,7 @@ let result = h.checksum()
 ## Features
 
 - Pure MoonBit — no FFI required (optional native blit acceleration)
+- Multi-target: native, js, and wasm-gc backends
 - Dynamic Huffman coding with optimal fixed/dynamic block selection
 - Level-differentiated compression: fast greedy (1-3), lazy matching (4-9)
 - Slicing-by-8 CRC-32, SIMD-style unrolled Adler-32
