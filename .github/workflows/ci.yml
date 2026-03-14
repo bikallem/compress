@@ -31,7 +31,7 @@ jobs:
           "$env:USERPROFILE\.moon\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
 
       - name: Install dependencies
-        run: moon install
+        run: moon update
 
       - name: Check
         run: moon check --target native
@@ -54,9 +54,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
+          cache: false
 
       - name: Install dependencies
-        run: moon install
+        run: moon update
 
       - name: Run benchmarks (current vs previous vs Go)
         if: github.event_name == 'push'
@@ -85,9 +86,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "stable"
+          cache: false
 
       - name: Install dependencies
-        run: moon install
+        run: moon update
 
       - name: Run parity tests
         run: make parity
@@ -106,7 +108,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y valgrind
 
       - name: Install dependencies
-        run: moon install
+        run: moon update
 
       - name: Run memcheck
         run: ./tools/memcheck/run.sh
