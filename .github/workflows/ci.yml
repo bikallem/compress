@@ -18,7 +18,7 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install MoonBit (Unix)
         if: runner.os != 'Windows'
@@ -50,7 +50,7 @@ jobs:
   # bench:
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v6
   #       with:
   #         fetch-depth: 2
   #
@@ -59,7 +59,7 @@ jobs:
   #         curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
   #         echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
   #
-  #     - uses: actions/setup-go@v5
+  #     - uses: actions/setup-go@v6
   #       with:
   #         go-version: "stable"
   #         cache: false
@@ -84,14 +84,14 @@ jobs:
   parity:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install MoonBit
         run: |
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "stable"
           cache: false
