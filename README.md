@@ -1,6 +1,6 @@
 # bikallem/compress
 
-A pure MoonBit compression library ported from Go's `compress/*` stdlib.
+A pure MoonBit compression library ported from Go's `compress/*` stdlib. Runs on native(Linux, Windows, MacOS), JavaScript and Wasm.
 
 ## Table of Contents
 
