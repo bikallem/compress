@@ -127,7 +127,7 @@ pub fn Inflater::new() -> Inflater {
 }
 
 ///|
-pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
+pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   let s = self.0
   match s.phase {
     Done | Failed(_) => ()

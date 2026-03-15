@@ -4,7 +4,7 @@ test "streaming zlib deflater round-trip" {
   let d = @zlib.Deflater::new()
   let buf = @buffer.new()
   // Feed data
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
     Ok => ()
     _ => fail("unexpected signal during encode")
@@ -33,7 +33,7 @@ test "streaming zlib inflater round-trip" {
   let d = @zlib.Inflater::new()
   let buf = @buffer.new()
   // Feed all compressed data at once
-  d.src(compressed)
+  d.src(compressed[:])
   loop d.decode() {
     Await => {
       fail("unexpected Await with all data provided")
@@ -72,7 +72,7 @@ test "streaming zlib inflater with chunked input" {
         offset + chunk_size
       }
       let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
-      d.src(chunk)
+      d.src(chunk[:])
       offset = end
       continue d.decode()
     }
@@ -95,7 +95,7 @@ test "streaming zlib deflater + inflater round-trip" {
   // Compress with deflater
   let d = @zlib.Deflater::new()
   let cbuf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytes(out)
     Ok => ()
     _ => fail("unexpected signal")
@@ -115,7 +115,7 @@ test "streaming zlib deflater + inflater round-trip" {
   // Decompress with inflater
   let inf = @zlib.Inflater::new()
   let dbuf = @buffer.new()
-  inf.src(compressed)
+  inf.src(compressed[:])
   loop inf.decode() {
     Await => {
       fail("unexpected Await")
@@ -139,7 +139,7 @@ test "streaming zlib deflater with compression levels" {
   let original = Bytes::makei(1000, fn(i) { (i % 26 + 65).to_byte() })
   let d = @zlib.Deflater::new(level=NoCompression)
   let buf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
     Ok => ()
     _ => fail("unexpected signal")

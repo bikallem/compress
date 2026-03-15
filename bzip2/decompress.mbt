@@ -2,7 +2,7 @@
 /// Decompresses bzip2-encoded data.
 pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
   let inf = Inflater::new()
-  inf.src(data)
+  inf.src(data[:])
   let capacity = (data.length() * 4).max(32768)
   let sink = @output_sink.OutputSink::new(capacity)
   loop inf.decode() {

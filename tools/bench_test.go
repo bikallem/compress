@@ -10,6 +10,7 @@ import (
 	"hash/adler32"
 	"hash/crc32"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -1032,63 +1033,54 @@ func BenchmarkBzip2Decompress_10mb(b *testing.B) {
 }
 
 // --- Streaming benchmarks ---
-// These feed data in 4096-byte chunks to match the MoonBit streaming benchmarks.
+// File-based: read input file → compress/decompress → write output file.
+// Matches the MoonBit streaming benchmarks which also use file I/O.
 
-type chunkedReader struct {
-	data      []byte
-	chunkSize int
-	offset    int
-}
-
-func (r *chunkedReader) Read(p []byte) (int, error) {
-	if r.offset >= len(r.data) {
-		return 0, io.EOF
+func writeTempFile(b *testing.B, data []byte, pattern string) string {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		b.Fatal(err)
 	}
-	n := r.chunkSize
-	if remaining := len(r.data) - r.offset; remaining < n {
-		n = remaining
-	}
-	if len(p) < n {
-		n = len(p)
-	}
-	copy(p, r.data[r.offset:r.offset+n])
-	r.offset += n
-	return n, nil
+	f.Write(data)
+	f.Close()
+	return f.Name()
 }
 
 func BenchmarkFlateCompressStreaming_1mb(b *testing.B) {
 	data := genText(1048576)
+	inPath := writeTempFile(b, data, "bench-stream-in-*.bin")
+	outPath := inPath + ".deflate"
+	defer os.Remove(inPath)
+	defer os.Remove(outPath)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var buf bytes.Buffer
-		w, _ := flate.NewWriter(&buf, flate.DefaultCompression)
-		for off := 0; off < len(data); off += 4096 {
-			end := off + 4096
-			if end > len(data) {
-				end = len(data)
-			}
-			w.Write(data[off:end])
-		}
+		fin, _ := os.Open(inPath)
+		fout, _ := os.Create(outPath)
+		w, _ := flate.NewWriter(fout, flate.DefaultCompression)
+		io.Copy(w, fin)
 		w.Close()
+		fout.Close()
+		fin.Close()
 	}
 }
 
 func BenchmarkFlateCompressStreaming_10mb(b *testing.B) {
 	data := genText(10485760)
+	inPath := writeTempFile(b, data, "bench-stream-in-*.bin")
+	outPath := inPath + ".deflate"
+	defer os.Remove(inPath)
+	defer os.Remove(outPath)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var buf bytes.Buffer
-		w, _ := flate.NewWriter(&buf, flate.DefaultCompression)
-		for off := 0; off < len(data); off += 4096 {
-			end := off + 4096
-			if end > len(data) {
-				end = len(data)
-			}
-			w.Write(data[off:end])
-		}
+		fin, _ := os.Open(inPath)
+		fout, _ := os.Create(outPath)
+		w, _ := flate.NewWriter(fout, flate.DefaultCompression)
+		io.Copy(w, fin)
 		w.Close()
+		fout.Close()
+		fin.Close()
 	}
 }
 
@@ -1098,14 +1090,20 @@ func BenchmarkFlateDecompressStreaming_1mb(b *testing.B) {
 	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
 	w.Write(data)
 	w.Close()
-	compressed := cbuf.Bytes()
+	inPath := writeTempFile(b, cbuf.Bytes(), "bench-stream-dec-*.deflate")
+	outPath := inPath + ".bin"
+	defer os.Remove(inPath)
+	defer os.Remove(outPath)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cr := &chunkedReader{data: compressed, chunkSize: 4096}
-		r := flate.NewReader(cr)
-		io.ReadAll(r)
+		fin, _ := os.Open(inPath)
+		fout, _ := os.Create(outPath)
+		r := flate.NewReader(fin)
+		io.Copy(fout, r)
 		r.Close()
+		fout.Close()
+		fin.Close()
 	}
 }
 
@@ -1115,14 +1113,20 @@ func BenchmarkFlateDecompressStreaming_10mb(b *testing.B) {
 	w, _ := flate.NewWriter(&cbuf, flate.DefaultCompression)
 	w.Write(data)
 	w.Close()
-	compressed := cbuf.Bytes()
+	inPath := writeTempFile(b, cbuf.Bytes(), "bench-stream-dec-*.deflate")
+	outPath := inPath + ".bin"
+	defer os.Remove(inPath)
+	defer os.Remove(outPath)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cr := &chunkedReader{data: compressed, chunkSize: 4096}
-		r := flate.NewReader(cr)
-		io.ReadAll(r)
+		fin, _ := os.Open(inPath)
+		fout, _ := os.Create(outPath)
+		r := flate.NewReader(fin)
+		io.Copy(fout, r)
 		r.Close()
+		fout.Close()
+		fin.Close()
 	}
 }
 
@@ -1132,14 +1136,20 @@ func BenchmarkLzwDecompressStreaming_1mb(b *testing.B) {
 	w := lzw.NewWriter(&cbuf, lzw.LSB, 8)
 	w.Write(data)
 	w.Close()
-	compressed := cbuf.Bytes()
+	inPath := writeTempFile(b, cbuf.Bytes(), "bench-stream-dec-*.lzw")
+	outPath := inPath + ".bin"
+	defer os.Remove(inPath)
+	defer os.Remove(outPath)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cr := &chunkedReader{data: compressed, chunkSize: 4096}
-		r := lzw.NewReader(cr, lzw.LSB, 8)
-		io.ReadAll(r)
+		fin, _ := os.Open(inPath)
+		fout, _ := os.Create(outPath)
+		r := lzw.NewReader(fin, lzw.LSB, 8)
+		io.Copy(fout, r)
 		r.Close()
+		fout.Close()
+		fin.Close()
 	}
 }
 

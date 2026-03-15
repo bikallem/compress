@@ -119,7 +119,7 @@ pub fn Deflater::new(
 /// Single entry point for encoding.
 ///   encode(Some(data)) — feed input to compress
 ///   encode(None)       — signal end of input, flush final block
-pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
+pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
   match self.phase {
     Failed(e) => Error(e)
     Finished => End
@@ -139,7 +139,7 @@ pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
 
 ///|
 /// Feed input bytes into the window, process, return accumulated output.
-fn Deflater::feed(self : Deflater, data : Bytes) -> Encode {
+fn Deflater::feed(self : Deflater, data : BytesView) -> Encode {
   if data.length() == 0 {
     return Ok
   }
@@ -155,7 +155,7 @@ fn Deflater::feed(self : Deflater, data : Bytes) -> Encode {
     } else {
       space
     }
-    @blit.blit_bytes(self.window, self.window_end, data, offset, n)
+    @blit.blit_bytesview(self.window, self.window_end, data, offset, n)
     self.window_end += n
     offset += n
     self.step()

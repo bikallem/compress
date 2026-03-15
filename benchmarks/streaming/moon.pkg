@@ -3,5 +3,11 @@ import {
   "bikallem/compress/flate",
   "bikallem/compress/lzw",
   "moonbitlang/core/bench",
-  "moonbitlang/core/buffer",
 }
+
+options(
+  "native-stub": ["file_io_stub.c"],
+  targets: {
+    "streaming_bench.mbt": ["native"],
+  },
+)

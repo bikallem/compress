@@ -33,7 +33,7 @@ fn run() -> Unit raise {
   // --- Streaming API ---
   let d = @lzwlib.Deflater::new(LSB, 8)
   let cbuf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Ok => ()
     Data(out) => cbuf.write_bytes(out)
     _ => ()
@@ -48,7 +48,7 @@ fn run() -> Unit raise {
   }
   let stream_compressed = cbuf.to_bytes()
   let inf = @lzwlib.Inflater::new(LSB, 8)
-  inf.src(stream_compressed)
+  inf.src(stream_compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {
     Await => break

@@ -56,7 +56,7 @@ test "signal protocol - Await then Data then End" {
   let signal1 = d.decode()
   inspect(signal1 is Await, content="true")
   // Feed first chunk (partial)
-  d.src(Bytes::makei(5, fn(i) { compressed[i] }))
+  d.src(Bytes::makei(5, fn(i) { compressed[i] })[:])
   // Should get Await again since stored block needs all bytes
   let mut got_await = false
   let mut got_data = false
@@ -65,7 +65,7 @@ test "signal protocol - Await then Data then End" {
   loop d.decode() {
     Await => {
       got_await = true
-      d.src(Bytes::makei(5, fn(i) { compressed[5 + i] }))
+      d.src(Bytes::makei(5, fn(i) { compressed[5 + i] })[:])
       continue d.decode()
     }
     Data(chunk) => {
@@ -100,7 +100,7 @@ fn streaming_decompress(compressed : Bytes, chunk_size : Int) -> (Int, Bool) {
         offset + chunk_size
       }
       let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
-      inflater.src(chunk)
+      inflater.src(chunk[:])
       offset = end
       continue inflater.decode()
     }

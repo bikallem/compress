@@ -3,7 +3,7 @@ test "streaming gzip deflater round-trip" {
   let original = b"Hello, World! This is a test of gzip streaming."
   let d = @gzip.Deflater::new()
   let buf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
     Ok => ()
     _ => fail("unexpected signal during encode")
@@ -30,7 +30,7 @@ test "streaming gzip inflater round-trip" {
   let compressed = @gzip.compress(original)
   let d = @gzip.Inflater::new()
   let buf = @buffer.new()
-  d.src(compressed)
+  d.src(compressed[:])
   loop d.decode() {
     Await => {
       fail("unexpected Await with all data provided")
@@ -69,7 +69,7 @@ test "streaming gzip inflater with chunked input" {
         offset + chunk_size
       }
       let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
-      d.src(chunk)
+      d.src(chunk[:])
       offset = end
       continue d.decode()
     }
@@ -92,7 +92,7 @@ test "streaming gzip deflater + inflater round-trip" {
   // Compress with deflater
   let d = @gzip.Deflater::new()
   let cbuf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytes(out)
     Ok => ()
     _ => fail("unexpected signal")
@@ -112,7 +112,7 @@ test "streaming gzip deflater + inflater round-trip" {
   // Decompress with inflater
   let inf = @gzip.Inflater::new()
   let dbuf = @buffer.new()
-  inf.src(compressed)
+  inf.src(compressed[:])
   loop inf.decode() {
     Await => {
       fail("unexpected Await")
@@ -144,7 +144,7 @@ test "streaming gzip inflater exposes header" {
   let compressed = @gzip.compress(original, header~)
   let d = @gzip.Inflater::new()
   let buf = @buffer.new()
-  d.src(compressed)
+  d.src(compressed[:])
   loop d.decode() {
     Await => {
       fail("unexpected Await")
@@ -178,7 +178,7 @@ test "streaming gzip deflater with header" {
   }
   let d = @gzip.Deflater::new(header~)
   let buf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
     Ok => ()
     _ => fail("unexpected signal")

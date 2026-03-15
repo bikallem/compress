@@ -16,7 +16,7 @@ pub async fn decompress(
         raise @lzw.LzwError::UnexpectedEOF
       }
       let chunk = Bytes::makei(n, fn(i) { buf[i] })
-      inf.src(chunk)
+      inf.src(chunk[:])
       continue inf.decode()
     }
     Data(out) => {

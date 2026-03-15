@@ -5,18 +5,18 @@
 priv struct BitBuf {
   mut buf : UInt64
   mut count : Int
-  mut input : Bytes
+  mut input : BytesView
   mut pos : Int
 }
 
 ///|
 fn BitBuf::new() -> BitBuf {
-  { buf: 0UL, count: 0, input: Bytes::default(), pos: 0 }
+  { buf: 0UL, count: 0, input: b""[:], pos: 0 }
 }
 
 ///|
 /// Replace the input segment. Called when the caller has new data.
-fn BitBuf::set_input(self : BitBuf, data : Bytes) -> Unit {
+fn BitBuf::set_input(self : BitBuf, data : BytesView) -> Unit {
   self.input = data
   self.pos = 0
 }

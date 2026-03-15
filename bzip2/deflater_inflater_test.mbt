@@ -3,7 +3,7 @@ test "streaming bzip2 deflater" {
   let original = b"Hello, World! This is a test of bzip2 streaming."
   let d = @bzip2.Deflater::new()
   let buf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Ok => ()
     _ => fail("unexpected signal from encode(Some)")
   }
@@ -25,7 +25,7 @@ test "streaming bzip2 inflater" {
   let original = b"Hello, World! This is a test of bzip2 streaming."
   let compressed = @bzip2.compress(original)
   let d = @bzip2.Inflater::new()
-  d.src(compressed)
+  d.src(compressed[:])
   let buf = @buffer.new()
   loop d.decode() {
     Await => fail("unexpected Await: all data should be available")
@@ -59,7 +59,7 @@ test "streaming bzip2 inflater with chunked input" {
         offset + chunk_size
       }
       let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
-      d.src(chunk)
+      d.src(chunk[:])
       offset = end
       continue d.decode()
     }
@@ -87,7 +87,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
       offset + chunk_size
     }
     let chunk = Bytes::makei(end - offset, fn(i) { original[offset + i] })
-    match d.encode(Some(chunk)) {
+    match d.encode(Some(chunk[:])) {
       Ok => ()
       _ => fail("unexpected signal")
     }
@@ -106,7 +106,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
   // Decompress with inflater
   let compressed = cbuf.to_bytes()
   let inf = @bzip2.Inflater::new()
-  inf.src(compressed)
+  inf.src(compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {
     Await => fail("unexpected Await")
@@ -133,7 +133,7 @@ test "streaming bzip2 inflater byte-at-a-time" {
         fail("unexpected Await: all data consumed")
       }
       let chunk = Bytes::makei(1, fn(_i) { compressed[offset] })
-      d.src(chunk)
+      d.src(chunk[:])
       offset += 1
       continue d.decode()
     }
@@ -156,7 +156,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
   let mut data_signals = 0
   // Feed 5 chunks of 50KB = 250KB total, triggers 2 block flushes
   for _ in 0..<5 {
-    match d.encode(Some(chunk)) {
+    match d.encode(Some(chunk[:])) {
       Ok => ()
       Data(out) => {
         cbuf.write_bytes(out)

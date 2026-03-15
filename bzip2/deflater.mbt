@@ -41,7 +41,7 @@ pub fn Deflater::new(level? : Int = 9) -> Deflater raise Bzip2Error {
 }
 
 ///|
-pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
+pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
   let s = self.0
   if s.finished {
     return End

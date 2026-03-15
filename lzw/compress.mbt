@@ -9,7 +9,7 @@ pub fn compress(
 ) -> Bytes raise LzwError {
   let def = Deflater::new(order, lit_width)
   let buf = @buffer.new(size_hint=256)
-  match def.encode(Some(data)) {
+  match def.encode(Some(data[:])) {
     Data(chunk) => buf.write_bytes(chunk)
     _ => ()
   }
@@ -102,7 +102,7 @@ fn Encoder::inc_hi(self : Encoder) -> Bool {
 }
 
 ///|
-fn Encoder::write(self : Encoder, data : Bytes) -> Unit {
+fn Encoder::write(self : Encoder, data : BytesView) -> Unit {
   if data.length() == 0 {
     return
   }

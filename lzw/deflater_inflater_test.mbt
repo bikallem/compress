@@ -3,7 +3,7 @@ test "streaming lzw deflater LSB" {
   let original = b"TOBEORNOTTOBEORTOBEORNOT"
   let d = @lzw.Deflater::new(LSB, 8)
   let buf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Ok => ()
     Data(out) => buf.write_bytes(out)
     _ => fail("unexpected signal from encode(Some)")
@@ -28,7 +28,7 @@ test "streaming lzw inflater LSB" {
   let original = b"TOBEORNOTTOBEORTOBEORNOT"
   let compressed = @lzw.compress(original, LSB, 8)
   let d = @lzw.Inflater::new(LSB, 8)
-  d.src(compressed)
+  d.src(compressed[:])
   let buf = @buffer.new()
   loop d.decode() {
     Await => fail("unexpected Await: all data should be available")
@@ -61,7 +61,7 @@ test "streaming lzw inflater with chunked input" {
         offset + chunk_size
       }
       let chunk = Bytes::makei(end - offset, fn(i) { compressed[offset + i] })
-      d.src(chunk)
+      d.src(chunk[:])
       offset = end
       continue d.decode()
     }
@@ -90,7 +90,7 @@ test "streaming lzw deflater + inflater round-trip" {
       offset + chunk_size
     }
     let chunk = Bytes::makei(end - offset, fn(i) { original[offset + i] })
-    match d.encode(Some(chunk)) {
+    match d.encode(Some(chunk[:])) {
       Ok => ()
       Data(out) => cbuf.write_bytes(out)
       _ => fail("unexpected signal")
@@ -109,7 +109,7 @@ test "streaming lzw deflater + inflater round-trip" {
   // Decompress with inflater
   let compressed = cbuf.to_bytes()
   let inf = @lzw.Inflater::new(LSB, 8)
-  inf.src(compressed)
+  inf.src(compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {
     Await => fail("unexpected Await")
@@ -128,7 +128,7 @@ test "streaming lzw MSB round-trip" {
   let original = Bytes::makei(3000, fn(i) { (i % 256).to_byte() })
   let d = @lzw.Deflater::new(MSB, 8)
   let cbuf = @buffer.new()
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Ok => ()
     Data(out) => cbuf.write_bytes(out)
     _ => fail("unexpected signal")
@@ -143,7 +143,7 @@ test "streaming lzw MSB round-trip" {
   }
   let compressed = cbuf.to_bytes()
   let inf = @lzw.Inflater::new(MSB, 8)
-  inf.src(compressed)
+  inf.src(compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {
     Await => fail("unexpected Await")

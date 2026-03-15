@@ -26,7 +26,7 @@ priv struct InflaterState {
   mut bits : UInt
   mut n_bits : Int
   // Input
-  mut input : Bytes
+  mut input : BytesView
   mut input_pos : Int
   // Output accumulator — FixedArray avoids Buffer overhead
   out_buf : FixedArray[Byte]
@@ -64,7 +64,7 @@ pub fn Inflater::new(
     last: DECODER_INVALID_CODE,
     bits: 0U,
     n_bits: 0,
-    input: Bytes::default(),
+    input: b""[:],
     input_pos: 0,
     out_buf: FixedArray::make(32768, b'\x00'),
     out_pos: 0,
@@ -75,7 +75,7 @@ pub fn Inflater::new(
 }
 
 ///|
-pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
+pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   let s = self.0
   if s.finished || s.failed is Some(_) {
     return

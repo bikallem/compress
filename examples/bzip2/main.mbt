@@ -14,7 +14,7 @@ fn run() -> Unit raise {
   // --- Streaming API ---
   let d = @bz2.Deflater::new()
   let original = b"Hello, bzip2 streaming!"
-  match d.encode(Some(original)) {
+  match d.encode(Some(original[:])) {
     Ok => ()
     _ => ()
   }
@@ -29,7 +29,7 @@ fn run() -> Unit raise {
   }
   let rt_compressed = cbuf.to_bytes()
   let inf = @bz2.Inflater::new()
-  inf.src(rt_compressed)
+  inf.src(rt_compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {
     Await => break

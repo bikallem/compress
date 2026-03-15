@@ -12,7 +12,7 @@ pub fn compress(
     if dict.length() > 0 {
       let def = @flate.Deflater::new(level~, dict~)
       let buf = @buffer.new()
-      match def.encode(Some(data)) {
+      match def.encode(Some(data[:])) {
         Data(chunk) => buf.write_bytes(chunk)
         _ => ()
       }

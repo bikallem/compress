@@ -18,7 +18,7 @@ pub async fn compress(
       break
     }
     let chunk = Bytes::makei(n, fn(i) { buf[i] })
-    match def.encode(Some(chunk)) {
+    match def.encode(Some(chunk[:])) {
       Data(out) => writer.write(out)
       Ok => ()
       End => return

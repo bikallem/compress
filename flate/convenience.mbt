@@ -2,7 +2,7 @@
 /// Decompress DEFLATE-encoded data (RFC 1951).
 pub fn decompress(data : Bytes) -> Bytes raise CompressError {
   let d = Inflater::new()
-  d.src(data)
+  d.src(data[:])
   let capacity = (data.length() * 2).max(32768)
   d.enable_direct_output(capacity)
   loop d.decode() {
@@ -20,7 +20,7 @@ pub fn decompress_with_dict(
   dict : Bytes,
 ) -> Bytes raise CompressError {
   let d = Inflater::new(dict~)
-  d.src(data)
+  d.src(data[:])
   let capacity = (data.length() * 2).max(32768)
   d.enable_direct_output(capacity)
   loop d.decode() {
@@ -39,7 +39,7 @@ pub fn compress(
 ) -> Bytes raise CompressError {
   let e = Deflater::new(level~)
   let buf = @buffer.new()
-  drain(e, buf, Some(data))
+  drain(e, buf, Some(data[:]))
   drain(e, buf, None)
   buf.to_bytes()
 }
@@ -48,7 +48,7 @@ pub fn compress(
 fn drain(
   e : Deflater,
   buf : @buffer.Buffer,
-  input : Bytes?,
+  input : BytesView?,
 ) -> Unit raise CompressError {
   match e.encode(input) {
     Ok | End => ()

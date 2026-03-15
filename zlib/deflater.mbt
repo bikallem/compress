@@ -42,7 +42,7 @@ pub fn Deflater::new(
 }
 
 ///|
-pub fn Deflater::encode(self : Deflater, data : Bytes?) -> Encode {
+pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
   let s = self.0
   if s.finished {
     return End

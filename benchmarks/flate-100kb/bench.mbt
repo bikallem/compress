@@ -33,7 +33,7 @@ fn bench_decompress(
 fn deflate_with_dict(data : Bytes, dict : Bytes) -> Bytes {
   let d = @fl.Deflater::new(dict~)
   let buf = @buffer.new()
-  match d.encode(Some(data)) {
+  match d.encode(Some(data[:])) {
     Data(out) => buf.write_bytes(out)
     _ => ()
   }

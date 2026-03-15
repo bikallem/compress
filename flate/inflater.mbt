@@ -51,7 +51,7 @@ pub fn Inflater::new(dict? : Bytes) -> Inflater {
 
 ///|
 /// Feed input bytes. Only valid after decode() returned Await.
-pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
+pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   self.bb.set_input(data)
 }
 

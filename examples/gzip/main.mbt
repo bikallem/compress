@@ -52,7 +52,7 @@ fn run() -> Unit raise {
     os: b'\xFF',
   })
   let cbuf = @buffer.new()
-  match deflater.encode(Some(original)) {
+  match deflater.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytes(out)
     Ok => ()
     _ => ()
@@ -69,7 +69,7 @@ fn run() -> Unit raise {
 
   let inflater = @gz.Inflater::new()
   let dbuf = @buffer.new()
-  inflater.src(stream_compressed)
+  inflater.src(stream_compressed[:])
   loop inflater.decode() {
     Await => break
     Data(out) => {

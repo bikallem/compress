@@ -39,7 +39,7 @@ test "encode signal protocol" {
   let e = @flate.Deflater::new()
   let buf = @buffer.new()
   // Feed data
-  let s1 = e.encode(Some(data))
+  let s1 = e.encode(Some(data[:]))
   inspect(s1 is Ok, content="true")
   // Signal EOF
   loop e.encode(None) {

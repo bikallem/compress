@@ -8,7 +8,7 @@ pub fn decompress(
   lit_width : Int,
 ) -> Bytes raise LzwError {
   let inf = Inflater::new(order, lit_width)
-  inf.src(data)
+  inf.src(data[:])
   let capacity = (data.length() * 4).max(32768)
   inf.enable_direct_output(capacity)
   loop inf.decode() {

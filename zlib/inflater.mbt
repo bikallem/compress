@@ -49,11 +49,11 @@ pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
 }
 
 ///|
-pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
+pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   let s = self.0
   match s.phase {
     ParseHeader => {
-      s.hdr_buf.write_bytes(data)
+      s.hdr_buf.write_bytesview(data)
       // Try to parse header from accumulated bytes
       let buf = s.hdr_buf.to_bytes()
       match try_parse_header_bytes(buf, s.dict) {
@@ -61,10 +61,7 @@ pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
           // Feed all remaining bytes after header to inflater in one call
           let remaining_len = buf.length() - header_len
           if remaining_len > 0 {
-            let remaining = Bytes::makei(remaining_len, fn(i) {
-              buf[header_len + i]
-            })
-            s.inflater.src(remaining)
+            s.inflater.src(buf[header_len:])
           }
           s.phase = Inflate
         }
@@ -75,7 +72,7 @@ pub fn Inflater::src(self : Inflater, data : Bytes) -> Unit {
     Inflate => s.inflater.src(data)
     VerifyTrailer(prev) => {
       // Accumulate trailer bytes from new chunk
-      let combined = prev + data
+      let combined = prev + data.to_bytes()
       s.phase = VerifyTrailer(combined)
     }
     Done | Failed(_) => ()

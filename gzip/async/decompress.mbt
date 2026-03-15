@@ -11,7 +11,7 @@ pub async fn decompress(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
         raise @gzip.GzipError::UnexpectedEOF
       }
       let chunk = Bytes::makei(n, fn(i) { buf[i] })
-      inf.src(chunk)
+      inf.src(chunk[:])
       continue inf.decode()
     }
     Data(out) => {
