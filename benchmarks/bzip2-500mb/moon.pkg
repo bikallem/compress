@@ -1,5 +1,0 @@
-import {
-  "bikallem/compress/benchmarks",
-  "bikallem/compress/bzip2" @bz2,
-  "moonbitlang/core/bench",
-}

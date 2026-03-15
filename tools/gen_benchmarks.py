@@ -20,6 +20,9 @@ MODULE = "bikallem/compress"
 # Size definitions
 # ---------------------------------------------------------------------------
 
+# NOTE: MoonBit native runtime truncates array length to 28 bits (max ~256MB).
+# See https://github.com/moonbitlang/moonbit-docs/issues/1155
+# In-memory benchmarks are capped at 100MB until this is fixed.
 SIZES = [
     ("1kb",   1024),
     ("10kb",  10240),
@@ -27,8 +30,6 @@ SIZES = [
     ("1mb",   1048576),
     ("10mb",  10485760),
     ("100mb", 104857600),
-    ("500mb", 524288000),
-    ("1gb",   1073741824),
 ]
 
 # ---------------------------------------------------------------------------
@@ -535,12 +536,14 @@ def main():
             print(f"  generated {pkg_name}/")
 
     # Always include hand-written packages
-    hand_written = ["benchmarks/checksum", "benchmarks/streaming"]
+    hand_written = [f"{MODULE}/benchmarks/checksum", f"{MODULE}/benchmarks/streaming"]
 
-    all_pkgs = hand_written + sorted(generated_pkgs)
+    all_pkgs = hand_written + sorted(f"{MODULE}/{p}" for p in generated_pkgs)
     print(f"\nGenerated {len(generated_pkgs)} packages.")
 
     # Update bench.sh package list
+    # Use fully-qualified names (e.g. bikallem/compress/benchmarks/flate-1kb)
+    # so moon's -p flag uses exact matching instead of fuzzy matching.
     bench_sh = os.path.join(REPO_ROOT, "tools", "bench.sh")
     with open(bench_sh, "r") as f:
         content = f.read()
@@ -549,7 +552,7 @@ def main():
     import re
     pkg_list = " ".join(all_pkgs)
     content = re.sub(
-        r'for pkg in benchmarks/\S+.*?; do',
+        r'for pkg in \S+.*?; do',
         f'for pkg in {pkg_list}; do',
         content,
         count=2,  # current + prev loops
