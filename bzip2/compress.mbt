@@ -97,9 +97,7 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
     return (b"", 0)
   }
   let sa = build_suffix_array(data)
-  // Extract BWT from suffix array.
-  // BWT[j] = data[(sa[i] + n - 1) % n]  (last char of rotation starting at sa[i])
-  // orig_ptr = output index where sa[i] == 0  (identity rotation)
+  // SA has exactly n entries — circular rotation ordering.
   let bwt = @blit.make_uninit(n)
   let mut orig_ptr = 0
   for i in 0..<n {
@@ -112,92 +110,6 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
   (bwt.unsafe_reinterpret_as_bytes(), orig_ptr)
 }
 
-// =========================================================================
-// Suffix array construction for BWT.
-// Uses prefix doubling with radix sort — O(n log n) time.
-// Optimized with unsafe access and pre-allocated buffers.
-// =========================================================================
-
-///|
-/// Build suffix array for circular BWT using prefix doubling with radix sort.
-/// Returns indices sorted by their corresponding circular rotation.
-fn build_suffix_array(data : Bytes) -> FixedArray[Int] {
-  let n = data.length()
-  if n <= 1 {
-    return FixedArray::makei(n, fn(i) { i })
-  }
-  let sa = FixedArray::makei(n, fn(i) { i })
-  let rank = FixedArray::makei(n, fn(i) { data[i].to_int() })
-  let new_rank = FixedArray::make(n, 0)
-  let tmp = FixedArray::make(n, 0)
-  let mut k = 1
-  while k < n {
-    let max_rank = {
-      let mut m = 0
-      for i in 0..<n {
-        let r = rank.unsafe_get(i)
-        if r > m {
-          m = r
-        }
-      }
-      m + 1
-    }
-    // Radix sort by second key (rank[(i+k) % n]), stable
-    let count = FixedArray::make(max_rank, 0)
-    for i in 0..<n {
-      let idx = rank.unsafe_get((sa.unsafe_get(i) + k) % n)
-      count.unsafe_set(idx, count.unsafe_get(idx) + 1)
-    }
-    let mut sum = 0
-    for i in 0..<max_rank {
-      let c = count.unsafe_get(i)
-      count.unsafe_set(i, sum)
-      sum += c
-    }
-    for i in 0..<n {
-      let r2 = rank.unsafe_get((sa.unsafe_get(i) + k) % n)
-      let pos = count.unsafe_get(r2)
-      tmp.unsafe_set(pos, sa.unsafe_get(i))
-      count.unsafe_set(r2, pos + 1)
-    }
-    // Radix sort by first key (rank[i]), stable
-    let count2 = FixedArray::make(max_rank, 0)
-    for i in 0..<n {
-      let idx = rank.unsafe_get(tmp.unsafe_get(i))
-      count2.unsafe_set(idx, count2.unsafe_get(idx) + 1)
-    }
-    sum = 0
-    for i in 0..<max_rank {
-      let c = count2.unsafe_get(i)
-      count2.unsafe_set(i, sum)
-      sum += c
-    }
-    for i in 0..<n {
-      let r1 = rank.unsafe_get(tmp.unsafe_get(i))
-      let pos = count2.unsafe_get(r1)
-      sa.unsafe_set(pos, tmp.unsafe_get(i))
-      count2.unsafe_set(r1, pos + 1)
-    }
-    // Recompute ranks
-    new_rank.unsafe_set(sa.unsafe_get(0), 0)
-    for i in 1..<n {
-      let prev = sa.unsafe_get(i - 1)
-      let curr = sa.unsafe_get(i)
-      let same = rank.unsafe_get(prev) == rank.unsafe_get(curr) &&
-        rank.unsafe_get((prev + k) % n) == rank.unsafe_get((curr + k) % n)
-      new_rank.unsafe_set(
-        curr,
-        new_rank.unsafe_get(prev) + (if same { 0 } else { 1 }),
-      )
-    }
-    FixedArray::unsafe_blit(rank, 0, new_rank, 0, n)
-    if rank.unsafe_get(sa.unsafe_get(n - 1)) == n - 1 {
-      break
-    }
-    k *= 2
-  }
-  sa
-}
 
 ///|
 /// MTF encode + RLE2 (RUNA/RUNB zero-run encoding).

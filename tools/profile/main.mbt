@@ -1,26 +1,37 @@
 ///|
 fn main {
-  // Test SA-IS directly against a known correct BWT
-  // "banana" -> BWT = "annb$aa" (with sentinel), or circular: "nnbaaa" with orig_ptr=3
-  // Let's test bzip2 round-trip at the problematic size
   let phrase = b"The quick brown fox jumps over the lazy dog. "
-  let data = Bytes::makei(100, fn(i) { phrase[i % phrase.length()] })
-
-  // Compress, then try to decompress with system bzip2 to verify format
-  let compressed = try! @bz2.compress(data)
-  println("compressed \{data.length()} -> \{compressed.length()}")
-
-  // Check if system bzip2 can decompress it
-  // (this would confirm the format is correct)
-  let decompressed = try! @bz2.decompress(compressed)
-  println("decompressed: \{decompressed.length()}")
-  println("match: \{data == decompressed}")
-  if data != decompressed {
-    for i in 0..<data.length() {
-      if i >= decompressed.length() || data[i] != decompressed[i] {
-        println("first diff at byte \{i}")
-        break
+  let sizes = [
+    5, 10, 20, 45, 46, 50, 90, 91, 100, 200, 256, 500, 1000, 5000, 10000,
+    100000, 900000,
+  ]
+  let mut pass = 0
+  let mut fail = 0
+  for size in sizes {
+    let data = Bytes::makei(size, fn(i) { phrase[i % phrase.length()] })
+    let compressed = try? @bz2.compress(data)
+    match compressed {
+      Err(e) => {
+        println("FAIL size=\{size}: compress error: \{e}")
+        fail += 1
+      }
+      Ok(c) => {
+        let d = try? @bz2.decompress(c)
+        match d {
+          Err(e) => {
+            println("FAIL size=\{size}: decompress error: \{e}")
+            fail += 1
+          }
+          Ok(d) =>
+            if data == d {
+              pass += 1
+            } else {
+              println("FAIL size=\{size}: data mismatch")
+              fail += 1
+            }
+        }
       }
     }
   }
+  println("\{pass} passed, \{fail} failed out of \{sizes.length()}")
 }
