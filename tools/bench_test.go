@@ -962,6 +962,28 @@ func BenchmarkBzip2CompressDefault_1mb(b *testing.B) {
 	}
 }
 
+func BenchmarkBzip2CompressDefault_10mb(b *testing.B) {
+	data := genText(10485760)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("bzip2", "-c")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkBzip2CompressDefault_100mb(b *testing.B) {
+	data := genText(104857600)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("bzip2", "-c")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
 func BenchmarkBzip2Decompress_1kb(b *testing.B) {
 	data := genText(1024)
 	compressed, err := bzip2Compress(data)
@@ -1020,6 +1042,20 @@ func BenchmarkBzip2Decompress_1mb(b *testing.B) {
 
 func BenchmarkBzip2Decompress_10mb(b *testing.B) {
 	data := genText(10485760)
+	compressed, err := bzip2Compress(data)
+	if err != nil {
+		b.Skip("bzip2 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := bzip2.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBzip2Decompress_100mb(b *testing.B) {
+	data := genText(104857600)
 	compressed, err := bzip2Compress(data)
 	if err != nil {
 		b.Skip("bzip2 command not available")
