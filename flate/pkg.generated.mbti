@@ -9,7 +9,7 @@ pub fn decompress(Bytes) -> Bytes raise CompressError
 pub fn decompress_with_dict(Bytes, Bytes) -> Bytes raise CompressError
 
 // Errors
-pub suberror CompressError {
+pub(all) suberror CompressError {
   CorruptInput(String)
   InvalidLevel(Int)
   UnexpectedEOF
@@ -37,7 +37,7 @@ pub(all) enum Decode {
 pub impl Show for Decode
 
 type Deflater
-pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::encode(Self, BytesView?) -> Encode
 pub fn Deflater::new(level? : CompressionLevel, dict? : Bytes) -> Self
 
 pub(all) enum Encode {
@@ -52,7 +52,7 @@ type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::new(dict? : Bytes) -> Self
 pub fn Inflater::remaining(Self) -> Bytes
-pub fn Inflater::src(Self, Bytes) -> Unit
+pub fn Inflater::src(Self, BytesView) -> Unit
 
 // Type aliases
 

@@ -5,9 +5,9 @@ import {
   "moonbitlang/core/bench",
 }
 
-options(
-  "native-stub": ["file_io_stub.c"],
-  targets: { "streaming_bench.mbt": ["native"] },
-)
-
 warnings = "-29"
+
+options(
+  "native-stub": [ "file_io_stub.c" ],
+  targets: { "streaming_bench.mbt": [ "native" ] },
+)

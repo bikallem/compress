@@ -12,3 +12,4 @@ dhat.out.*
 massif.out
 .claude/settings.json
 .beads/
+benchmarks/**/*.mbti

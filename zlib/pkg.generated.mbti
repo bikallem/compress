@@ -11,7 +11,7 @@ pub fn compress(Bytes, dict? : Bytes, level? : @flate.CompressionLevel) -> Bytes
 pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise ZlibError
 
 // Errors
-pub suberror ZlibError {
+pub(all) suberror ZlibError {
   InvalidHeader(String)
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   NeedDictionary(UInt)
@@ -30,7 +30,7 @@ pub(all) enum Decode {
 pub impl Show for Decode
 
 type Deflater
-pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::encode(Self, BytesView?) -> Encode
 pub fn Deflater::new(level? : @flate.CompressionLevel, dict? : Bytes) -> Self
 
 pub(all) enum Encode {
@@ -44,7 +44,7 @@ pub impl Show for Encode
 type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::new(dict? : Bytes) -> Self
-pub fn Inflater::src(Self, Bytes) -> Unit
+pub fn Inflater::src(Self, BytesView) -> Unit
 
 // Type aliases
 

@@ -6,7 +6,6 @@ package "bikallem/compress/tools/generate_moonbit_golden"
 // Errors
 
 // Types and methods
-type Entry
 
 // Type aliases
 

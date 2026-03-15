@@ -7,7 +7,7 @@ pub fn compress(Bytes, BitOrder, Int) -> Bytes raise LzwError
 pub fn decompress(Bytes, BitOrder, Int) -> Bytes raise LzwError
 
 // Errors
-pub suberror LzwError {
+pub(all) suberror LzwError {
   InvalidLitWidth(Int)
   InvalidCode(String)
   UnexpectedEOF
@@ -31,7 +31,7 @@ pub(all) enum Decode {
 pub impl Show for Decode
 
 type Deflater
-pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::encode(Self, BytesView?) -> Encode
 pub fn Deflater::new(BitOrder, Int) -> Self raise LzwError
 
 pub(all) enum Encode {
@@ -45,7 +45,7 @@ pub impl Show for Encode
 type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::new(BitOrder, Int) -> Self raise LzwError
-pub fn Inflater::src(Self, Bytes) -> Unit
+pub fn Inflater::src(Self, BytesView) -> Unit
 
 // Type aliases
 

@@ -11,7 +11,7 @@ pub fn compress(Bytes, level? : @flate.CompressionLevel, header? : Header) -> By
 pub fn decompress(Bytes) -> (Bytes, Header) raise GzipError
 
 // Errors
-pub suberror GzipError {
+pub(all) suberror GzipError {
   InvalidHeader(String)
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   SizeMismatch(expected~ : UInt, got~ : UInt)
@@ -30,7 +30,7 @@ pub(all) enum Decode {
 pub impl Show for Decode
 
 type Deflater
-pub fn Deflater::encode(Self, Bytes?) -> Encode
+pub fn Deflater::encode(Self, BytesView?) -> Encode
 pub fn Deflater::new(level? : @flate.CompressionLevel, header? : Header) -> Self
 
 pub(all) enum Encode {
@@ -56,7 +56,7 @@ type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::header(Self) -> Header
 pub fn Inflater::new() -> Self
-pub fn Inflater::src(Self, Bytes) -> Unit
+pub fn Inflater::src(Self, BytesView) -> Unit
 
 // Type aliases
 
