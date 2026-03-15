@@ -184,7 +184,7 @@ declare -A GO
 if $RUN_GO; then
   echo "=== Running Go benchmarks ==="
   GO_RAW=$(mktemp)
-  (cd "$REPO_ROOT/tools" && go test -bench=. -benchtime=1s -count=1 2>&1) | tee "$GO_RAW"
+  (cd "$REPO_ROOT/tools" && go test -run='^$' -bench=. -benchtime=1s -count=1 2>&1) | tee "$GO_RAW"
   while IFS=$'\t' read -r name val; do
     GO["$name"]=$val
   done < <(parse_go_bench < "$GO_RAW")
