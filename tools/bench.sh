@@ -163,9 +163,11 @@ if $RUN_PREV; then
   fi
   git checkout HEAD~1 -q
   moon install -q 2>/dev/null || true
+  # Use the same package list — benchmarks on the previous commit may differ,
+  # but moon bench silently skips packages that don't exist.
   for pkg in "${BENCH_PKGS[@]}"; do
     echo "--- $pkg ---"
-    moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$PREV_RAW"
+    moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$PREV_RAW" || true
   done
   git checkout - -q
   if $STASHED; then
