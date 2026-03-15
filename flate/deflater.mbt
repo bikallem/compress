@@ -39,6 +39,13 @@ const WINDOW_MASK : Int = WINDOW_SIZE - 1
 const MAX_BLOCK_TOKENS : Int = 16384
 
 ///|
+/// Maximum number of intermediate positions to rehash after a match.
+/// Positions beyond this limit are skipped — they rarely improve future
+/// match quality and dominate the CPU cost (hash4 + insert_hash = ~50%
+/// of total instructions per callgrind profiling).
+const MAX_INSERT : Int = 32
+
+///|
 /// Streaming, non-blocking DEFLATE compressor.
 ///
 /// Memory: ~450KB constant regardless of input size (double window + hash tables).
@@ -290,9 +297,14 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
       let (length, offset) = self.find_best_match(i, match_head, max_chain)
       if length >= MIN_MATCH_LENGTH {
         self.tokens.push(Token::match_(length, offset))
-        // Rehash intermediate positions — limit to safe range
-        let rehash_end = if i + length + 3 < end {
-          i + length
+        // Rehash a capped number of intermediate positions.
+        let n_insert = if length - 1 < MAX_INSERT {
+          length - 1
+        } else {
+          MAX_INSERT
+        }
+        let rehash_end = if i + n_insert + 4 < end {
+          i + 1 + n_insert
         } else {
           end - 3
         }
@@ -360,8 +372,17 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         )
         let start = i
         let skip_end = start + self.prev_match_len - 1
-        // Rehash intermediate positions — limit to safe range
-        let rehash_end = if skip_end + 3 < end { skip_end } else { end - 3 }
+        // Rehash a capped number of intermediate positions.
+        let n_insert = if self.prev_match_len - 1 < MAX_INSERT {
+          self.prev_match_len - 1
+        } else {
+          MAX_INSERT
+        }
+        let rehash_end = if start + n_insert + 3 < end {
+          start + n_insert
+        } else {
+          end - 4
+        }
         for j in start..<rehash_end {
           ignore(self.insert_hash(j, hash_mask))
         }

@@ -1,0 +1,7 @@
+import {
+  "bikallem/compress/flate",
+}
+
+options(
+  "is-main": true,
+)
