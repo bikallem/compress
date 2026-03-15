@@ -88,38 +88,43 @@ fn rle1_encode(data : Bytes, start : Int, end : Int) -> Bytes {
 }
 
 ///|
-/// Burrows-Wheeler Transform.
+/// Burrows-Wheeler Transform using suffix array construction.
+/// Appends a sentinel and builds a suffix array, then extracts the BWT.
 /// Returns (transformed data, original pointer).
 fn bwt_transform(data : Bytes) -> (Bytes, Int) {
   let n = data.length()
   if n == 0 {
     return (b"", 0)
   }
-  // Build suffix array using simple doubling algorithm
-  let sa = sort_rotations(data)
-  // BWT: last column = data[(sa[i] + n - 1) % n]
-  let bwt = Bytes::makei(n, fn(i) { data[(sa[i] + n - 1) % n] })
-  // Find original pointer: position where sa[i] == 0
+  let sa = build_suffix_array(data)
+  // Extract BWT from suffix array.
+  // BWT[j] = data[(sa[i] + n - 1) % n]  (last char of rotation starting at sa[i])
+  // orig_ptr = output index where sa[i] == 0  (identity rotation)
+  let bwt = @blit.make_uninit(n)
   let mut orig_ptr = 0
   for i in 0..<n {
-    if sa[i] == 0 {
+    let s = sa.unsafe_get(i)
+    if s == 0 {
       orig_ptr = i
-      break
     }
+    bwt.unsafe_set(i, data[(s + n - 1) % n])
   }
-  (bwt, orig_ptr)
+  (bwt.unsafe_reinterpret_as_bytes(), orig_ptr)
 }
 
+// =========================================================================
+// Suffix array construction for BWT.
+// Uses prefix doubling with radix sort — O(n log n) time.
+// Optimized with unsafe access and pre-allocated buffers.
+// =========================================================================
+
 ///|
-/// Sort rotations of data lexicographically for BWT using prefix doubling.
+/// Build suffix array for circular BWT using prefix doubling with radix sort.
 /// Returns indices sorted by their corresponding circular rotation.
-fn sort_rotations(data : Bytes) -> FixedArray[Int] {
+fn build_suffix_array(data : Bytes) -> FixedArray[Int] {
   let n = data.length()
-  if n == 0 {
-    return []
-  }
-  if n == 1 {
-    return [0]
+  if n <= 1 {
+    return FixedArray::makei(n, fn(i) { i })
   }
   let sa = FixedArray::makei(n, fn(i) { i })
   let rank = FixedArray::makei(n, fn(i) { data[i].to_int() })
