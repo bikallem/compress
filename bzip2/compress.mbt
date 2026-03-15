@@ -51,9 +51,16 @@ fn compress_block(
 }
 
 ///|
-/// RLE1 encode: runs of 4+ identical bytes → 4 copies + count byte
+/// RLE1 encode: runs of 4+ identical bytes → 4 copies + count byte.
+/// Uses a pre-allocated FixedArray to avoid Buffer::write_byte overhead.
 fn rle1_encode(data : Bytes, start : Int, end : Int) -> Bytes {
-  let out = @buffer.new(size_hint=end - start)
+  let len = end - start
+  // Worst case: no runs, output = input length. With runs, output ≤ input.
+  // RLE can expand slightly: 4 bytes → 5 bytes (4 copies + count=0).
+  // Worst expansion: every 4 bytes becomes 5, so max = len * 5 / 4 + 1.
+  let max_out = len + (len / 4) + 2
+  let out = FixedArray::make(max_out, b'\x00')
+  let mut pos = 0
   let mut i = start
   while i < end {
     let b = data[i]
@@ -62,19 +69,22 @@ fn rle1_encode(data : Bytes, start : Int, end : Int) -> Bytes {
       run += 1
     }
     if run >= 4 {
-      // Write 4 copies + count
-      out.write_byte(b)
-      out.write_byte(b)
-      out.write_byte(b)
-      out.write_byte(b)
-      out.write_byte((run - 4).to_byte())
+      out.unsafe_set(pos, b)
+      out.unsafe_set(pos + 1, b)
+      out.unsafe_set(pos + 2, b)
+      out.unsafe_set(pos + 3, b)
+      out.unsafe_set(pos + 4, (run - 4).to_byte())
+      pos += 5
       i += run
     } else {
-      out.write_byte(b)
+      out.unsafe_set(pos, b)
+      pos += 1
       i += 1
     }
   }
-  out.to_bytes()
+  let result = @blit.make_uninit(pos)
+  @blit.blit_fixed_array(result, 0, out, 0, pos)
+  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|
@@ -120,56 +130,63 @@ fn sort_rotations(data : Bytes) -> FixedArray[Int] {
     let max_rank = {
       let mut m = 0
       for i in 0..<n {
-        if rank[i] > m {
-          m = rank[i]
+        let r = rank.unsafe_get(i)
+        if r > m {
+          m = r
         }
       }
       m + 1
     }
     // Radix sort by second key (rank[(i+k) % n]), stable
-    // For circular rotations, there is no sentinel — always use rank[(i+k) % n]
     let count = FixedArray::make(max_rank, 0)
     for i in 0..<n {
-      count[rank[(sa[i] + k) % n]] += 1
+      let idx = rank.unsafe_get((sa.unsafe_get(i) + k) % n)
+      count.unsafe_set(idx, count.unsafe_get(idx) + 1)
     }
     let mut sum = 0
     for i in 0..<max_rank {
-      let c = count[i]
-      count[i] = sum
+      let c = count.unsafe_get(i)
+      count.unsafe_set(i, sum)
       sum += c
     }
     for i in 0..<n {
-      let r2 = rank[(sa[i] + k) % n]
-      tmp[count[r2]] = sa[i]
-      count[r2] += 1
+      let r2 = rank.unsafe_get((sa.unsafe_get(i) + k) % n)
+      let pos = count.unsafe_get(r2)
+      tmp.unsafe_set(pos, sa.unsafe_get(i))
+      count.unsafe_set(r2, pos + 1)
     }
     // Radix sort by first key (rank[i]), stable
     let count2 = FixedArray::make(max_rank, 0)
     for i in 0..<n {
-      count2[rank[tmp[i]]] += 1
+      let idx = rank.unsafe_get(tmp.unsafe_get(i))
+      count2.unsafe_set(idx, count2.unsafe_get(idx) + 1)
     }
     sum = 0
     for i in 0..<max_rank {
-      let c = count2[i]
-      count2[i] = sum
+      let c = count2.unsafe_get(i)
+      count2.unsafe_set(i, sum)
       sum += c
     }
     for i in 0..<n {
-      let r1 = rank[tmp[i]]
-      sa[count2[r1]] = tmp[i]
-      count2[r1] += 1
+      let r1 = rank.unsafe_get(tmp.unsafe_get(i))
+      let pos = count2.unsafe_get(r1)
+      sa.unsafe_set(pos, tmp.unsafe_get(i))
+      count2.unsafe_set(r1, pos + 1)
     }
     // Recompute ranks
-    new_rank[sa[0]] = 0
+    new_rank.unsafe_set(sa.unsafe_get(0), 0)
     for i in 1..<n {
-      let prev = sa[i - 1]
-      let curr = sa[i]
-      let same = rank[prev] == rank[curr] &&
-        rank[(prev + k) % n] == rank[(curr + k) % n]
-      new_rank[curr] = new_rank[prev] + (if same { 0 } else { 1 })
+      let prev = sa.unsafe_get(i - 1)
+      let curr = sa.unsafe_get(i)
+      let same = rank.unsafe_get(prev) == rank.unsafe_get(curr) &&
+        rank.unsafe_get((prev + k) % n) == rank.unsafe_get((curr + k) % n)
+      new_rank.unsafe_set(
+        curr,
+        new_rank.unsafe_get(prev) + (if same { 0 } else { 1 }),
+      )
     }
     FixedArray::unsafe_blit(rank, 0, new_rank, 0, n)
-    if rank[sa[n - 1]] == n - 1 {
+    if rank.unsafe_get(sa.unsafe_get(n - 1)) == n - 1 {
       break
     }
     k *= 2

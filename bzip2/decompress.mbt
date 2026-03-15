@@ -19,45 +19,43 @@ pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
 
 ///|
 /// Performs inverse Burrows-Wheeler Transform using LF mapping.
+/// Performs inverse BWT in-place using the tt array.
+/// Merges LF mapping into tt: tt[i] = (lf[i] << 8) | byte_value.
+/// Eliminates separate lf and tt_merged allocations.
 fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
   // Count occurrences of each byte value
   let counts = FixedArray::make(256, 0)
   for i in 0..<length {
-    counts[data[i]] += 1
+    counts.unsafe_set(
+      data.unsafe_get(i),
+      counts.unsafe_get(data.unsafe_get(i)) + 1,
+    )
   }
   // Compute cumulative counts (starting positions in F column)
-  let cum = FixedArray::make(257, 0)
+  let cum = FixedArray::make(256, 0)
   let mut total = 0
   for i in 0..<256 {
-    cum[i] = total
-    total += counts[i]
+    cum.unsafe_set(i, total)
+    total += counts.unsafe_get(i)
   }
-  cum[256] = total
-  // Build LF mapping: for each position i in L, LF[i] = corresponding position in F
-  let lf = FixedArray::make(length, 0)
+  // Build merged TT in-place: tt[i] = (lf_pos << 8) | byte_value
+  // This avoids allocating separate lf and tt_merged arrays.
   let occ = FixedArray::make(256, 0)
   for i in 0..<length {
-    let c = data[i]
-    lf[i] = cum[c] + occ[c]
-    occ[c] += 1
+    let c = data.unsafe_get(i)
+    let lf_pos = cum.unsafe_get(c) + occ.unsafe_get(c)
+    occ.unsafe_set(c, occ.unsafe_get(c) + 1)
+    data.unsafe_set(i, (lf_pos << 8) | c)
   }
-  // Merge data and LF into a single array: tt[i] = (lf[i] << 8) | data[i]
-  // Then follow: pos = orig_ptr; for each output char: c = tt[pos] & 0xFF; pos = tt[pos] >> 8
-  let tt_merged = FixedArray::make(length, 0)
-  for i in 0..<length {
-    tt_merged[i] = (lf[i] << 8) | data[i]
-  }
-  // Output in reverse order since LF walks the text backwards
-  let output = FixedArray::make(length, b'\x00')
+  // Walk the merged TT to produce output
+  let output = @blit.make_uninit(length)
   let mut pos = orig_ptr
   for i = length - 1; i >= 0; i = i - 1 {
-    let entry = tt_merged[pos]
-    output[i] = (entry & 0xFF).to_byte()
+    let entry = data.unsafe_get(pos)
+    output.unsafe_set(i, (entry & 0xFF).to_byte())
     pos = entry >> 8
   }
-  let result = @blit.make_uninit(length)
-  @blit.blit_fixed_array(result, 0, output, 0, length)
-  result.unsafe_reinterpret_as_bytes()
+  output.unsafe_reinterpret_as_bytes()
 }
 
 ///|
@@ -65,36 +63,47 @@ fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
 /// In RLE1, a run of 4+ identical bytes is stored as:
 /// 4 copies of byte + count (where count = number of additional copies beyond 4)
 fn undo_rle1(data : Bytes) -> Bytes raise Bzip2Error {
-  let out = @buffer.new(size_hint=data.length())
+  let len = data.length()
+  // Worst case expansion: every 5 bytes (4 copies + count=255) → 259 bytes
+  let max_out = len * 52 + 4 // conservative upper bound
+  let out = FixedArray::make(max_out, b'\x00')
+  let mut pos = 0
   let mut i = 0
-  while i < data.length() {
+  while i < len {
     let b = data[i]
-    out.write_byte(b)
+    out.unsafe_set(pos, b)
+    pos += 1
     i += 1
     // Check for run of 4 identical bytes
-    if i < data.length() && data[i] == b {
-      out.write_byte(b)
+    if i < len && data[i] == b {
+      out.unsafe_set(pos, b)
+      pos += 1
       i += 1
-      if i < data.length() && data[i] == b {
-        out.write_byte(b)
+      if i < len && data[i] == b {
+        out.unsafe_set(pos, b)
+        pos += 1
         i += 1
-        if i < data.length() && data[i] == b {
-          out.write_byte(b)
+        if i < len && data[i] == b {
+          out.unsafe_set(pos, b)
+          pos += 1
           i += 1
           // Next byte is repeat count
-          if i >= data.length() {
+          if i >= len {
             raise Bzip2Error::CorruptData("unexpected end of RLE1 data")
           }
           let count = data[i].to_int()
           i += 1
           for _ in 0..<count {
-            out.write_byte(b)
+            out.unsafe_set(pos, b)
+            pos += 1
           }
         }
       }
     }
   }
-  out.to_bytes()
+  let result = @blit.make_uninit(pos)
+  @blit.blit_fixed_array(result, 0, out, 0, pos)
+  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|
