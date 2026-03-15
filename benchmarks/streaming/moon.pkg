@@ -7,7 +7,7 @@ import {
 
 options(
   "native-stub": ["file_io_stub.c"],
-  targets: {
-    "streaming_bench.mbt": ["native"],
-  },
+  targets: { "streaming_bench.mbt": ["native"] },
 )
+
+warnings = "-29"
