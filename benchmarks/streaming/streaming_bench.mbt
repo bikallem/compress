@@ -7,12 +7,14 @@ extern "c" fn fopen_read(path : Bytes) -> Int64 = "bench_fopen_read"
 extern "c" fn fopen_write(path : Bytes) -> Int64 = "bench_fopen_write"
 
 ///|
+/// Read directly into a Bytes buffer at the given offset. Returns bytes read.
 #borrow(buf)
-extern "c" fn fread_into(
+extern "c" fn fread_bytes(
   handle : Int64,
-  buf : FixedArray[Byte],
+  buf : Bytes,
+  offset : Int,
   max_len : Int,
-) -> Int = "bench_fread"
+) -> Int = "bench_fread_bytes"
 
 ///|
 #borrow(data)
@@ -49,6 +51,7 @@ fn write_to_file(path : String, data : Bytes) -> Unit {
 
 ///|
 /// Compress a file by reading chunks → deflate → write output file.
+/// Pre-allocates a single Bytes buffer and reuses it for all reads.
 fn compress_file_streaming(
   input_path : String,
   output_path : String,
@@ -64,15 +67,14 @@ fn compress_file_streaming(
     abort("cannot open \{output_path}")
   }
   let def = @flate.Deflater::new()
-  let buf = FixedArray::make(chunk_size, b'\x00')
-  // Read and compress chunks
+  let buf = Bytes::make(chunk_size, 0)
+  // Read and compress chunks — zero allocation per iteration
   while true {
-    let n = fread_into(ih, buf, chunk_size)
+    let n = fread_bytes(ih, buf, 0, chunk_size)
     if n == 0 {
       break
     }
-    let chunk = Bytes::makei(n, fn(i) { buf[i] })
-    match def.encode(Some(chunk[:])) {
+    match def.encode(Some(buf[:n])) {
       Data(out) => fwrite_bytes(oh, out, out.length())
       _ => ()
     }
@@ -91,6 +93,7 @@ fn compress_file_streaming(
 
 ///|
 /// Decompress a file by reading chunks → inflate → write output file.
+/// Pre-allocates a single Bytes buffer and reuses it for all reads.
 fn decompress_file_streaming(
   input_path : String,
   output_path : String,
@@ -106,19 +109,17 @@ fn decompress_file_streaming(
     abort("cannot open \{output_path}")
   }
   let inf = @flate.Inflater::new()
-  let buf = FixedArray::make(chunk_size, b'\x00')
+  let buf = Bytes::make(chunk_size, 0)
   // Feed first chunk
-  let n = fread_into(ih, buf, chunk_size)
+  let n = fread_bytes(ih, buf, 0, chunk_size)
   if n > 0 {
-    let chunk = Bytes::makei(n, fn(i) { buf[i] })
-    inf.src(chunk[:])
+    inf.src(buf[:n])
   }
   loop inf.decode() {
     Await => {
-      let n = fread_into(ih, buf, chunk_size)
+      let n = fread_bytes(ih, buf, 0, chunk_size)
       if n > 0 {
-        let chunk = Bytes::makei(n, fn(i) { buf[i] })
-        inf.src(chunk[:])
+        inf.src(buf[:n])
       } else {
         inf.src(b""[:])
       }
@@ -137,6 +138,7 @@ fn decompress_file_streaming(
 
 ///|
 /// Decompress an LZW file by reading chunks → inflate → write output file.
+/// Pre-allocates a single Bytes buffer and reuses it for all reads.
 fn lzw_decompress_file_streaming(
   input_path : String,
   output_path : String,
@@ -152,18 +154,16 @@ fn lzw_decompress_file_streaming(
     abort("cannot open \{output_path}")
   }
   let inf = try! @lzw.Inflater::new(@lzw.LSB, 8)
-  let buf = FixedArray::make(chunk_size, b'\x00')
-  let n = fread_into(ih, buf, chunk_size)
+  let buf = Bytes::make(chunk_size, 0)
+  let n = fread_bytes(ih, buf, 0, chunk_size)
   if n > 0 {
-    let chunk = Bytes::makei(n, fn(i) { buf[i] })
-    inf.src(chunk[:])
+    inf.src(buf[:n])
   }
   loop inf.decode() {
     Await => {
-      let n = fread_into(ih, buf, chunk_size)
+      let n = fread_bytes(ih, buf, 0, chunk_size)
       if n > 0 {
-        let chunk = Bytes::makei(n, fn(i) { buf[i] })
-        inf.src(chunk[:])
+        inf.src(buf[:n])
       } else {
         inf.src(b""[:])
       }
