@@ -538,24 +538,24 @@ def main():
     # Always include hand-written packages
     hand_written = [f"{MODULE}/benchmarks/checksum", f"{MODULE}/benchmarks/streaming"]
 
-    all_pkgs = hand_written + sorted(f"{MODULE}/{p}" for p in generated_pkgs)
+    all_pkgs = hand_written + [f"{MODULE}/{p}" for p in generated_pkgs]
     print(f"\nGenerated {len(generated_pkgs)} packages.")
 
-    # Update bench.sh package list
-    # Use fully-qualified names (e.g. bikallem/compress/benchmarks/flate-1kb)
-    # so moon's -p flag uses exact matching instead of fuzzy matching.
+    # Update bench.sh BENCH_PKGS array.
+    # Uses fully-qualified names so moon's -p flag uses exact matching
+    # instead of fuzzy matching.
     bench_sh = os.path.join(REPO_ROOT, "tools", "bench.sh")
     with open(bench_sh, "r") as f:
         content = f.read()
 
-    # Replace the for-loop line
     import re
-    pkg_list = " ".join(all_pkgs)
+    array_body = "\n".join(f"  {p}" for p in all_pkgs)
+    new_array = f"BENCH_PKGS=(\n{array_body}\n)"
     content = re.sub(
-        r'for pkg in \S+.*?; do',
-        f'for pkg in {pkg_list}; do',
+        r'BENCH_PKGS=\(.*?\)',
+        new_array,
         content,
-        count=2,  # current + prev loops
+        flags=re.DOTALL,
     )
 
     with open(bench_sh, "w") as f:

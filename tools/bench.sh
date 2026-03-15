@@ -98,9 +98,46 @@ fmt_change() {
 
 cd "$REPO_ROOT"
 
+# Fully-qualified package names to avoid moon's fuzzy -p matching.
+# Updated by tools/gen_benchmarks.py — do not edit manually.
+BENCH_PKGS=(
+  bikallem/compress/benchmarks/checksum
+  bikallem/compress/benchmarks/streaming
+  bikallem/compress/benchmarks/flate-1kb
+  bikallem/compress/benchmarks/flate-10kb
+  bikallem/compress/benchmarks/flate-100kb
+  bikallem/compress/benchmarks/flate-1mb
+  bikallem/compress/benchmarks/flate-10mb
+  bikallem/compress/benchmarks/flate-100mb
+  bikallem/compress/benchmarks/gzip-1kb
+  bikallem/compress/benchmarks/gzip-10kb
+  bikallem/compress/benchmarks/gzip-100kb
+  bikallem/compress/benchmarks/gzip-1mb
+  bikallem/compress/benchmarks/gzip-10mb
+  bikallem/compress/benchmarks/gzip-100mb
+  bikallem/compress/benchmarks/zlib-1kb
+  bikallem/compress/benchmarks/zlib-10kb
+  bikallem/compress/benchmarks/zlib-100kb
+  bikallem/compress/benchmarks/zlib-1mb
+  bikallem/compress/benchmarks/zlib-10mb
+  bikallem/compress/benchmarks/zlib-100mb
+  bikallem/compress/benchmarks/lzw-1kb
+  bikallem/compress/benchmarks/lzw-10kb
+  bikallem/compress/benchmarks/lzw-100kb
+  bikallem/compress/benchmarks/lzw-1mb
+  bikallem/compress/benchmarks/lzw-10mb
+  bikallem/compress/benchmarks/lzw-100mb
+  bikallem/compress/benchmarks/bzip2-1kb
+  bikallem/compress/benchmarks/bzip2-10kb
+  bikallem/compress/benchmarks/bzip2-100kb
+  bikallem/compress/benchmarks/bzip2-1mb
+  bikallem/compress/benchmarks/bzip2-10mb
+  bikallem/compress/benchmarks/bzip2-100mb
+)
+
 echo "=== Running MoonBit benchmarks (current) ==="
 MOON_RAW=$(mktemp)
-for pkg in bikallem/compress/benchmarks/checksum bikallem/compress/benchmarks/streaming bikallem/compress/benchmarks/bzip2-100kb bikallem/compress/benchmarks/bzip2-100mb bikallem/compress/benchmarks/bzip2-10kb bikallem/compress/benchmarks/bzip2-10mb bikallem/compress/benchmarks/bzip2-1kb bikallem/compress/benchmarks/bzip2-1mb bikallem/compress/benchmarks/flate-100kb bikallem/compress/benchmarks/flate-100mb bikallem/compress/benchmarks/flate-10kb bikallem/compress/benchmarks/flate-10mb bikallem/compress/benchmarks/flate-1kb bikallem/compress/benchmarks/flate-1mb bikallem/compress/benchmarks/gzip-100kb bikallem/compress/benchmarks/gzip-100mb bikallem/compress/benchmarks/gzip-10kb bikallem/compress/benchmarks/gzip-10mb bikallem/compress/benchmarks/gzip-1kb bikallem/compress/benchmarks/gzip-1mb bikallem/compress/benchmarks/lzw-100kb bikallem/compress/benchmarks/lzw-100mb bikallem/compress/benchmarks/lzw-10kb bikallem/compress/benchmarks/lzw-10mb bikallem/compress/benchmarks/lzw-1kb bikallem/compress/benchmarks/lzw-1mb bikallem/compress/benchmarks/zlib-100kb bikallem/compress/benchmarks/zlib-100mb bikallem/compress/benchmarks/zlib-10kb bikallem/compress/benchmarks/zlib-10mb bikallem/compress/benchmarks/zlib-1kb bikallem/compress/benchmarks/zlib-1mb; do
+for pkg in "${BENCH_PKGS[@]}"; do
   echo "--- $pkg ---"
   moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$MOON_RAW"
 done
@@ -126,7 +163,7 @@ if $RUN_PREV; then
   fi
   git checkout HEAD~1 -q
   moon install -q 2>/dev/null || true
-  for pkg in bikallem/compress/benchmarks/checksum bikallem/compress/benchmarks/streaming bikallem/compress/benchmarks/bzip2-100kb bikallem/compress/benchmarks/bzip2-100mb bikallem/compress/benchmarks/bzip2-10kb bikallem/compress/benchmarks/bzip2-10mb bikallem/compress/benchmarks/bzip2-1kb bikallem/compress/benchmarks/bzip2-1mb bikallem/compress/benchmarks/flate-100kb bikallem/compress/benchmarks/flate-100mb bikallem/compress/benchmarks/flate-10kb bikallem/compress/benchmarks/flate-10mb bikallem/compress/benchmarks/flate-1kb bikallem/compress/benchmarks/flate-1mb bikallem/compress/benchmarks/gzip-100kb bikallem/compress/benchmarks/gzip-100mb bikallem/compress/benchmarks/gzip-10kb bikallem/compress/benchmarks/gzip-10mb bikallem/compress/benchmarks/gzip-1kb bikallem/compress/benchmarks/gzip-1mb bikallem/compress/benchmarks/lzw-100kb bikallem/compress/benchmarks/lzw-100mb bikallem/compress/benchmarks/lzw-10kb bikallem/compress/benchmarks/lzw-10mb bikallem/compress/benchmarks/lzw-1kb bikallem/compress/benchmarks/lzw-1mb bikallem/compress/benchmarks/zlib-100kb bikallem/compress/benchmarks/zlib-100mb bikallem/compress/benchmarks/zlib-10kb bikallem/compress/benchmarks/zlib-10mb bikallem/compress/benchmarks/zlib-1kb bikallem/compress/benchmarks/zlib-1mb; do
+  for pkg in "${BENCH_PKGS[@]}"; do
     echo "--- $pkg ---"
     moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$PREV_RAW"
   done
