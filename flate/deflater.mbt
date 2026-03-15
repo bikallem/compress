@@ -8,21 +8,24 @@ priv enum DeflatePhase {
 
 ///|
 /// 4-byte hash for the hash chain, masked to hash_mask.
+/// SAFETY: caller must ensure pos+3 < window.length().
 fn Deflater::hash4(self : Deflater, pos : Int, hash_mask : Int) -> Int {
-  let v = self.window[pos].to_int() |
-    (self.window[pos + 1].to_int() << 8) |
-    (self.window[pos + 2].to_int() << 16) |
-    (self.window[pos + 3].to_int() << 24)
+  let w = self.window
+  let v = w.unsafe_get(pos).to_int() |
+    (w.unsafe_get(pos + 1).to_int() << 8) |
+    (w.unsafe_get(pos + 2).to_int() << 16) |
+    (w.unsafe_get(pos + 3).to_int() << 24)
   ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
 }
 
 ///|
 /// Insert position into hash chain and return previous head.
+/// SAFETY: caller must ensure pos+3 < window.length().
 fn Deflater::insert_hash(self : Deflater, pos : Int, hash_mask : Int) -> Int {
   let h = self.hash4(pos, hash_mask)
-  let match_head = self.head[h]
-  self.prev[pos & WINDOW_MASK] = match_head
-  self.head[h] = pos
+  let match_head = self.head.unsafe_get(h)
+  self.prev.unsafe_set(pos & WINDOW_MASK, match_head)
+  self.head.unsafe_set(h, pos)
   match_head
 }
 
@@ -189,14 +192,16 @@ fn Deflater::shift_window(self : Deflater) -> Unit {
   self.window_end -= WINDOW_SIZE
   self.index -= WINDOW_SIZE
   let head = self.head
-  for i in 0..<head.length() {
-    let v = head[i] - WINDOW_SIZE
-    head[i] = if v < 0 { -1 } else { v }
+  let head_len = head.length()
+  for i in 0..<head_len {
+    let v = head.unsafe_get(i) - WINDOW_SIZE
+    head.unsafe_set(i, if v < 0 { -1 } else { v })
   }
   let prev = self.prev
-  for i in 0..<prev.length() {
-    let v = prev[i] - WINDOW_SIZE
-    prev[i] = if v < 0 { -1 } else { v }
+  let prev_len = prev.length()
+  for i in 0..<prev_len {
+    let v = prev.unsafe_get(i) - WINDOW_SIZE
+    prev.unsafe_set(i, if v < 0 { -1 } else { v })
   }
 }
 
@@ -240,28 +245,27 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
   }
   self.w.start_fixed_block(false)
   while i < safe_end {
-    if i + 3 < end {
-      let h = self.hash4(i, hash_mask)
-      let match_pos = self.head[h]
-      self.head[h] = i
-      if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
-        let max_len = if end - i < MAX_MATCH_LENGTH {
-          end - i
-        } else {
-          MAX_MATCH_LENGTH
+    // i < safe_end guarantees i+3 < end, safe for hash4/unsafe_get
+    let h = self.hash4(i, hash_mask)
+    let match_pos = self.head.unsafe_get(h)
+    self.head.unsafe_set(h, i)
+    if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
+      let max_len = if end - i < MAX_MATCH_LENGTH {
+        end - i
+      } else {
+        MAX_MATCH_LENGTH
+      }
+      let length = self.match_len(i, match_pos, max_len)
+      if length >= MIN_MATCH_LENGTH {
+        self.w.write_match_fast(length, i - match_pos)
+        if i + 4 < end {
+          self.head.unsafe_set(self.hash4(i + 1, hash_mask), i + 1)
         }
-        let length = self.match_len(i, match_pos, max_len)
-        if length >= MIN_MATCH_LENGTH {
-          self.w.write_match_fast(length, i - match_pos)
-          if i + 4 < end {
-            self.head[self.hash4(i + 1, hash_mask)] = i + 1
-          }
-          i += length
-          continue
-        }
+        i += length
+        continue
       }
     }
-    self.w.write_literal_fast(self.window[i])
+    self.w.write_literal_fast(self.window.unsafe_get(i))
     i += 1
   }
   self.w.write_fixed_symbol(END_BLOCK_MARKER)
@@ -280,28 +284,30 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
     return
   }
   while i < safe_end {
-    if i + 3 < end {
-      let match_head = self.insert_hash(i, hash_mask)
-      if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = self.find_best_match(i, match_head, max_chain)
-        if length >= MIN_MATCH_LENGTH {
-          self.tokens.push(Token::match_(length, offset))
-          for j in 1..<length {
-            let pos = i + j
-            if pos + 3 < end {
-              ignore(self.insert_hash(pos, hash_mask))
-            }
-          }
-          i += length
-          if self.tokens.length() >= MAX_BLOCK_TOKENS {
-            self.w.write_dynamic_block(self.tokens, false)
-            self.tokens.clear()
-          }
-          continue
+    // i < safe_end guarantees i+3 < end
+    let match_head = self.insert_hash(i, hash_mask)
+    if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
+      let (length, offset) = self.find_best_match(i, match_head, max_chain)
+      if length >= MIN_MATCH_LENGTH {
+        self.tokens.push(Token::match_(length, offset))
+        // Rehash intermediate positions — limit to safe range
+        let rehash_end = if i + length + 3 < end {
+          i + length
+        } else {
+          end - 3
         }
+        for pos in (i + 1)..<rehash_end {
+          ignore(self.insert_hash(pos, hash_mask))
+        }
+        i += length
+        if self.tokens.length() >= MAX_BLOCK_TOKENS {
+          self.w.write_dynamic_block(self.tokens, false)
+          self.tokens.clear()
+        }
+        continue
       }
     }
-    self.tokens.push(Token::literal(self.window[i]))
+    self.tokens.push(Token::literal(self.window.unsafe_get(i)))
     i += 1
     if self.tokens.length() >= MAX_BLOCK_TOKENS {
       self.w.write_dynamic_block(self.tokens, false)
@@ -330,16 +336,15 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     return
   }
   while i < safe_end {
+    // i < safe_end guarantees i+3 < end
     let mut cur_len = 0
     let mut cur_dist = 0
-    if i + 3 < end {
-      let match_head = self.insert_hash(i, hash_mask)
-      if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-        let (length, offset) = self.find_best_match(i, match_head, max_chain)
-        if length >= MIN_MATCH_LENGTH {
-          cur_len = length
-          cur_dist = offset
-        }
+    let match_head = self.insert_hash(i, hash_mask)
+    if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
+      let (length, offset) = self.find_best_match(i, match_head, max_chain)
+      if length >= MIN_MATCH_LENGTH {
+        cur_len = length
+        cur_dist = offset
       }
     }
     if self.has_prev {
@@ -347,7 +352,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         self.tokens.push(Token::literal(self.prev_literal))
         self.prev_match_len = cur_len
         self.prev_match_dist = cur_dist
-        self.prev_literal = self.window[i]
+        self.prev_literal = self.window.unsafe_get(i)
         i += 1
       } else {
         self.tokens.push(
@@ -355,10 +360,10 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         )
         let start = i
         let skip_end = start + self.prev_match_len - 1
-        for j in start..<skip_end {
-          if j + 3 < end {
-            ignore(self.insert_hash(j, hash_mask))
-          }
+        // Rehash intermediate positions — limit to safe range
+        let rehash_end = if skip_end + 3 < end { skip_end } else { end - 3 }
+        for j in start..<rehash_end {
+          ignore(self.insert_hash(j, hash_mask))
         }
         i = skip_end
         self.has_prev = false
@@ -367,10 +372,10 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       self.has_prev = true
       self.prev_match_len = cur_len
       self.prev_match_dist = cur_dist
-      self.prev_literal = self.window[i]
+      self.prev_literal = self.window.unsafe_get(i)
       i += 1
     } else {
-      self.tokens.push(Token::literal(self.window[i]))
+      self.tokens.push(Token::literal(self.window.unsafe_get(i)))
       i += 1
     }
     if self.tokens.length() >= MAX_BLOCK_TOKENS {
@@ -435,6 +440,8 @@ fn Deflater::match_len(self : Deflater, a : Int, b : Int, max_len : Int) -> Int 
 }
 
 ///|
+/// SAFETY: cur and match_head are valid window positions (caller guarantees
+/// cur+3 < window_end and match_head comes from the hash table).
 fn Deflater::find_best_match(
   self : Deflater,
   cur : Int,
@@ -453,8 +460,11 @@ fn Deflater::find_best_match(
     MAX_MATCH_LENGTH
   }
   while pos >= 0 && cur - pos <= MAX_MATCH_OFFSET && chain_count < max_chain {
-    if best_len > 0 && window[pos + best_len] != window[cur + best_len] {
-      let next = prev[pos & WINDOW_MASK]
+    // Early exit: check the byte at best_len position first to skip
+    // non-matching chain entries without calling match_len.
+    if best_len > 0 &&
+      window.unsafe_get(pos + best_len) != window.unsafe_get(cur + best_len) {
+      let next = prev.unsafe_get(pos & WINDOW_MASK)
       if next >= pos {
         break
       }
@@ -470,7 +480,7 @@ fn Deflater::find_best_match(
         break
       }
     }
-    let next = prev[pos & WINDOW_MASK]
+    let next = prev.unsafe_get(pos & WINDOW_MASK)
     if next >= pos {
       break
     }
