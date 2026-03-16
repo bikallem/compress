@@ -1,3 +1,3 @@
-module compress-claude/tools
+module compress/tools
 
 go 1.21
