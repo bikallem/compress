@@ -285,85 +285,67 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   let lengths = FixedArray::make(total, 0)
   let mut i = 0
   while i < total {
-    match cl_decoder.decode(bb) {
+    let sym = match cl_decoder.decode(bb) {
       None =>
         return self.fail(
           CompressError::CorruptInput(
             "truncated dynamic header (need more input for code table)",
           ),
         )
-      Some(sym) =>
-        if sym < 16 {
-          lengths[i] = sym
-          i += 1
-        } else if sym == 16 {
-          if i == 0 {
-            return self.fail(
-              CompressError::CorruptInput("repeat with no previous length"),
-            )
-          }
-          match bb.read(2) {
-            None =>
-              return self.fail(
-                CompressError::CorruptInput("truncated dynamic header"),
-              )
-            Some(v) => {
-              let repeat_count = v + 3
-              let prev = lengths[i - 1]
-              for _ in 0..<repeat_count {
-                if i >= total {
-                  return self.fail(
-                    CompressError::CorruptInput("too many code lengths"),
-                  )
-                }
-                lengths[i] = prev
-                i += 1
-              }
-            }
-          }
-        } else if sym == 17 {
-          match bb.read(3) {
-            None =>
-              return self.fail(
-                CompressError::CorruptInput("truncated dynamic header"),
-              )
-            Some(v) => {
-              let repeat_count = v + 3
-              for _ in 0..<repeat_count {
-                if i >= total {
-                  return self.fail(
-                    CompressError::CorruptInput("too many code lengths"),
-                  )
-                }
-                lengths[i] = 0
-                i += 1
-              }
-            }
-          }
-        } else if sym == 18 {
-          match bb.read(7) {
-            None =>
-              return self.fail(
-                CompressError::CorruptInput("truncated dynamic header"),
-              )
-            Some(v) => {
-              let repeat_count = v + 11
-              for _ in 0..<repeat_count {
-                if i >= total {
-                  return self.fail(
-                    CompressError::CorruptInput("too many code lengths"),
-                  )
-                }
-                lengths[i] = 0
-                i += 1
-              }
-            }
-          }
-        } else {
+      Some(s) => s
+    }
+    match sym {
+      _ if sym < 16 => {
+        lengths[i] = sym
+        i += 1
+      }
+      16 => {
+        guard i > 0 else {
           return self.fail(
-            CompressError::CorruptInput("invalid code length symbol \{sym}"),
+            CompressError::CorruptInput("repeat with no previous length"),
           )
         }
+        let count = match bb.read(2) {
+          None =>
+            return self.fail(
+              CompressError::CorruptInput("truncated dynamic header"),
+            )
+          Some(v) => v + 3
+        }
+        let prev = lengths[i - 1]
+        for _ in 0..<count {
+          guard i < total else {
+            return self.fail(
+              CompressError::CorruptInput("too many code lengths"),
+            )
+          }
+          lengths[i] = prev
+          i += 1
+        }
+      }
+      17 | 18 => {
+        let (bits, base) = if sym == 17 { (3, 3) } else { (7, 11) }
+        let count = match bb.read(bits) {
+          None =>
+            return self.fail(
+              CompressError::CorruptInput("truncated dynamic header"),
+            )
+          Some(v) => v + base
+        }
+        for _ in 0..<count {
+          guard i < total else {
+            return self.fail(
+              CompressError::CorruptInput("too many code lengths"),
+            )
+          }
+          lengths[i] = 0
+          i += 1
+        }
+      }
+      _ =>
+        return self.fail(
+          CompressError::CorruptInput("invalid code length symbol \{sym}"),
+        )
     }
   }
   let lit_lengths = FixedArray::make(hlit, 0)

@@ -76,7 +76,7 @@ fn compress_file_streaming(
     }
     match def.encode(Some(buf[:n])) {
       Data(out) => fwrite_bytes(oh, out, out.length())
-      _ => ()
+      Ok | End | Error(_) => ()
     }
   }
   // Finalize
@@ -85,7 +85,7 @@ fn compress_file_streaming(
       fwrite_bytes(oh, out, out.length())
       continue def.encode(None)
     }
-    _ => break
+    End | Ok | Error(_) => break
   }
   fclose(ih)
   fclose(oh)

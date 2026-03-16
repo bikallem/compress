@@ -35,14 +35,14 @@ fn deflate_with_dict(data : Bytes, dict : Bytes) -> Bytes {
   let buf = @buffer.new()
   match d.encode(Some(data[:])) {
     Data(out) => buf.write_bytes(out)
-    _ => ()
+    Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
       buf.write_bytes(out)
       continue d.encode(None)
     }
-    _ => break
+    End | Ok | Error(_) => break
   }
   buf.to_bytes()
 }

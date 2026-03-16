@@ -15,8 +15,7 @@ fn run() -> Unit raise {
   let d = @bz2.Deflater::new()
   let original = b"Hello, bzip2 streaming!"
   match d.encode(Some(original[:])) {
-    Ok => ()
-    _ => ()
+    Ok | Data(_) | End | Error(_) => ()
   }
   let cbuf = @buffer.new()
   loop d.encode(None) {
@@ -24,8 +23,7 @@ fn run() -> Unit raise {
       cbuf.write_bytes(out)
       continue d.encode(None)
     }
-    End => break
-    _ => break
+    End | Ok | Error(_) => break
   }
   let rt_compressed = cbuf.to_bytes()
   let inf = @bz2.Inflater::new()

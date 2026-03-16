@@ -221,7 +221,7 @@ fn process_code(s : InflaterState, code : Int) -> CodeResult {
   s.hi += 1
   if s.hi >= s.overflow {
     if s.hi > s.overflow {
-      abort("unreachable")
+      return Invalid(s.hi)
     }
     if s.width == MAX_WIDTH {
       s.last = DECODER_INVALID_CODE

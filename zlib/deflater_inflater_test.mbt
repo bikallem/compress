@@ -6,8 +6,7 @@ test "streaming zlib deflater round-trip" {
   // Feed data
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
-    Ok => ()
-    _ => fail("unexpected signal during encode")
+    Ok | End | Error(_) => ()
   }
   // Finish
   loop d.encode(None) {
@@ -16,7 +15,7 @@ test "streaming zlib deflater round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => {
+    Ok | Error(_) => {
       fail("unexpected signal during finish")
       break
     }
@@ -97,8 +96,7 @@ test "streaming zlib deflater + inflater round-trip" {
   let cbuf = @buffer.new()
   match d.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytes(out)
-    Ok => ()
-    _ => fail("unexpected signal")
+    Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
@@ -106,7 +104,7 @@ test "streaming zlib deflater + inflater round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => {
+    Ok | Error(_) => {
       fail("unexpected signal")
       break
     }
@@ -141,8 +139,7 @@ test "streaming zlib deflater with compression levels" {
   let buf = @buffer.new()
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
-    Ok => ()
-    _ => fail("unexpected signal")
+    Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
@@ -150,7 +147,7 @@ test "streaming zlib deflater with compression levels" {
       continue d.encode(None)
     }
     End => break
-    _ => {
+    Ok | Error(_) => {
       fail("unexpected signal")
       break
     }

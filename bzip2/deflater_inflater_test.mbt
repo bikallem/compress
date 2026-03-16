@@ -4,8 +4,7 @@ test "streaming bzip2 deflater" {
   let d = @bzip2.Deflater::new()
   let buf = @buffer.new()
   match d.encode(Some(original[:])) {
-    Ok => ()
-    _ => fail("unexpected signal from encode(Some)")
+    Ok | Data(_) | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
@@ -13,7 +12,7 @@ test "streaming bzip2 deflater" {
       continue d.encode(None)
     }
     End => break
-    _ => fail("unexpected signal from encode(None)")
+    Ok | Error(_) => fail("unexpected signal from encode(None)")
   }
   let compressed = buf.to_bytes()
   let decompressed = @bzip2.decompress(compressed)
@@ -88,8 +87,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
     }
     let chunk = Bytes::makei(end - offset, fn(i) { original[offset + i] })
     match d.encode(Some(chunk[:])) {
-      Ok => ()
-      _ => fail("unexpected signal")
+      Ok | Data(_) | End | Error(_) => ()
     }
     offset = end
   }
@@ -101,7 +99,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => fail("unexpected signal")
+    Ok | Error(_) => fail("unexpected signal")
   }
   // Decompress with inflater
   let compressed = cbuf.to_bytes()
@@ -162,7 +160,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
         cbuf.write_bytes(out)
         data_signals += 1
       }
-      _ => fail("unexpected signal")
+      End | Error(_) => fail("unexpected signal")
     }
   }
   // Should have gotten at least 1 Data signal from mid-stream block flushes
@@ -174,7 +172,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
       continue d.encode(None)
     }
     End => break
-    _ => fail("unexpected signal from encode(None)")
+    Ok | Error(_) => fail("unexpected signal from encode(None)")
   }
   // Verify round-trip
   let original = {

@@ -38,16 +38,14 @@ fn run() -> Unit raise {
   let cbuf = @buffer.new()
   match deflater.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytes(out)
-    Ok => ()
-    _ => ()
+    Ok | End | Error(_) => ()
   }
   loop deflater.encode(None) {
     Data(out) => {
       cbuf.write_bytes(out)
       continue deflater.encode(None)
     }
-    End => break
-    _ => break
+    End | Ok | Error(_) => break
   }
   let stream_compressed = cbuf.to_bytes()
 

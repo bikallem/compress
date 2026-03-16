@@ -214,19 +214,12 @@ fn Deflater::shift_window(self : Deflater) -> Unit {
 
 ///|
 fn Deflater::step(self : Deflater) -> Unit {
-  if self.level == 0 {
-    self.step_stored()
-    return
+  match self.level {
+    0 => self.step_stored()
+    1 => self.step_fast()
+    2 | 3 => self.step_greedy()
+    _ => self.step_lazy()
   }
-  if self.level <= 1 {
-    self.step_fast()
-    return
-  }
-  if self.level <= 3 {
-    self.step_greedy()
-    return
-  }
-  self.step_lazy()
 }
 
 ///|
@@ -439,17 +432,22 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
     self.index += self.prev_match_len - 1
     self.has_prev = false
   }
-  while self.index < self.window_end {
-    if self.level <= 1 {
-      self.w.start_fixed_block(false)
-      while self.index < self.window_end {
-        self.w.write_literal_fast(self.window[self.index])
-        self.index += 1
+  if self.index < self.window_end {
+    match self.level {
+      0 | 1 => {
+        self.w.start_fixed_block(false)
+        while self.index < self.window_end {
+          self.w.write_literal_fast(self.window[self.index])
+          self.index += 1
+        }
+        self.w.write_fixed_symbol(END_BLOCK_MARKER)
       }
-      self.w.write_fixed_symbol(END_BLOCK_MARKER)
-    } else {
-      self.tokens.push(Token::literal(self.window[self.index]))
-      self.index += 1
+      _ => {
+        while self.index < self.window_end {
+          self.tokens.push(Token::literal(self.window[self.index]))
+          self.index += 1
+        }
+      }
     }
   }
   self.flush_tokens()

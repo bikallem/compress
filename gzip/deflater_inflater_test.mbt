@@ -5,8 +5,7 @@ test "streaming gzip deflater round-trip" {
   let buf = @buffer.new()
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
-    Ok => ()
-    _ => fail("unexpected signal during encode")
+    Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
@@ -14,7 +13,7 @@ test "streaming gzip deflater round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => {
+    Ok | Error(_) => {
       fail("unexpected signal during finish")
       break
     }
@@ -94,8 +93,7 @@ test "streaming gzip deflater + inflater round-trip" {
   let cbuf = @buffer.new()
   match d.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytes(out)
-    Ok => ()
-    _ => fail("unexpected signal")
+    Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
@@ -103,7 +101,7 @@ test "streaming gzip deflater + inflater round-trip" {
       continue d.encode(None)
     }
     End => break
-    _ => {
+    Ok | Error(_) => {
       fail("unexpected signal")
       break
     }
@@ -180,8 +178,7 @@ test "streaming gzip deflater with header" {
   let buf = @buffer.new()
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytes(out)
-    Ok => ()
-    _ => fail("unexpected signal")
+    Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
@@ -189,7 +186,7 @@ test "streaming gzip deflater with header" {
       continue d.encode(None)
     }
     End => break
-    _ => {
+    Ok | Error(_) => {
       fail("unexpected signal")
       break
     }

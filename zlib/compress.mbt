@@ -14,11 +14,11 @@ pub fn compress(
       let buf = @buffer.new()
       match def.encode(Some(data[:])) {
         Data(chunk) => buf.write_bytes(chunk)
-        _ => ()
+        Ok | End | Error(_) => ()
       }
       match def.encode(None) {
         Data(chunk) => buf.write_bytes(chunk)
-        _ => ()
+        Ok | End | Error(_) => ()
       }
       buf.to_bytes()
     } else {

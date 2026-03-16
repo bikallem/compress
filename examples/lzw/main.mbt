@@ -34,17 +34,15 @@ fn run() -> Unit raise {
   let d = @lzwlib.Deflater::new(LSB, 8)
   let cbuf = @buffer.new()
   match d.encode(Some(original[:])) {
-    Ok => ()
+    Ok | End | Error(_) => ()
     Data(out) => cbuf.write_bytes(out)
-    _ => ()
   }
   loop d.encode(None) {
     Data(out) => {
       cbuf.write_bytes(out)
       continue d.encode(None)
     }
-    End => break
-    _ => break
+    End | Ok | Error(_) => break
   }
   let stream_compressed = cbuf.to_bytes()
   let inf = @lzwlib.Inflater::new(LSB, 8)
