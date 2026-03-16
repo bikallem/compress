@@ -32,10 +32,11 @@ fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
   }
   // Compute cumulative counts (starting positions in F column)
   let cum = FixedArray::make(256, 0)
-  let mut total = 0
-  for i in 0..<256 {
+  let _ = for i = 0, total = 0; i < 256; i = i + 1 {
     cum.unsafe_set(i, total)
-    total += counts.unsafe_get(i)
+    continue i + 1, total + counts.unsafe_get(i)
+  } nobreak {
+    total
   }
   // Build merged TT in-place: tt[i] = (lf_pos << 8) | byte_value
   // This avoids allocating separate lf and tt_merged arrays.
@@ -127,8 +128,8 @@ let bzip2_crc_table : FixedArray[UInt] = {
 ///|
 fn bzip2_crc32(data : Bytes) -> UInt {
   let mut crc = 0xFFFFFFFF_U
-  for i in 0..<data.length() {
-    let idx = ((crc >> 24) ^ data[i].to_uint()) & 0xFFU
+  for b in data {
+    let idx = ((crc >> 24) ^ b.to_uint()) & 0xFFU
     crc = (crc << 8) ^ bzip2_crc_table[idx.reinterpret_as_int()]
   }
   crc ^ 0xFFFFFFFF_U

@@ -18,8 +18,7 @@ fn HuffmanDecoder::build(
   let count = FixedArray::make(MAX_CODE_LEN + 1, 0)
   let mut min_bits = MAX_CODE_LEN
   let mut max_bits = 0
-  for i in 0..<lengths.length() {
-    let n = lengths[i]
+  for _, n in lengths {
     if n > 0 {
       count[n] += 1
       if n < min_bits {
@@ -42,8 +41,7 @@ fn HuffmanDecoder::build(
   let chunk_size = 1 << HUFFMAN_CHUNK_BITS
   let chunks = FixedArray::make(chunk_size, 0U)
   let links : Array[FixedArray[UInt]] = []
-  for sym in 0..<lengths.length() {
-    let n = lengths[sym]
+  for sym, n in lengths {
     if n == 0 {
       continue
     }

@@ -100,12 +100,15 @@ fn sais(text : FixedArray[Int], n : Int, k : Int) -> FixedArray[Int] {
   }
 
   // Step 6: Compact sorted LMS suffixes into sa[0..n1-1].
-  let mut n1 = 0
-  for i in 0..<n {
+  let n1 = for i = 0, n1 = 0; i < n; i = i + 1 {
     if is_lms(sa.unsafe_get(i)) {
       sa.unsafe_set(n1, sa.unsafe_get(i))
-      n1 += 1
+      continue i + 1, n1 + 1
+    } else {
+      continue i + 1, n1
     }
+  } nobreak {
+    n1
   }
 
   // Step 7: Name LMS substrings.
@@ -151,22 +154,28 @@ fn sais(text : FixedArray[Int], n : Int, k : Int) -> FixedArray[Int] {
   let s1 = FixedArray::make(n1, 0)
   let lms_map = FixedArray::make(n1, 0)
   {
-    let mut j = 0
-    for i in n1..<n {
+    let _ = for i = n1, j = 0; i < n; i = i + 1 {
       if sa.unsafe_get(i) >= 0 {
         s1.unsafe_set(j, sa.unsafe_get(i))
-        j += 1
+        continue i + 1, j + 1
+      } else {
+        continue i + 1, j
       }
+    } nobreak {
+      j
     }
   }
   // Build lms_map by scanning for LMS positions in text order.
   {
-    let mut j = 0
-    for i in 0..<n {
+    let _ = for i = 0, j = 0; i < n; i = i + 1 {
       if is_lms(i) {
         lms_map.unsafe_set(j, i)
-        j += 1
+        continue i + 1, j + 1
+      } else {
+        continue i + 1, j
       }
+    } nobreak {
+      j
     }
   }
 
@@ -254,13 +263,16 @@ fn build_suffix_array(data : Bytes) -> FixedArray[Int] {
   let sa_full = sais(text, len, 257)
   // Filter: keep only positions < n (first copy)
   let sa = FixedArray::make(n, 0)
-  let mut j = 0
-  for i in 0..<len {
+  let _ = for i = 0, j = 0; i < len; i = i + 1 {
     let s = sa_full.unsafe_get(i)
     if s < n {
       sa.unsafe_set(j, s)
-      j += 1
+      continue i + 1, j + 1
+    } else {
+      continue i + 1, j
     }
+  } nobreak {
+    j
   }
   sa
 }

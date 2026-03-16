@@ -13,9 +13,9 @@ fn HuffmanCode::from_freqs(
   let n = freqs.length()
   let bit_lengths = compute_bit_lengths(freqs, max_bits)
   let bl_count = FixedArray::make(max_bits + 1, 0)
-  for i in 0..<n {
-    if bit_lengths[i] > 0 {
-      bl_count[bit_lengths[i]] += 1
+  for _, bl in bit_lengths {
+    if bl > 0 {
+      bl_count[bl] += 1
     }
   }
   let next_code = FixedArray::make(max_bits + 1, 0)
@@ -25,8 +25,7 @@ fn HuffmanCode::from_freqs(
     next_code[bits] = code
   }
   let codes = FixedArray::make(n, 0U)
-  for sym in 0..<n {
-    let len = bit_lengths[sym]
+  for sym, len in bit_lengths {
     if len > 0 {
       let c = next_code[len]
       next_code[len] += 1
@@ -44,10 +43,9 @@ fn HuffmanCode::get(self : HuffmanCode, sym : Int) -> UInt {
 
 ///|
 fn HuffmanCode::bit_lengths(self : HuffmanCode) -> FixedArray[Int] {
-  let n = self.codes.length()
-  let result = FixedArray::make(n, 0)
-  for i in 0..<n {
-    result[i] = (self.codes[i] & 0x1FU).reinterpret_as_int()
+  let result = FixedArray::make(self.codes.length(), 0)
+  for i, code in self.codes {
+    result[i] = (code & 0x1FU).reinterpret_as_int()
   }
   result
 }
@@ -59,11 +57,10 @@ fn compute_bit_lengths(
 ) -> FixedArray[Int] {
   let n = freqs.length()
   let bit_lengths = FixedArray::make(n, 0)
-  let mut active = 0
-  for i in 0..<n {
-    if freqs[i] > 0 {
-      active += 1
-    }
+  let active = for i = 0, active = 0; i < n; i = i + 1 {
+    continue i + 1, active + (if freqs[i] > 0 { 1 } else { 0 })
+  } nobreak {
+    active
   }
   if active == 0 {
     return bit_lengths
@@ -78,12 +75,15 @@ fn compute_bit_lengths(
     return bit_lengths
   }
   let sorted = FixedArray::make(active, (0, 0))
-  let mut idx = 0
-  for i in 0..<n {
+  let _ = for i = 0, idx = 0; i < n; i = i + 1 {
     if freqs[i] > 0 {
       sorted[idx] = (freqs[i], i)
-      idx += 1
+      continue i + 1, idx + 1
+    } else {
+      continue i + 1, idx
     }
+  } nobreak {
+    idx
   }
   for i in 1..<active {
     let key = sorted[i]
@@ -157,11 +157,10 @@ fn compute_bit_lengths(
         bit_lengths[i] = max_bits
       }
     }
-    let mut kraft = 0
-    for i in 0..<n {
-      if bit_lengths[i] > 0 {
-        kraft += 1 << (max_bits - bit_lengths[i])
-      }
+    let mut kraft = for i = 0, kraft = 0; i < n; i = i + 1 {
+      continue i + 1, kraft + (if bit_lengths[i] > 0 { 1 << (max_bits - bit_lengths[i]) } else { 0 })
+    } nobreak {
+      kraft
     }
     let target = 1 << max_bits
     while kraft > target {
@@ -221,28 +220,28 @@ fn fixed_block_bit_size(
   dist_freqs : FixedArray[Int],
 ) -> Int {
   let mut total = 3
-  for i in 0..<lit_freqs.length() {
-    if lit_freqs[i] > 0 {
+  for i, freq in lit_freqs {
+    if freq > 0 {
       let code_len = match i {
         0..=143 => 8
         144..=255 => 9
         256..=279 => 7
         _ => 8
       }
-      total += lit_freqs[i] * code_len
+      total += freq * code_len
       if i > 256 && i < 286 {
         let length_code_idx = i - 257
         if length_code_idx < length_extra.length() {
-          total += lit_freqs[i] * length_extra[length_code_idx]
+          total += freq * length_extra[length_code_idx]
         }
       }
     }
   }
-  for i in 0..<dist_freqs.length() {
-    if dist_freqs[i] > 0 {
-      total += dist_freqs[i] * 5
+  for i, freq in dist_freqs {
+    if freq > 0 {
+      total += freq * 5
       if i < dist_extra.length() {
-        total += dist_freqs[i] * dist_extra[i]
+        total += freq * dist_extra[i]
       }
     }
   }
@@ -290,25 +289,25 @@ fn dynamic_block_bit_size(
     }
   }
   let lc = lit_codes.codes
-  for i in 0..<lit_freqs.length() {
-    if lit_freqs[i] > 0 {
+  for i, freq in lit_freqs {
+    if freq > 0 {
       let len = (lc[i] & 0x1FU).reinterpret_as_int()
-      bits += lit_freqs[i] * len
+      bits += freq * len
       if i > 256 && i < 286 {
         let length_code_idx = i - 257
         if length_code_idx < length_extra.length() {
-          bits += lit_freqs[i] * length_extra[length_code_idx]
+          bits += freq * length_extra[length_code_idx]
         }
       }
     }
   }
   let dc = dist_codes.codes
-  for i in 0..<dist_freqs.length() {
-    if dist_freqs[i] > 0 {
+  for i, freq in dist_freqs {
+    if freq > 0 {
       let len = (dc[i] & 0x1FU).reinterpret_as_int()
-      bits += dist_freqs[i] * len
+      bits += freq * len
       if i < dist_extra.length() {
-        bits += dist_freqs[i] * dist_extra[i]
+        bits += freq * dist_extra[i]
       }
     }
   }

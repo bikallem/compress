@@ -199,15 +199,13 @@ fn Deflater::shift_window(self : Deflater) -> Unit {
   self.window_end -= WINDOW_SIZE
   self.index -= WINDOW_SIZE
   let head = self.head
-  let head_len = head.length()
-  for i in 0..<head_len {
-    let v = head.unsafe_get(i) - WINDOW_SIZE
+  for i, h in head {
+    let v = h - WINDOW_SIZE
     head.unsafe_set(i, if v < 0 { -1 } else { v })
   }
   let prev = self.prev
-  let prev_len = prev.length()
-  for i in 0..<prev_len {
-    let v = prev.unsafe_get(i) - WINDOW_SIZE
+  for i, p in prev {
+    let v = p - WINDOW_SIZE
     prev.unsafe_set(i, if v < 0 { -1 } else { v })
   }
 }

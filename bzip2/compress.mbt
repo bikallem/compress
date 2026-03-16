@@ -116,25 +116,26 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
 /// MTF encode + RLE2 (RUNA/RUNB zero-run encoding).
 /// Returns (encoded symbols, num_in_use, in_use bitmap).
 fn mtf_rle2_encode(data : Bytes) -> (Array[Int], Int, FixedArray[Bool]) {
-  let n = data.length()
   // Build in_use bitmap
   let in_use = FixedArray::make(256, false)
-  for i in 0..<n {
-    in_use[data[i].to_int()] = true
+  for _, b in data {
+    in_use[b.to_int()] = true
   }
-  let mut num_in_use = 0
   let mtf_list = FixedArray::make(256, b'\x00')
-  for i in 0..<256 {
+  let num_in_use = for i = 0, num_in_use = 0; i < 256; i = i + 1 {
     if in_use[i] {
       mtf_list[num_in_use] = i.to_byte()
-      num_in_use += 1
+      continue i + 1, num_in_use + 1
+    } else {
+      continue i + 1, num_in_use
     }
+  } nobreak {
+    num_in_use
   }
   // MTF encode
   let symbols : Array[Int] = []
   let mut zero_run = 0
-  for i in 0..<n {
-    let b = data[i]
+  for b in data {
     // Find position in MTF list
     let mut pos = 0
     while pos < num_in_use && mtf_list[pos] != b {
@@ -373,11 +374,10 @@ fn build_canonical_codes(
   lengths : FixedArray[Int],
   n : Int,
 ) -> FixedArray[UInt] {
-  let mut max_len = 0
-  for i in 0..<n {
-    if lengths[i] > max_len {
-      max_len = lengths[i]
-    }
+  let max_len = for i = 0, max_len = 0; i < n; i = i + 1 {
+    continue i + 1, if lengths[i] > max_len { lengths[i] } else { max_len }
+  } nobreak {
+    max_len
   }
   // Count codes per length
   let count = FixedArray::make(max_len + 1, 0)

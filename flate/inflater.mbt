@@ -224,8 +224,8 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
       }
       return Await
     }
-    for i in 0..<chunk.length() {
-      hist[dd.wr_pos + i] = chunk[i]
+    for i, b in chunk {
+      hist[dd.wr_pos + i] = b
     }
     dd.wr_pos += chunk.length()
     rem -= chunk.length()
