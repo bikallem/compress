@@ -349,13 +349,13 @@ fn step_read_tree_lengths(s : Decoder) -> Decode {
     s.group_pos = 0
     s.group_no = -1
     s.current_tree_idx = 0
-    // Initialize MTF list
-    let mut k = 0
-    for i in 0..<256 {
+    // Initialize MTF list    
+    for i = 0, k = 0; i < 256; {
       if s.in_use[i] {
         s.mtf_list[k] = i.to_byte()
-        k += 1
+        continue i + 1, k + 1
       }
+      continue i + 1, k
     }
     s.phase = DecodeSymbols
     return step(s)

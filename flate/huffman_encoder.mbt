@@ -75,12 +75,12 @@ fn compute_bit_lengths(
     return bit_lengths
   }
   let sorted = FixedArray::make(active, (0, 0))
-  let mut idx = 0
-  for i in 0..<n {
+  for i = 0, idx = 0; i < n; {
     if freqs[i] > 0 {
       sorted[idx] = (freqs[i], i)
-      idx += 1
+      continue i + 1, idx + 1
     }
+    continue i + 1, idx
   }
   for i in 1..<active {
     let key = sorted[i]
