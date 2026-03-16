@@ -5,7 +5,7 @@
     "moonbitlang/async": "0.16.7"
   },
   "readme": "README.md",
-  "repository": "",
+  "repository": "https://github.com/bikallem/compress.git",
   "license": "Apache-2.0",
   "keywords": [
     "compression",
@@ -16,5 +16,11 @@
     "bzip2"
   ],
   "description": "Compression library for MoonBit: flate, gzip, zlib, lzw, bzip2",
-  "source": "."
+  "source": ".",
+  "exclude": [
+    "benchmarks",
+    "tools",
+    "testdata",
+    "examples"
+  ]
 }
