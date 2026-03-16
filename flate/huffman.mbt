@@ -33,10 +33,10 @@ fn HuffmanDecoder::build(
     raise CompressError::CorruptInput("empty Huffman tree")
   }
   let next_code = FixedArray::make(MAX_CODE_LEN + 1, 0)
-  let mut code = 0
-  for bits in 1..<=max_bits {
-    code = (code + count[bits - 1]) << 1
-    next_code[bits] = code
+  for bits = 1, code = 0; bits <= max_bits; {
+    let c = (code + count[bits - 1]) << 1
+    next_code[bits] = c
+    continue bits + 1, c
   }
   let chunk_size = 1 << HUFFMAN_CHUNK_BITS
   let chunks = FixedArray::make(chunk_size, 0U)

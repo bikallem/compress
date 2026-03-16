@@ -316,8 +316,8 @@ fn bzip2_compute_lengths(
   let total_nodes = 2 * n - 1
   let parent = FixedArray::make(total_nodes, -1)
   let node_freq = FixedArray::make(total_nodes, 0)
-  for i in 0..<n {
-    node_freq[i] = leaf_freq[i]
+  for i, f in leaf_freq {
+    node_freq[i] = f
   }
   let mut leaf_ptr = 0
   let mut int_ptr = n
@@ -355,8 +355,8 @@ fn bzip2_compute_lengths(
       depths[i] = depths[parent[i]] + 1
     }
   }
-  for i in 0..<n {
-    lengths[sorted[i].1] = depths[i]
+  for i, entry in sorted {
+    lengths[entry.1] = depths[i]
   }
   // Clamp to max_len
   for i in 0..<n {
@@ -387,10 +387,10 @@ fn build_canonical_codes(
   }
   // Assign codes
   let next_code = FixedArray::make(max_len + 1, 0)
-  let mut code = 0
-  for bits in 1..<=max_len {
-    code = (code + count[bits - 1]) << 1
-    next_code[bits] = code
+  for bits = 1, code = 0; bits <= max_len; {
+    let c = (code + count[bits - 1]) << 1
+    next_code[bits] = c
+    continue bits + 1, c
   }
   let codes = FixedArray::make(n, 0U)
   for i in 0..<n {

@@ -47,18 +47,17 @@ fn sais(text : FixedArray[Int], n : Int, k : Int) -> FixedArray[Int] {
   let bkt_buf = FixedArray::make(k, 0)
 
   fn fill_bucket_starts() -> Unit {
-    let mut sum = 0
-    for i in 0..<k {
+    for i = 0, sum = 0; i < k; {
       bkt_buf.unsafe_set(i, sum)
-      sum += bkt.unsafe_get(i)
+      continue i + 1, sum + bkt.unsafe_get(i)
     }
   }
 
   fn fill_bucket_ends() -> Unit {
-    let mut sum = 0
-    for i in 0..<k {
-      sum += bkt.unsafe_get(i)
-      bkt_buf.unsafe_set(i, sum)
+    for i = 0, sum = 0; i < k; {
+      let s = sum + bkt.unsafe_get(i)
+      bkt_buf.unsafe_set(i, s)
+      continue i + 1, s
     }
   }
 

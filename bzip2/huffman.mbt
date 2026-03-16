@@ -45,19 +45,17 @@ fn Bzip2HuffmanDecoder::build(
   // Build bases (cumulative count) and limits
   let bases = FixedArray::make(BZIP2_MAX_CODE_LEN + 2, 0)
   let limits = FixedArray::make(BZIP2_MAX_CODE_LEN + 2, 0)
-  let mut code = 0
-  for i in min_len..<=max_len {
+  for i = min_len, code = 0; i <= max_len; {
     bases[i] = code - count[i] // Will be corrected below
-    code += count[i]
-    limits[i] = code - 1
-    code = code << 1
+    let next_code = code + count[i]
+    limits[i] = next_code - 1
+    continue i + 1, next_code << 1
   }
   // Now bases[i] needs adjustment: it should be the cumulative offset
   // Let's recompute: bases[i] = sum of count[j] for j < i
-  let mut cum = 0
-  for i in min_len..<=max_len {
+  for i = min_len, cum = 0; i <= max_len; {
     bases[i] = cum
-    cum += count[i]
+    continue i + 1, cum + count[i]
   }
   // Build permutation: symbols sorted by (code_length, symbol_value)
   let perms = FixedArray::make(num_symbols, 0)
@@ -74,20 +72,18 @@ fn Bzip2HuffmanDecoder::build(
   // For canonical Huffman: first code at length i = (first_code_at_{i-1} + count[i-1]) << 1
   let min_codes = FixedArray::make(BZIP2_MAX_CODE_LEN + 2, 0)
   let actual_limits = FixedArray::make(BZIP2_MAX_CODE_LEN + 2, -1)
-  let mut c = 0
-  for i in min_len..<=max_len {
+  for i = min_len, c = 0; i <= max_len; {
     min_codes[i] = c
     actual_limits[i] = c + count[i] - 1
-    c = (c + count[i]) << 1
+    continue i + 1, (c + count[i]) << 1
   }
   // Adjust bases: bases[i] = cumulative_count - min_code_at_length_i
   // So that decode index = bases[i] + (code - min_codes[i]) = cumulative_offset + position_within_length
   // Actually bases[i] should allow: perms[bases[i] + (code - min_codes[i])] = symbol
   let adj_bases = FixedArray::make(BZIP2_MAX_CODE_LEN + 2, 0)
-  let mut cum2 = 0
-  for i in min_len..<=max_len {
+  for i = min_len, cum2 = 0; i <= max_len; {
     adj_bases[i] = cum2 - min_codes[i]
-    cum2 += count[i]
+    continue i + 1, cum2 + count[i]
   }
   { min_len, max_len, limits: actual_limits, bases: adj_bases, perms }
 }

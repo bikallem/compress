@@ -19,10 +19,10 @@ fn HuffmanCode::from_freqs(
     }
   }
   let next_code = FixedArray::make(max_bits + 1, 0)
-  let mut code = 0
-  for bits in 1..<=max_bits {
-    code = (code + bl_count[bits - 1]) << 1
-    next_code[bits] = code
+  for bits = 1, code = 0; bits <= max_bits; {
+    let c = (code + bl_count[bits - 1]) << 1
+    next_code[bits] = c
+    continue bits + 1, c
   }
   let codes = FixedArray::make(n, 0U)
   for sym, len in bit_lengths {
@@ -93,15 +93,15 @@ fn compute_bit_lengths(
   }
   let leaf_freq = FixedArray::make(active, 0)
   let leaf_sym = FixedArray::make(active, 0)
-  for i in 0..<active {
-    leaf_freq[i] = sorted[i].0
-    leaf_sym[i] = sorted[i].1
+  for i, entry in sorted {
+    leaf_freq[i] = entry.0
+    leaf_sym[i] = entry.1
   }
   let total_nodes = 2 * active - 1
   let parent = FixedArray::make(total_nodes, -1)
   let node_freq = FixedArray::make(total_nodes, 0)
-  for i in 0..<active {
-    node_freq[i] = leaf_freq[i]
+  for i, f in leaf_freq {
+    node_freq[i] = f
   }
   let mut leaf_ptr = 0
   let mut int_ptr = active
@@ -138,8 +138,8 @@ fn compute_bit_lengths(
       depths[i] = depths[parent[i]] + 1
     }
   }
-  for i in 0..<active {
-    bit_lengths[leaf_sym[i]] = depths[i]
+  for i, sym in leaf_sym {
+    bit_lengths[sym] = depths[i]
   }
   let mut needs_limiting = false
   for i in 0..<n {
