@@ -280,11 +280,11 @@ fn dynamic_block_bit_size(
     if cl_freqs[i] > 0 {
       let len = (clc[i] & 0x1FU).reinterpret_as_int()
       bits += cl_freqs[i] * len
-      if i == 16 {
+      if i == CL_REPEAT_PREV {
         bits += cl_freqs[i] * 2
-      } else if i == 17 {
+      } else if i == CL_REPEAT_ZERO_SHORT {
         bits += cl_freqs[i] * 3
-      } else if i == 18 {
+      } else if i == CL_REPEAT_ZERO_LONG {
         bits += cl_freqs[i] * 7
       }
     }
@@ -343,10 +343,10 @@ fn rle_count_freqs(
       while run > 0 {
         if run >= 11 {
           let count = if run > 138 { 138 } else { run }
-          cl_freqs[18] += 1
+          cl_freqs[CL_REPEAT_ZERO_LONG] += 1
           run -= count
         } else if run >= 3 {
-          cl_freqs[17] += 1
+          cl_freqs[CL_REPEAT_ZERO_SHORT] += 1
           run = 0
         } else {
           cl_freqs[0] += 1
@@ -364,7 +364,7 @@ fn rle_count_freqs(
       while run > 0 {
         if run >= 3 {
           let count = if run > 6 { 6 } else { run }
-          cl_freqs[16] += 1
+          cl_freqs[CL_REPEAT_PREV] += 1
           run -= count
         } else {
           cl_freqs[cur] += 1

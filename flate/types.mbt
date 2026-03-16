@@ -74,6 +74,19 @@ const END_BLOCK_MARKER : Int = 256
 const NUM_CODES : Int = 19
 
 ///|
+// Code length alphabet symbols (RFC 1951 section 3.2.7)
+const CL_MAX_LIT : Int = 15 // max literal code length value (0-15)
+
+///|
+const CL_REPEAT_PREV : Int = 16 // repeat previous length 3-6 times (2 extra bits)
+
+///|
+const CL_REPEAT_ZERO_SHORT : Int = 17 // repeat zero 3-10 times (3 extra bits)
+
+///|
+const CL_REPEAT_ZERO_LONG : Int = 18 // repeat zero 11-138 times (7 extra bits)
+
+///|
 // Length code base values (RFC 1951 section 3.2.5)
 let length_base : FixedArray[Int] = [
   3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83,

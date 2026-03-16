@@ -295,11 +295,11 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
       Some(s) => s
     }
     match sym {
-      _ if sym < 16 => {
+      _ if sym <= CL_MAX_LIT => {
         lengths[i] = sym
         i += 1
       }
-      16 => {
+      CL_REPEAT_PREV => {
         guard i > 0 else {
           return self.fail(
             CompressError::CorruptInput("repeat with no previous length"),
@@ -323,8 +323,12 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
           i += 1
         }
       }
-      17 | 18 => {
-        let (bits, base) = if sym == 17 { (3, 3) } else { (7, 11) }
+      CL_REPEAT_ZERO_SHORT | CL_REPEAT_ZERO_LONG => {
+        let (bits, base) = if sym == CL_REPEAT_ZERO_SHORT {
+          (3, 3)
+        } else {
+          (7, 11)
+        }
         let count = match bb.read(bits) {
           None =>
             return self.fail(

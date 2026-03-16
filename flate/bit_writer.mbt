@@ -269,12 +269,12 @@ fn BitWriter::write_dynamic_header(
       while run > 0 {
         if run >= 11 {
           let count = if run > 138 { 138 } else { run }
-          let entry = cl_codes.get(18)
+          let entry = cl_codes.get(CL_REPEAT_ZERO_LONG)
           self.write_bits_lsb(entry >> 5, (entry & 0x1FU).reinterpret_as_int())
           self.write_bits_lsb((count - 11).reinterpret_as_uint(), 7)
           run -= count
         } else if run >= 3 {
-          let entry = cl_codes.get(17)
+          let entry = cl_codes.get(CL_REPEAT_ZERO_SHORT)
           self.write_bits_lsb(entry >> 5, (entry & 0x1FU).reinterpret_as_int())
           self.write_bits_lsb((run - 3).reinterpret_as_uint(), 3)
           run = 0
@@ -296,7 +296,7 @@ fn BitWriter::write_dynamic_header(
       while run > 0 {
         if run >= 3 {
           let count = if run > 6 { 6 } else { run }
-          let entry = cl_codes.get(16)
+          let entry = cl_codes.get(CL_REPEAT_PREV)
           self.write_bits_lsb(entry >> 5, (entry & 0x1FU).reinterpret_as_int())
           self.write_bits_lsb((count - 3).reinterpret_as_uint(), 2)
           run -= count
