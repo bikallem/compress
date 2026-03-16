@@ -50,21 +50,21 @@ fn write_to_file(path : String, data : Bytes) -> Unit {
 }
 
 ///|
-/// Compress a file by reading chunks → deflate → write output file.
-/// Pre-allocates a single Bytes buffer and reuses it for all reads.
+/// Compress a file by reading chunks -> deflate -> write output file.
+/// Accepts pre-computed C-string paths to avoid allocation per call.
 fn compress_file_streaming(
-  input_path : String,
-  output_path : String,
+  input_cstr : Bytes,
+  output_cstr : Bytes,
   chunk_size : Int,
 ) -> Unit {
-  let ih = fopen_read(path_cstr(input_path))
+  let ih = fopen_read(input_cstr)
   if ih == 0L {
-    abort("cannot open \{input_path}")
+    abort("cannot open input file")
   }
-  let oh = fopen_write(path_cstr(output_path))
+  let oh = fopen_write(output_cstr)
   if oh == 0L {
     fclose(ih)
-    abort("cannot open \{output_path}")
+    abort("cannot open output file")
   }
   let def = @flate.Deflater::new()
   let buf = Bytes::make(chunk_size, 0)
@@ -92,21 +92,21 @@ fn compress_file_streaming(
 }
 
 ///|
-/// Decompress a file by reading chunks → inflate → write output file.
-/// Pre-allocates a single Bytes buffer and reuses it for all reads.
+/// Decompress a file by reading chunks -> inflate -> write output file.
+/// Accepts pre-computed C-string paths to avoid allocation per call.
 fn decompress_file_streaming(
-  input_path : String,
-  output_path : String,
+  input_cstr : Bytes,
+  output_cstr : Bytes,
   chunk_size : Int,
 ) -> Unit {
-  let ih = fopen_read(path_cstr(input_path))
+  let ih = fopen_read(input_cstr)
   if ih == 0L {
-    abort("cannot open \{input_path}")
+    abort("cannot open input file")
   }
-  let oh = fopen_write(path_cstr(output_path))
+  let oh = fopen_write(output_cstr)
   if oh == 0L {
     fclose(ih)
-    abort("cannot open \{output_path}")
+    abort("cannot open output file")
   }
   let inf = @flate.Inflater::new()
   let buf = Bytes::make(chunk_size, 0)
@@ -137,21 +137,21 @@ fn decompress_file_streaming(
 }
 
 ///|
-/// Decompress an LZW file by reading chunks → inflate → write output file.
-/// Pre-allocates a single Bytes buffer and reuses it for all reads.
+/// Decompress an LZW file by reading chunks -> inflate -> write output file.
+/// Accepts pre-computed C-string paths to avoid allocation per call.
 fn lzw_decompress_file_streaming(
-  input_path : String,
-  output_path : String,
+  input_cstr : Bytes,
+  output_cstr : Bytes,
   chunk_size : Int,
 ) -> Unit {
-  let ih = fopen_read(path_cstr(input_path))
+  let ih = fopen_read(input_cstr)
   if ih == 0L {
-    abort("cannot open \{input_path}")
+    abort("cannot open input file")
   }
-  let oh = fopen_write(path_cstr(output_path))
+  let oh = fopen_write(output_cstr)
   if oh == 0L {
     fclose(ih)
-    abort("cannot open \{output_path}")
+    abort("cannot open output file")
   }
   let inf = try! @lzw.Inflater::new(@lzw.LSB, 8)
   let buf = Bytes::make(chunk_size, 0)
@@ -188,11 +188,13 @@ test "bench flate compress streaming 1mb" (b : @bench.T) {
   let input_path = "/tmp/bench_flate_stream_input_1mb.bin"
   let output_path = "/tmp/bench_flate_stream_output_1mb.deflate"
   write_to_file(input_path, data)
+  let input_cstr = path_cstr(input_path)
+  let output_cstr = path_cstr(output_path)
   b.bench(name="flate_compress_streaming_1mb", fn() {
-    compress_file_streaming(input_path, output_path, 4096)
+    compress_file_streaming(input_cstr, output_cstr, 4096)
   })
-  remove_file(path_cstr(input_path))
-  remove_file(path_cstr(output_path))
+  remove_file(input_cstr)
+  remove_file(output_cstr)
 }
 
 ///|
@@ -201,11 +203,13 @@ test "bench flate compress streaming 10mb" (b : @bench.T) {
   let input_path = "/tmp/bench_flate_stream_input_10mb.bin"
   let output_path = "/tmp/bench_flate_stream_output_10mb.deflate"
   write_to_file(input_path, data)
+  let input_cstr = path_cstr(input_path)
+  let output_cstr = path_cstr(output_path)
   b.bench(name="flate_compress_streaming_10mb", fn() {
-    compress_file_streaming(input_path, output_path, 4096)
+    compress_file_streaming(input_cstr, output_cstr, 4096)
   })
-  remove_file(path_cstr(input_path))
-  remove_file(path_cstr(output_path))
+  remove_file(input_cstr)
+  remove_file(output_cstr)
 }
 
 ///|
@@ -215,11 +219,13 @@ test "bench flate decompress streaming 1mb" (b : @bench.T) {
   let input_path = "/tmp/bench_flate_stream_dec_input_1mb.deflate"
   let output_path = "/tmp/bench_flate_stream_dec_output_1mb.bin"
   write_to_file(input_path, compressed)
+  let input_cstr = path_cstr(input_path)
+  let output_cstr = path_cstr(output_path)
   b.bench(name="flate_decompress_streaming_1mb", fn() {
-    decompress_file_streaming(input_path, output_path, 4096)
+    decompress_file_streaming(input_cstr, output_cstr, 4096)
   })
-  remove_file(path_cstr(input_path))
-  remove_file(path_cstr(output_path))
+  remove_file(input_cstr)
+  remove_file(output_cstr)
 }
 
 ///|
@@ -229,11 +235,13 @@ test "bench flate decompress streaming 10mb" (b : @bench.T) {
   let input_path = "/tmp/bench_flate_stream_dec_input_10mb.deflate"
   let output_path = "/tmp/bench_flate_stream_dec_output_10mb.bin"
   write_to_file(input_path, compressed)
+  let input_cstr = path_cstr(input_path)
+  let output_cstr = path_cstr(output_path)
   b.bench(name="flate_decompress_streaming_10mb", fn() {
-    decompress_file_streaming(input_path, output_path, 4096)
+    decompress_file_streaming(input_cstr, output_cstr, 4096)
   })
-  remove_file(path_cstr(input_path))
-  remove_file(path_cstr(output_path))
+  remove_file(input_cstr)
+  remove_file(output_cstr)
 }
 
 ///|
@@ -243,9 +251,11 @@ test "bench lzw decompress streaming 1mb" (b : @bench.T) {
   let input_path = "/tmp/bench_lzw_stream_dec_input_1mb.lzw"
   let output_path = "/tmp/bench_lzw_stream_dec_output_1mb.bin"
   write_to_file(input_path, compressed)
+  let input_cstr = path_cstr(input_path)
+  let output_cstr = path_cstr(output_path)
   b.bench(name="lzw_decompress_streaming_1mb", fn() {
-    lzw_decompress_file_streaming(input_path, output_path, 4096)
+    lzw_decompress_file_streaming(input_cstr, output_cstr, 4096)
   })
-  remove_file(path_cstr(input_path))
-  remove_file(path_cstr(output_path))
+  remove_file(input_cstr)
+  remove_file(output_cstr)
 }

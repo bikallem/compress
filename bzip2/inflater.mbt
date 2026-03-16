@@ -526,7 +526,7 @@ fn finish_block(s : Decoder) -> Decode {
     return fail(s, Bzip2Error::CorruptData("invalid original pointer"))
   }
   let bwt_output = inverse_bwt(s.tt, s.decoded_len, s.orig_ptr)
-  let result = try? undo_rle1(bwt_output)
+  let result = try? undo_rle1(bwt_output, s.max_block_bytes)
   match result {
     Err(e) => return fail(s, e)
     Ok(block_data) => {

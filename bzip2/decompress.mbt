@@ -18,10 +18,9 @@ pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
 }
 
 ///|
-/// Performs inverse Burrows-Wheeler Transform using LF mapping.
-/// Performs inverse BWT in-place using the tt array.
-/// Merges LF mapping into tt: tt[i] = (lf[i] << 8) | byte_value.
-/// Eliminates separate lf and tt_merged allocations.
+/// Performs inverse Burrows-Wheeler Transform.
+/// Builds LF mapping in-place: tt[i] = (lf[i] << 8) | byte_value,
+/// then walks the merged array to produce the output.
 fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
   // Count occurrences of each byte value
   let counts = FixedArray::make(256, 0)
@@ -62,10 +61,11 @@ fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
 /// Undoes bzip2 RLE1 encoding.
 /// In RLE1, a run of 4+ identical bytes is stored as:
 /// 4 copies of byte + count (where count = number of additional copies beyond 4)
-fn undo_rle1(data : Bytes) -> Bytes raise Bzip2Error {
+fn undo_rle1(data : Bytes, max_block_bytes : Int) -> Bytes raise Bzip2Error {
   let len = data.length()
-  // Worst case expansion: every 5 bytes (4 copies + count=255) → 259 bytes
-  let max_out = len * 52 + 4 // conservative upper bound
+  // The output is the original block data before RLE1 encoding, which is
+  // bounded by max_block_bytes. Add 256 for one trailing run expansion.
+  let max_out = max_block_bytes + 256
   let out = FixedArray::make(max_out, b'\x00')
   let mut pos = 0
   let mut i = 0

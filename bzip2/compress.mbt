@@ -89,7 +89,6 @@ fn rle1_encode(data : Bytes, start : Int, end : Int) -> Bytes {
 
 ///|
 /// Burrows-Wheeler Transform using suffix array construction.
-/// Appends a sentinel and builds a suffix array, then extracts the BWT.
 /// Returns (transformed data, original pointer).
 fn bwt_transform(data : Bytes) -> (Bytes, Int) {
   let n = data.length()
@@ -104,8 +103,10 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
     let s = sa.unsafe_get(i)
     if s == 0 {
       orig_ptr = i
+      bwt.unsafe_set(i, data[n - 1])
+    } else {
+      bwt.unsafe_set(i, data[s - 1])
     }
-    bwt.unsafe_set(i, data[(s + n - 1) % n])
   }
   (bwt.unsafe_reinterpret_as_bytes(), orig_ptr)
 }

@@ -1,7 +1,0 @@
-import {
-  "bikallem/compress/bzip2" @bz2,
-}
-
-options(
-  "is-main": true,
-)

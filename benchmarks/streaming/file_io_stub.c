@@ -12,11 +12,6 @@ MOONBIT_FFI_EXPORT int64_t bench_fopen_write(moonbit_bytes_t path) {
   return (int64_t)(uintptr_t)f;
 }
 
-MOONBIT_FFI_EXPORT int32_t bench_fread(int64_t handle, moonbit_bytes_t buf, int32_t max_len) {
-  FILE *f = (FILE *)(uintptr_t)handle;
-  return (int32_t)fread(buf, 1, max_len, f);
-}
-
 MOONBIT_FFI_EXPORT int32_t bench_fread_bytes(int64_t handle, moonbit_bytes_t buf, int32_t offset, int32_t max_len) {
   FILE *f = (FILE *)(uintptr_t)handle;
   return (int32_t)fread(buf + offset, 1, max_len, f);
