@@ -36,8 +36,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         return Ok
       }
       s.state.write(chunk)
-      let output = s.state.buf.to_bytes()
-      s.state.buf.reset()
+      let output = s.state.take_output()
       if output.length() > 0 {
         Data(output)
       } else {
