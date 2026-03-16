@@ -58,7 +58,7 @@ fn rle1_encode(data : Bytes, start : Int, end : Int) -> Bytes {
   // Worst case: no runs, output = input length. With runs, output ≤ input.
   // RLE can expand slightly: 4 bytes → 5 bytes (4 copies + count=0).
   // Worst expansion: every 4 bytes becomes 5, so max = len * 5 / 4 + 1.
-  let max_out = len + (len / 4) + 2
+  let max_out = len + len / 4 + 2
   let out = FixedArray::make(max_out, b'\x00')
   let mut pos = 0
   let mut i = start
@@ -110,7 +110,6 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
   }
   (bwt.unsafe_reinterpret_as_bytes(), orig_ptr)
 }
-
 
 ///|
 /// MTF encode + RLE2 (RUNA/RUNB zero-run encoding).

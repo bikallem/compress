@@ -153,29 +153,19 @@ fn sais(text : FixedArray[Int], n : Int, k : Int) -> FixedArray[Int] {
   // Step 8: Collect the reduced string s1 and the LMS position map.
   let s1 = FixedArray::make(n1, 0)
   let lms_map = FixedArray::make(n1, 0)
-  {
-    let _ = for i = n1, j = 0; i < n; i = i + 1 {
-      if sa.unsafe_get(i) >= 0 {
-        s1.unsafe_set(j, sa.unsafe_get(i))
-        continue i + 1, j + 1
-      } else {
-        continue i + 1, j
-      }
-    } nobreak {
-      j
+  let mut j = 0
+  for i in n1..<n {
+    if sa.unsafe_get(i) >= 0 {
+      s1.unsafe_set(j, sa.unsafe_get(i))
+      j += 1
     }
   }
   // Build lms_map by scanning for LMS positions in text order.
-  {
-    let _ = for i = 0, j = 0; i < n; i = i + 1 {
-      if is_lms(i) {
-        lms_map.unsafe_set(j, i)
-        continue i + 1, j + 1
-      } else {
-        continue i + 1, j
-      }
-    } nobreak {
-      j
+  j = 0
+  for i in 0..<n {
+    if is_lms(i) {
+      lms_map.unsafe_set(j, i)
+      j += 1
     }
   }
 
@@ -263,16 +253,13 @@ fn build_suffix_array(data : Bytes) -> FixedArray[Int] {
   let sa_full = sais(text, len, 257)
   // Filter: keep only positions < n (first copy)
   let sa = FixedArray::make(n, 0)
-  let _ = for i = 0, j = 0; i < len; i = i + 1 {
+  let mut j = 0
+  for i in 0..<len {
     let s = sa_full.unsafe_get(i)
     if s < n {
       sa.unsafe_set(j, s)
-      continue i + 1, j + 1
-    } else {
-      continue i + 1, j
+      j += 1
     }
-  } nobreak {
-    j
   }
   sa
 }

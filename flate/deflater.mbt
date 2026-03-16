@@ -440,12 +440,11 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
         }
         self.w.write_fixed_symbol(END_BLOCK_MARKER)
       }
-      _ => {
+      _ =>
         while self.index < self.window_end {
           self.tokens.push(Token::literal(self.window[self.index]))
           self.index += 1
         }
-      }
     }
   }
   self.flush_tokens()

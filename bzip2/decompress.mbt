@@ -32,11 +32,9 @@ fn inverse_bwt(data : FixedArray[Int], length : Int, orig_ptr : Int) -> Bytes {
   }
   // Compute cumulative counts (starting positions in F column)
   let cum = FixedArray::make(256, 0)
-  let _ = for i = 0, total = 0; i < 256; i = i + 1 {
+  for i = 0, total = 0; i < 256; i = i + 1 {
     cum.unsafe_set(i, total)
     continue i + 1, total + counts.unsafe_get(i)
-  } nobreak {
-    total
   }
   // Build merged TT in-place: tt[i] = (lf_pos << 8) | byte_value
   // This avoids allocating separate lf and tt_merged arrays.
