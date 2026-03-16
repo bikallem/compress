@@ -1,6 +1,6 @@
 # bikallem/compress
 
-A pure MoonBit compression library ported from Go's `compress/*` stdlib. Runs on native(Linux, Windows, MacOS), JavaScript and Wasm.
+A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, and bzip2. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
 
 ## Table of Contents
 
@@ -73,11 +73,11 @@ All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types
 
 ### Compression
 
-Feed data with `encode(Some(chunk))`, finalize with `encode(None)`:
+Feed data with `encode(Some(chunk[:]))`, finalize with `encode(None)`:
 
 ```moonbit
 let d = @flate.Deflater::new(level=BestSpeed)
-match d.encode(Some(data)) {
+match d.encode(Some(data[:])) {
   Ok => ()         // input buffered, no output yet
   Data(out) => ... // compressed output ready
   End => ...       // shouldn't happen mid-stream
@@ -92,13 +92,13 @@ loop d.encode(None) {
 
 ### Decompression
 
-Feed compressed data with `src(chunk)`, pull output with `decode()`:
+Feed compressed data with `src(chunk[:])`, pull output with `decode()`:
 
 ```moonbit
 let d = @flate.Inflater::new()
-d.src(compressed_chunk)
+d.src(compressed_chunk[:])
 loop d.decode() {
-  Await => { d.src(next_chunk); continue d.decode() }
+  Await => { d.src(next_chunk[:]); continue d.decode() }
   Data(out) => { write(out); continue d.decode() }
   End => break
   Error(e) => ...
@@ -159,32 +159,35 @@ let result = h.checksum()
 
 ## Performance
 
-Benchmarked on the native backend against Go's `compress/flate` (the reference implementation this library is ported from). Ratio < 1 means MoonBit is faster.
+Benchmarked on the native backend against Go's `compress/flate`. Ratio < 1 means MoonBit is faster.
 
-### Decompression
+Run benchmarks: `./tools/bench.sh --go`
 
-Zero-copy direct output mode eliminates intermediate allocations — the decode loop runs start-to-finish without yielding, writing directly into a single output buffer.
+### DEFLATE Decompression
 
-| Size | MoonBit | Go | Ratio |
-|------|---------|------|-------|
-| 1 KB | 0.72 us | 4.82 us | 0.15x |
-| 10 KB | 4.97 us | 11.8 us | 0.42x |
-| 100 KB | 26.8 us | 55.2 us | 0.49x |
-| 1 MB | 249 us | 1,092 us | 0.23x |
-| 10 MB | 4.06 ms | 10.8 ms | 0.38x |
-
-Throughput scales linearly — 1,750-2,400 MB/s from 100 MB to 10 GB with constant 4 MB RSS (streaming file-based benchmark).
-
-### Compression
+Zero-copy direct output mode — the decode loop writes directly into a single output buffer without intermediate allocations.
 
 | Size | MoonBit | Go | Ratio |
 |------|---------|------|-------|
-| 1 KB | 18.1 us | 93.4 us | 0.19x |
-| 10 KB | 72.2 us | 115 us | 0.63x |
-| 100 KB | 645 us | 322 us | 2.00x |
-| 1 MB | 6,840 us | 2,219 us | 3.08x |
+| 1 KB | 0.75 µs | 3.9 µs | 0.19x |
+| 10 KB | 4.7 µs | 10.7 µs | 0.44x |
+| 100 KB | 23 µs | 58 µs | 0.40x |
+| 1 MB | 205 µs | 935 µs | 0.22x |
+| 10 MB | 3.7 ms | 10.0 ms | 0.37x |
 
-Compression at small sizes is faster than Go; at larger sizes Go's more mature hash chain implementation is faster.
+MoonBit decompression is **2-5x faster** than Go across all sizes.
+
+### DEFLATE Compression
+
+| Size | MoonBit | Go | Ratio |
+|------|---------|------|-------|
+| 1 KB | 13 µs | 66 µs | 0.20x |
+| 10 KB | 22 µs | 95 µs | 0.24x |
+| 100 KB | 154 µs | 308 µs | 0.50x |
+| 1 MB | 1.7 ms | 2.0 ms | 0.87x |
+| 10 MB | 18.4 ms | 17.1 ms | 1.07x |
+
+MoonBit compression is **faster than or on par with Go** at all sizes up to 10 MB.
 
 ## Features
 
@@ -192,8 +195,10 @@ Compression at small sizes is faster than Go; at larger sizes Go's more mature h
 - Multi-target: native, js, and wasm-gc backends
 - Dynamic Huffman coding with optimal fixed/dynamic block selection
 - Level-differentiated compression: fast greedy (1-3), lazy matching (4-9)
+- SA-IS suffix array construction for O(n) bzip2 BWT
 - Slicing-by-8 CRC-32, SIMD-style unrolled Adler-32
 - Two-level Huffman table decompression with zero-copy direct output
+- BytesView-based streaming API — zero-copy input slicing
 - Signal protocol streaming — no callbacks, no trait objects, explicit control flow
 - Cross-validated against Go's `compress/*` stdlib
 
