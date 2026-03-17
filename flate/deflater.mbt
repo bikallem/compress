@@ -30,6 +30,39 @@ fn Deflater::insert_hash(self : Deflater, pos : Int, hash_mask : Int) -> Int {
 }
 
 ///|
+/// Check if 4 bytes match at positions a and b in the window.
+/// SAFETY: caller must ensure a+3 and b+3 are within window bounds.
+fn Deflater::match4(self : Deflater, a : Int, b : Int) -> Bool {
+  let w = self.window
+  w.unsafe_get(a) == w.unsafe_get(b) &&
+    w.unsafe_get(a + 1) == w.unsafe_get(b + 1) &&
+    w.unsafe_get(a + 2) == w.unsafe_get(b + 2) &&
+    w.unsafe_get(a + 3) == w.unsafe_get(b + 3)
+}
+
+///|
+/// Collect literal tokens for window[from..<to] and flush if block is full.
+fn Deflater::emit_literals(self : Deflater, from : Int, to : Int) -> Unit {
+  let window = self.window
+  for j in from..<to {
+    self.tokens.push(Token::literal(window.unsafe_get(j)))
+    if self.tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(self.tokens, false)
+      self.tokens.clear()
+    }
+  }
+}
+
+///|
+/// Flush token buffer as a dynamic block if it has reached the block size limit.
+fn Deflater::maybe_flush_tokens(self : Deflater) -> Unit {
+  if self.tokens.length() >= MAX_BLOCK_TOKENS {
+    self.w.write_dynamic_block(self.tokens, false)
+    self.tokens.clear()
+  }
+}
+
+///|
 const WINDOW_SIZE : Int = 1 << 15 // 32KB
 
 ///|
@@ -242,7 +275,6 @@ fn Deflater::step_stored(self : Deflater) -> Unit {
 /// Uses dynamic Huffman blocks for optimal encoding.
 fn Deflater::step_fast(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
-  let window = self.window
   let head = self.head
   let end = self.window_end
   let mut i = self.index
@@ -259,38 +291,27 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     let mut skip = 32
     let mut candidate = -1
     let mut found = false
-    let mut s = i
     while true {
-      s = i
       let step = skip >> 5
-      let next_i = s + step
+      let next_i = i + step
       skip += step
       if next_i > safe_end {
         break
       }
-      let h = self.hash4(s, hash_mask)
+      let h = self.hash4(i, hash_mask)
       candidate = head.unsafe_get(h)
-      head.unsafe_set(h, s)
-      if candidate >= 0 && s - candidate <= MAX_MATCH_OFFSET {
-        // Verify 4-byte match (hash alone may collide)
-        if window.unsafe_get(s) == window.unsafe_get(candidate) &&
-          window.unsafe_get(s + 1) == window.unsafe_get(candidate + 1) &&
-          window.unsafe_get(s + 2) == window.unsafe_get(candidate + 2) &&
-          window.unsafe_get(s + 3) == window.unsafe_get(candidate + 3) {
-          found = true
-          break
-        }
+      head.unsafe_set(h, i)
+      if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
+        self.match4(i, candidate) {
+        found = true
+        break
       }
       i = next_i
     }
     if not(found) {
       break // no more matches possible
     }
-    // Collect pending literals [next_emit, s) as tokens
-    for j in next_emit..<s {
-      self.tokens.push(Token::literal(window.unsafe_get(j)))
-    }
-    i = s
+    self.emit_literals(next_emit, i)
     // --- Match loop: extend match, emit, then try to chain ---
     while true {
       let max_len = if end - i < MAX_MATCH_LENGTH {
@@ -302,10 +323,7 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
       self.tokens.push(Token::match_(length, i - candidate))
       i += length
       next_emit = i
-      if self.tokens.length() >= MAX_BLOCK_TOKENS {
-        self.w.write_dynamic_block(self.tokens, false)
-        self.tokens.clear()
-      }
+      self.maybe_flush_tokens()
       if i >= safe_end {
         break
       }
@@ -316,20 +334,15 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
       candidate = head.unsafe_get(h)
       head.unsafe_set(h, i)
       if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
-        window.unsafe_get(i) == window.unsafe_get(candidate) &&
-        window.unsafe_get(i + 1) == window.unsafe_get(candidate + 1) &&
-        window.unsafe_get(i + 2) == window.unsafe_get(candidate + 2) &&
-        window.unsafe_get(i + 3) == window.unsafe_get(candidate + 3) {
-        continue // chain to next match
+        self.match4(i, candidate) {
+        continue // chain: another match starts here
       }
+      // No chain, advance past current position and resume skip loop
       i += 1
       break
     }
   }
-  // Collect remaining literals as tokens
-  for j = next_emit; j < end; j = j + 1 {
-    self.tokens.push(Token::literal(window.unsafe_get(j)))
-  }
+  self.emit_literals(next_emit, end)
   self.index = end
 }
 
@@ -367,19 +380,13 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
           ignore(self.insert_hash(pos, hash_mask))
         }
         i += length
-        if self.tokens.length() >= MAX_BLOCK_TOKENS {
-          self.w.write_dynamic_block(self.tokens, false)
-          self.tokens.clear()
-        }
+        self.maybe_flush_tokens()
         continue
       }
     }
     self.tokens.push(Token::literal(self.window.unsafe_get(i)))
     i += 1
-    if self.tokens.length() >= MAX_BLOCK_TOKENS {
-      self.w.write_dynamic_block(self.tokens, false)
-      self.tokens.clear()
-    }
+    self.maybe_flush_tokens()
   }
   self.index = i
 }
@@ -455,10 +462,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       self.tokens.push(Token::literal(self.window.unsafe_get(i)))
       i += 1
     }
-    if self.tokens.length() >= MAX_BLOCK_TOKENS {
-      self.w.write_dynamic_block(self.tokens, false)
-      self.tokens.clear()
-    }
+    self.maybe_flush_tokens()
   }
   self.index = i
 }
