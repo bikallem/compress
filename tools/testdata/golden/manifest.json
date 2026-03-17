@@ -114,7 +114,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "deflate_mixed_1k_level1.bin",
     "input_size": 1024,
-    "output_size": 895
+    "output_size": 894
   },
   {
     "name": "deflate/mixed_1k/level6",
@@ -123,7 +123,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "deflate_mixed_1k_level6.bin",
     "input_size": 1024,
-    "output_size": 867
+    "output_size": 863
   },
   {
     "name": "deflate/mixed_1k/level9",
@@ -132,7 +132,61 @@
     "input_file": "mixed_1k.bin",
     "output_file": "deflate_mixed_1k_level9.bin",
     "input_size": 1024,
-    "output_size": 867
+    "output_size": 863
+  },
+  {
+    "name": "gzip/zeros_10k/level1",
+    "algorithm": "gzip",
+    "level": 1,
+    "input_file": "zeros_10k.bin",
+    "output_file": "gzip_zeros_10k_level1.bin",
+    "input_size": 10240,
+    "output_size": 49
+  },
+  {
+    "name": "gzip/zeros_10k/level6",
+    "algorithm": "gzip",
+    "level": 6,
+    "input_file": "zeros_10k.bin",
+    "output_file": "gzip_zeros_10k_level6.bin",
+    "input_size": 10240,
+    "output_size": 49
+  },
+  {
+    "name": "gzip/zeros_10k/level9",
+    "algorithm": "gzip",
+    "level": 9,
+    "input_file": "zeros_10k.bin",
+    "output_file": "gzip_zeros_10k_level9.bin",
+    "input_size": 10240,
+    "output_size": 49
+  },
+  {
+    "name": "gzip/mixed_1k/level1",
+    "algorithm": "gzip",
+    "level": 1,
+    "input_file": "mixed_1k.bin",
+    "output_file": "gzip_mixed_1k_level1.bin",
+    "input_size": 1024,
+    "output_size": 912
+  },
+  {
+    "name": "gzip/mixed_1k/level6",
+    "algorithm": "gzip",
+    "level": 6,
+    "input_file": "mixed_1k.bin",
+    "output_file": "gzip_mixed_1k_level6.bin",
+    "input_size": 1024,
+    "output_size": 881
+  },
+  {
+    "name": "gzip/mixed_1k/level9",
+    "algorithm": "gzip",
+    "level": 9,
+    "input_file": "mixed_1k.bin",
+    "output_file": "gzip_mixed_1k_level9.bin",
+    "input_size": 1024,
+    "output_size": 881
   },
   {
     "name": "gzip/empty/level1",
@@ -214,60 +268,6 @@
     "output_file": "gzip_repeated_level9.bin",
     "input_size": 4096,
     "output_size": 61
-  },
-  {
-    "name": "gzip/zeros_10k/level1",
-    "algorithm": "gzip",
-    "level": 1,
-    "input_file": "zeros_10k.bin",
-    "output_file": "gzip_zeros_10k_level1.bin",
-    "input_size": 10240,
-    "output_size": 49
-  },
-  {
-    "name": "gzip/zeros_10k/level6",
-    "algorithm": "gzip",
-    "level": 6,
-    "input_file": "zeros_10k.bin",
-    "output_file": "gzip_zeros_10k_level6.bin",
-    "input_size": 10240,
-    "output_size": 49
-  },
-  {
-    "name": "gzip/zeros_10k/level9",
-    "algorithm": "gzip",
-    "level": 9,
-    "input_file": "zeros_10k.bin",
-    "output_file": "gzip_zeros_10k_level9.bin",
-    "input_size": 10240,
-    "output_size": 49
-  },
-  {
-    "name": "gzip/mixed_1k/level1",
-    "algorithm": "gzip",
-    "level": 1,
-    "input_file": "mixed_1k.bin",
-    "output_file": "gzip_mixed_1k_level1.bin",
-    "input_size": 1024,
-    "output_size": 913
-  },
-  {
-    "name": "gzip/mixed_1k/level6",
-    "algorithm": "gzip",
-    "level": 6,
-    "input_file": "mixed_1k.bin",
-    "output_file": "gzip_mixed_1k_level6.bin",
-    "input_size": 1024,
-    "output_size": 885
-  },
-  {
-    "name": "gzip/mixed_1k/level9",
-    "algorithm": "gzip",
-    "level": 9,
-    "input_file": "mixed_1k.bin",
-    "output_file": "gzip_mixed_1k_level9.bin",
-    "input_size": 1024,
-    "output_size": 885
   },
   {
     "name": "zlib/empty/level1",
@@ -384,7 +384,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "zlib_mixed_1k_level1.bin",
     "input_size": 1024,
-    "output_size": 901
+    "output_size": 900
   },
   {
     "name": "zlib/mixed_1k/level6",
@@ -393,7 +393,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "zlib_mixed_1k_level6.bin",
     "input_size": 1024,
-    "output_size": 873
+    "output_size": 869
   },
   {
     "name": "zlib/mixed_1k/level9",
@@ -402,7 +402,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "zlib_mixed_1k_level9.bin",
     "input_size": 1024,
-    "output_size": 873
+    "output_size": 869
   },
   {
     "name": "lzw/hello",
@@ -434,7 +434,143 @@
     "input_file": "mixed_1k.bin",
     "output_file": "lzw_mixed_1k.bin",
     "input_size": 1024,
-    "output_size": 1131
+    "output_size": 1133
+  },
+  {
+    "name": "snappy/hello",
+    "algorithm": "snappy",
+    "input_file": "hello.bin",
+    "output_file": "snappy_hello.bin",
+    "input_size": 13,
+    "output_size": 15
+  },
+  {
+    "name": "snappy/repeated",
+    "algorithm": "snappy",
+    "input_file": "repeated.bin",
+    "output_file": "snappy_repeated.bin",
+    "input_size": 4096,
+    "output_size": 211
+  },
+  {
+    "name": "snappy/zeros_10k",
+    "algorithm": "snappy",
+    "input_file": "zeros_10k.bin",
+    "output_file": "snappy_zeros_10k.bin",
+    "input_size": 10240,
+    "output_size": 484
+  },
+  {
+    "name": "snappy/mixed_1k",
+    "algorithm": "snappy",
+    "input_file": "mixed_1k.bin",
+    "output_file": "snappy_mixed_1k.bin",
+    "input_size": 1024,
+    "output_size": 840
+  },
+  {
+    "name": "lz4/hello",
+    "algorithm": "lz4",
+    "input_file": "hello.bin",
+    "output_file": "lz4_hello.bin",
+    "input_size": 13,
+    "output_size": 32
+  },
+  {
+    "name": "lz4/repeated",
+    "algorithm": "lz4",
+    "input_file": "repeated.bin",
+    "output_file": "lz4_repeated.bin",
+    "input_size": 4096,
+    "output_size": 74
+  },
+  {
+    "name": "lz4/zeros_10k",
+    "algorithm": "lz4",
+    "input_file": "zeros_10k.bin",
+    "output_file": "lz4_zeros_10k.bin",
+    "input_size": 10240,
+    "output_size": 82
+  },
+  {
+    "name": "lz4/mixed_1k",
+    "algorithm": "lz4",
+    "input_file": "mixed_1k.bin",
+    "output_file": "lz4_mixed_1k.bin",
+    "input_size": 1024,
+    "output_size": 841
+  },
+  {
+    "name": "zstd/hello",
+    "algorithm": "zstd",
+    "input_file": "hello.bin",
+    "output_file": "zstd_hello.bin",
+    "input_size": 13,
+    "output_size": 26
+  },
+  {
+    "name": "zstd/repeated",
+    "algorithm": "zstd",
+    "input_file": "repeated.bin",
+    "output_file": "zstd_repeated.bin",
+    "input_size": 4096,
+    "output_size": 40
+  },
+  {
+    "name": "zstd/zeros_10k",
+    "algorithm": "zstd",
+    "input_file": "zeros_10k.bin",
+    "output_file": "zstd_zeros_10k.bin",
+    "input_size": 10240,
+    "output_size": 15
+  },
+  {
+    "name": "zstd/mixed_1k",
+    "algorithm": "zstd",
+    "input_file": "mixed_1k.bin",
+    "output_file": "zstd_mixed_1k.bin",
+    "input_size": 1024,
+    "output_size": 838
+  },
+  {
+    "name": "brotli/empty",
+    "algorithm": "brotli",
+    "input_file": "empty.bin",
+    "output_file": "brotli_empty.bin",
+    "input_size": 0,
+    "output_size": 1
+  },
+  {
+    "name": "brotli/hello",
+    "algorithm": "brotli",
+    "input_file": "hello.bin",
+    "output_file": "brotli_hello.bin",
+    "input_size": 13,
+    "output_size": 17
+  },
+  {
+    "name": "brotli/repeated",
+    "algorithm": "brotli",
+    "input_file": "repeated.bin",
+    "output_file": "brotli_repeated.bin",
+    "input_size": 4096,
+    "output_size": 24
+  },
+  {
+    "name": "brotli/zeros_10k",
+    "algorithm": "brotli",
+    "input_file": "zeros_10k.bin",
+    "output_file": "brotli_zeros_10k.bin",
+    "input_size": 10240,
+    "output_size": 13
+  },
+  {
+    "name": "brotli/mixed_1k",
+    "algorithm": "brotli",
+    "input_file": "mixed_1k.bin",
+    "output_file": "brotli_mixed_1k.bin",
+    "input_size": 1024,
+    "output_size": 832
   },
   {
     "name": "deflate_dict/repeated/level1",
@@ -473,7 +609,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "deflate_dict_mixed_1k_level1.bin",
     "input_size": 1024,
-    "output_size": 895,
+    "output_size": 894,
     "dict_file": "dict.bin"
   },
   {
@@ -483,7 +619,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "deflate_dict_mixed_1k_level6.bin",
     "input_size": 1024,
-    "output_size": 813,
+    "output_size": 810,
     "dict_file": "dict.bin"
   },
   {
@@ -493,7 +629,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "deflate_dict_mixed_1k_level9.bin",
     "input_size": 1024,
-    "output_size": 813,
+    "output_size": 810,
     "dict_file": "dict.bin"
   },
   {
@@ -533,7 +669,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "zlib_dict_mixed_1k_level1.bin",
     "input_size": 1024,
-    "output_size": 905,
+    "output_size": 904,
     "dict_file": "dict.bin"
   },
   {
@@ -543,7 +679,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "zlib_dict_mixed_1k_level6.bin",
     "input_size": 1024,
-    "output_size": 823,
+    "output_size": 820,
     "dict_file": "dict.bin"
   },
   {
@@ -553,7 +689,7 @@
     "input_file": "mixed_1k.bin",
     "output_file": "zlib_dict_mixed_1k_level9.bin",
     "input_size": 1024,
-    "output_size": 823,
+    "output_size": 820,
     "dict_file": "dict.bin"
   }
 ]

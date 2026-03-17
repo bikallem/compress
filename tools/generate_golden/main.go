@@ -32,7 +32,7 @@ type GoldenEntry struct {
 }
 
 func main() {
-	dir := filepath.Join("..", "testdata", "golden")
+	dir := filepath.Join("..", "..", "testdata", "golden")
 	os.MkdirAll(dir, 0o755)
 
 	// Test inputs
