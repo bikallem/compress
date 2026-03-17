@@ -45,3 +45,13 @@ test "brotli default compression uses compressed metablocks" {
   assert_eq(compress(data, level=NoCompression) catch { e => abort(e.to_string()) }, uncompressed)
   assert_true(compressed != uncompressed)
 }
+
+///|
+test "brotli higher quality compresses long runs better" {
+  let data = Bytes::makei(8192, fn(_i) { b'Z' })
+  let fast = compress(data, level=BestSpeed) catch { e => abort(e.to_string()) }
+  let best = compress(data, level=BestCompression) catch { e => abort(e.to_string()) }
+  assert_eq(decompress(fast) catch { e => abort(e.to_string()) }, data)
+  assert_eq(decompress(best) catch { e => abort(e.to_string()) }, data)
+  assert_true(best.length() < fast.length())
+}

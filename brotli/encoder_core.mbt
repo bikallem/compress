@@ -6,6 +6,21 @@ priv struct InsertOnlyCommand {
 }
 
 ///|
+priv enum BlockPlan {
+  Literal(Int, Int)
+  Run(Byte, Int)
+}
+
+///|
+priv struct CopyCommand {
+  symbol : Int
+  insert_extra_bits : Int
+  insert_extra_value : Int
+  copy_extra_bits : Int
+  copy_extra_value : Int
+}
+
+///|
 fn store_var_len_uint8(writer : BitWriter, value : Int) -> Unit raise BrotliError {
   guard value >= 0 && value <= 255 else {
     raise BrotliError::CorruptInput("invalid var-len uint8 value")
@@ -126,6 +141,62 @@ fn write_trivial_prefix_metadata(writer : BitWriter) -> Unit raise BrotliError {
 }
 
 ///|
+fn write_copy_command_extra(writer : BitWriter, command : CopyCommand) -> Unit {
+  writer.write_bits(command.insert_extra_value.reinterpret_as_uint(), command.insert_extra_bits)
+  writer.write_bits(command.copy_extra_value.reinterpret_as_uint(), command.copy_extra_bits)
+}
+
+///|
+fn select_copy_command(
+  insert_length : Int,
+  copy_length : Int,
+  require_explicit_distance : Bool,
+) -> CopyCommand raise BrotliError {
+  let mut best : CopyCommand? = None
+  for symbol in 0..<brotli_num_command_symbols {
+    if require_explicit_distance && command_distance_short_code(symbol) != -1 {
+      continue
+    }
+    let insert_extra_bits = command_insert_extra_bits(symbol)
+    let insert_base = command_insert_offset(symbol)
+    let copy_extra_bits = command_copy_extra_bits(symbol)
+    let copy_base = command_copy_offset(symbol)
+    let insert_span = if insert_extra_bits == 24 { 1 << 24 } else { 1 << insert_extra_bits }
+    let copy_span = if copy_extra_bits == 24 { 1 << 24 } else { 1 << copy_extra_bits }
+    if insert_length < insert_base || insert_length >= insert_base + insert_span {
+      continue
+    }
+    if copy_length < copy_base || copy_length >= copy_base + copy_span {
+      continue
+    }
+    let candidate = {
+      symbol,
+      insert_extra_bits,
+      insert_extra_value: insert_length - insert_base,
+      copy_extra_bits,
+      copy_extra_value: copy_length - copy_base,
+    }
+    best = match best {
+      None => Some(candidate)
+      Some(current) =>
+        if insert_extra_bits + copy_extra_bits <
+          current.insert_extra_bits + current.copy_extra_bits {
+          Some(candidate)
+        } else {
+          Some(current)
+        }
+    }
+  }
+  match best {
+    Some(value) => value
+    None =>
+      raise BrotliError::UnsupportedFeature(
+        "no command covers requested insert/copy lengths",
+      )
+  }
+}
+
+///|
 fn write_literal_only_meta_block(
   writer : BitWriter,
   data : BytesView,
@@ -141,6 +212,89 @@ fn write_literal_only_meta_block(
   for b in data {
     write_fixed_literal(writer, b)
   }
+}
+
+///|
+fn write_run_meta_block(
+  writer : BitWriter,
+  value : Byte,
+  len : Int,
+  is_last : Bool,
+) -> Unit raise BrotliError {
+  guard len >= 2 else {
+    raise BrotliError::CorruptInput("run block too short")
+  }
+  write_compressed_meta_block_header(writer, is_last, len)
+  write_trivial_prefix_metadata(writer)
+  write_single_symbol_prefix_tree(writer, value.to_int(), brotli_num_literal_symbols)
+  let command = select_copy_command(1, len - 1, true)
+  write_single_symbol_prefix_tree(writer, command.symbol, brotli_num_command_symbols)
+  write_single_symbol_prefix_tree(writer, 16, 64)
+  write_copy_command_extra(writer, command)
+}
+
+///|
+fn append_literal_plans(
+  plans : Array[BlockPlan],
+  start : Int,
+  len : Int,
+) -> Unit {
+  let mut offset = 0
+  while offset < len {
+    let chunk = if len - offset > max_meta_block_len { max_meta_block_len } else { len - offset }
+    plans.push(Literal(start + offset, chunk))
+    offset += chunk
+  }
+}
+
+///|
+fn append_run_plans(plans : Array[BlockPlan], value : Byte, len : Int) -> Unit {
+  let mut remaining = len
+  while remaining > 0 {
+    let chunk = if remaining > max_meta_block_len { max_meta_block_len } else { remaining }
+    plans.push(Run(value, chunk))
+    remaining -= chunk
+  }
+}
+
+///|
+fn run_threshold(level : Int) -> Int {
+  if level >= 10 {
+    8
+  } else if level >= 6 {
+    16
+  } else {
+    32
+  }
+}
+
+///|
+fn plan_blocks(data : Bytes, level : Int) -> Array[BlockPlan] {
+  let threshold = run_threshold(level)
+  let plans : Array[BlockPlan] = []
+  let mut literal_start = 0
+  let mut pos = 0
+  while pos < data.length() {
+    let value = data[pos]
+    let mut run_len = 1
+    while pos + run_len < data.length() && data[pos + run_len] == value {
+      run_len += 1
+    }
+    if run_len >= threshold {
+      if literal_start < pos {
+        append_literal_plans(plans, literal_start, pos - literal_start)
+      }
+      append_run_plans(plans, value, run_len)
+      pos += run_len
+      literal_start = pos
+    } else {
+      pos += 1
+    }
+  }
+  if literal_start < data.length() {
+    append_literal_plans(plans, literal_start, data.length() - literal_start)
+  }
+  plans
 }
 
 ///|
@@ -163,6 +317,34 @@ fn compress_literal_only(data : Bytes) -> Bytes raise BrotliError {
       offset + chunk_len == data.length(),
     )
     offset += chunk_len
+  }
+  writer.finish()
+}
+
+///|
+fn compress_with_quality(data : Bytes, level : Int) -> Bytes raise BrotliError {
+  if data.length() == 0 {
+    return trivial_compress(data)
+  }
+  if level == 0 {
+    return trivial_compress(data)
+  }
+  if level < 4 {
+    return compress_literal_only(data)
+  }
+  let plans = plan_blocks(data, level)
+  guard plans.length() > 0 else {
+    return trivial_compress(data)
+  }
+  let writer = BitWriter::new(size_hint=data.length() + 64)
+  write_window_bits(writer, 16)
+  for i, plan in plans {
+    let is_last = i + 1 == plans.length()
+    match plan {
+      Literal(start, len) =>
+        write_literal_only_meta_block(writer, data[start:start + len], is_last)
+      Run(value, len) => write_run_meta_block(writer, value, len, is_last)
+    }
   }
   writer.finish()
 }
