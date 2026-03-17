@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 )
@@ -180,21 +179,6 @@ func main() {
 		})
 	}
 
-	// Generate Brotli compressed files
-	for name, data := range inputs {
-		outName := fmt.Sprintf("brotli_%s.bin", name)
-		compressed := brotliCompress(data)
-		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
-		entries = append(entries, GoldenEntry{
-			Name:       fmt.Sprintf("brotli/%s", name),
-			Algorithm:  "brotli",
-			InputFile:  name + ".bin",
-			OutputFile: outName,
-			InputSize:  len(data),
-			OutputSize: len(compressed),
-		})
-	}
-
 	// Generate DEFLATE with dictionary compressed files
 	dict := []byte("the quick brown fox jumps over the lazy dog abcdefghijklmnop")
 	os.WriteFile(filepath.Join(dir, "dict.bin"), dict, 0o644)
@@ -321,10 +305,3 @@ func zstdCompress(data []byte) []byte {
 	return enc.EncodeAll(data, nil)
 }
 
-func brotliCompress(data []byte) []byte {
-	var buf bytes.Buffer
-	w := brotli.NewWriter(&buf)
-	w.Write(data)
-	w.Close()
-	return buf.Bytes()
-}

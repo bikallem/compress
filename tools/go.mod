@@ -3,7 +3,6 @@ module compress/tools
 go 1.21
 
 require (
-	github.com/andybalholm/brotli v1.1.1
 	github.com/golang/snappy v0.0.4
 	github.com/klauspost/compress v1.17.11
 )

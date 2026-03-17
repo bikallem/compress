@@ -1,0 +1,5 @@
+import {
+  "bikallem/compress/benchmarks",
+  "bikallem/compress/lz4" @l4,
+  "moonbitlang/core/bench",
+}

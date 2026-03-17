@@ -298,22 +298,6 @@ fn main {
       output_size: compressed.length(),
     })
   }
-  // Brotli
-  for pair in inputs {
-    let (name, data) = pair
-    let out_name = "brotli_\{name}.bin"
-    let compressed = @brotli.compress(data)
-    write_file("\{out_dir}/\{out_name}", compressed)
-    entries.push({
-      name: "brotli/\{name}",
-      algorithm: "brotli",
-      level: 0,
-      input_file: "\{name}.bin",
-      output_file: out_name,
-      input_size: data.length(),
-      output_size: compressed.length(),
-    })
-  }
   // Write manifest
   let manifest = @buffer.new()
   manifest.write_string("[\n")
