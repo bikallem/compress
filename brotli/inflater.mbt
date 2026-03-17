@@ -1,10 +1,7 @@
 ///|
 priv enum InflatePhase {
-  StreamHeader
-  MetaHeader
-  Metadata(Int, Bool)
-  Uncompressed(Int)
-  Finalize
+  Reading
+  Emit
   Done
   Failed(BrotliError)
 }
@@ -12,118 +9,56 @@ priv enum InflatePhase {
 ///|
 /// Streaming Brotli decompressor.
 struct Inflater {
+  input : @buffer.Buffer
   mut phase : InflatePhase
-  br : BitReader
   mut sink : @output_sink.OutputSink?
+  mut tail : Bytes
 }
 
 ///|
 pub fn Inflater::new() -> Inflater {
-  { phase: StreamHeader, br: BitReader::new(), sink: None }
+  { input: @buffer.new(), phase: Reading, sink: None, tail: Bytes::default() }
 }
 
 ///|
 pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
-  self.br.set_input(data)
+  if data.length() == 0 {
+    return
+  }
+  self.input.write_bytes(Bytes::makei(data.length(), fn(i) { data[i] }))
 }
 
 ///|
 pub fn Inflater::decode(self : Inflater) -> Decode {
   match self.phase {
-    StreamHeader => {
-      let result = try? read_window_bits(self.br)
+    Reading => {
+      let result = try? decode_brotli_stream(self.input.to_bytes())
       match result {
-        Ok(Some(_wbits)) => {
-          self.phase = MetaHeader
-          self.decode()
-        }
-        Ok(None) => Await
-        Err(e) => self.fail(e)
-      }
-    }
-    MetaHeader => {
-      let result = try? read_meta_block_header(self.br)
-      match result {
-        Ok(Some(header)) => {
-          if header.is_last_empty {
-            self.phase = Finalize
-            return self.decode()
-          }
-          if header.is_metadata {
-            self.phase = Metadata(header.length, header.is_last)
-            return self.decode()
-          }
-          if header.is_uncompressed {
-            let aligned = try? self.br.align_to_byte_zero()
-            match aligned {
-              Ok(_) => {
-                self.phase = Uncompressed(header.length)
-                return self.decode()
-              }
-              Err(e) => return self.fail(e)
+        Ok(decoded) => {
+          self.tail = decoded.remaining
+          match self.sink {
+            Some(sink) => {
+              sink.write_bytes(decoded.output)
+              self.phase = Done
+              End
             }
+            None =>
+              if decoded.output.length() == 0 {
+                self.phase = Done
+                End
+              } else {
+                self.phase = Emit
+                Data(decoded.output)
+              }
           }
-          self.fail(
-            BrotliError::UnsupportedFeature(
-              "compressed metablocks not implemented",
-            ),
-          )
         }
-        Ok(None) => Await
+        Err(BrotliError::UnexpectedEOF) => Await
         Err(e) => self.fail(e)
       }
     }
-    Metadata(remaining, is_last) => {
-      let skipped = self.br.read_aligned_bytes(remaining)
-      if skipped.length() == 0 {
-        return Await
-      }
-      let next_remaining = remaining - skipped.length()
-      self.phase = if next_remaining == 0 {
-        if is_last {
-          Finalize
-        } else {
-          MetaHeader
-        }
-      } else {
-        Metadata(next_remaining, is_last)
-      }
-      self.decode()
-    }
-    Uncompressed(remaining) => {
-      let chunk = self.br.read_aligned_bytes(
-        if remaining < 32768 {
-          remaining
-        } else {
-          32768
-        },
-      )
-      if chunk.length() == 0 {
-        return Await
-      }
-      let next_remaining = remaining - chunk.length()
-      self.phase = if next_remaining == 0 {
-        MetaHeader
-      } else {
-        Uncompressed(next_remaining)
-      }
-      match self.sink {
-        Some(sink) => {
-          sink.write_bytes(chunk)
-          self.decode()
-        }
-        None => Data(chunk)
-      }
-    }
-    Finalize => {
-      let aligned = try? self.br.align_to_byte_zero()
-      match aligned {
-        Ok(_) => {
-          self.phase = Done
-          End
-        }
-        Err(e) => self.fail(e)
-      }
+    Emit => {
+      self.phase = Done
+      End
     }
     Done => End
     Failed(e) => Error(e)
@@ -132,7 +67,10 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
 
 ///|
 pub fn Inflater::remaining(self : Inflater) -> Bytes {
-  self.br.remaining_bytes()
+  match self.phase {
+    Reading => self.input.to_bytes()
+    Emit | Done | Failed(_) => self.tail
+  }
 }
 
 ///|

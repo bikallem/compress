@@ -7,6 +7,17 @@ pub(all) enum ContextMode {
 } derive(Eq, Show)
 
 ///|
+fn context_mode_from_bits(bits : Int) -> ContextMode raise BrotliError {
+  match bits {
+    0 => LSB6
+    1 => MSB6
+    2 => UTF8
+    3 => Signed
+    _ => raise BrotliError::CorruptInput("invalid literal context mode")
+  }
+}
+
+///|
 fn literal_context_lookup_base(mode : ContextMode) -> Int {
   match mode {
     LSB6 => 0
