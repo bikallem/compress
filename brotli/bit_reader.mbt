@@ -69,14 +69,6 @@ fn BitReader::peek_unchecked(self : BitReader, n : Int) -> UInt {
 }
 
 ///|
-fn BitReader::peek(self : BitReader, n : Int) -> UInt? {
-  if !self.ensure(n) {
-    return None
-  }
-  Some(self.peek_unchecked(n))
-}
-
-///|
 fn BitReader::drop(self : BitReader, n : Int) -> Unit {
   self.buf = self.buf >> n
   self.count -= n

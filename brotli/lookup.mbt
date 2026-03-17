@@ -1,5 +1,5 @@
 ///|
-struct CommandParameters {
+priv struct CommandParameters {
   insert_length : Int
   copy_length : Int
   distance_context : Int
@@ -7,7 +7,7 @@ struct CommandParameters {
 }
 
 ///|
-struct DistanceHistory {
+priv struct DistanceHistory {
   ring : FixedArray[Int]
   mut index : Int
 }

@@ -35,28 +35,6 @@ fn literal_context_id(mode : ContextMode, p1 : Byte, p2 : Byte) -> Int {
 }
 
 ///|
-fn distance_context_id(copy_length : Int) -> Int {
-  match copy_length {
-    2 => 0
-    3 => 1
-    4 => 2
-    _ => 3
-  }
-}
-
-///|
-fn read_context_modes(
-  reader : BitReader,
-  num_block_types : Int,
-) -> FixedArray[Int] raise BrotliError {
-  let result = FixedArray::make(num_block_types, 0)
-  for i in 0..<num_block_types {
-    result[i] = reader.read_required(2)
-  }
-  result
-}
-
-///|
 fn inverse_move_to_front_in_place(values : FixedArray[Byte], len : Int) -> Unit {
   let mtf = FixedArray::make(256, b'\x00')
   for i in 0..<256 {
@@ -73,16 +51,6 @@ fn inverse_move_to_front_in_place(values : FixedArray[Byte], len : Int) -> Unit 
     }
     mtf[0] = value
   }
-}
-
-///|
-fn inverse_move_to_front(values : Bytes) -> Bytes {
-  let result = FixedArray::make(values.length(), b'\x00')
-  for i, b in values {
-    result[i] = b
-  }
-  inverse_move_to_front_in_place(result, values.length())
-  result.unsafe_reinterpret_as_bytes()
 }
 
 ///|

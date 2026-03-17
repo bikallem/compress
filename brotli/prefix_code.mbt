@@ -15,7 +15,6 @@ priv struct PrefixDecoder {
   chunks : FixedArray[UInt]
   links : Array[FixedArray[UInt]]
   min_bits : Int
-  max_bits : Int
 }
 
 ///|
@@ -129,7 +128,6 @@ fn PrefixDecoder::build(
       chunks: FixedArray::make(0, 0U),
       links: [],
       min_bits: 0,
-      max_bits: 0,
     }
   }
   let codes = build_canonical_codes(lengths, max_bits)
@@ -174,7 +172,7 @@ fn PrefixDecoder::build(
       }
     }
   }
-  { single_symbol: -1, chunks, links, min_bits, max_bits: max_len }
+  { single_symbol: -1, chunks, links, min_bits }
 }
 
 ///|
@@ -259,7 +257,6 @@ fn build_simple_prefix_decoder(
         chunks: FixedArray::make(0, 0U),
         links: [],
         min_bits: 0,
-        max_bits: 0,
       }
     2 => {
       lengths[symbols[0]] = 1

@@ -1,16 +1,17 @@
 ///|
 test "brotli inverse move-to-front transform" {
-  assert_eq(inverse_move_to_front(b"\x00\x01\x01\x01"), b"\x00\x01\x00\x01")
+  let transformed = FixedArray::make(4, b'\x00')
+  transformed[1] = b'\x01'
+  transformed[2] = b'\x01'
+  transformed[3] = b'\x01'
+  inverse_move_to_front_in_place(transformed, transformed.length())
+  assert_eq(transformed.unsafe_reinterpret_as_bytes(), b"\x00\x01\x00\x01")
 }
 
 ///|
-test "brotli literal and distance context helpers" {
+test "brotli literal context helper" {
   assert_eq(literal_context_id(LSB6, b'\xff', b'\x00'), 63)
   assert_eq(literal_context_id(MSB6, b'\xff', b'\x00'), 63)
-  assert_eq(distance_context_id(2), 0)
-  assert_eq(distance_context_id(3), 1)
-  assert_eq(distance_context_id(4), 2)
-  assert_eq(distance_context_id(5), 3)
 }
 
 ///|

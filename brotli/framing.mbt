@@ -203,33 +203,6 @@ fn write_meta_block_length(
 }
 
 ///|
-fn write_metadata_block(
-  writer : BitWriter,
-  is_last : Bool,
-  metadata : BytesView,
-) -> Unit raise BrotliError {
-  let len = metadata.length()
-  guard len <= max_meta_block_len else {
-    raise BrotliError::CorruptInput("metadata block too large")
-  }
-  writer.write_bits((if is_last { 1 } else { 0 }).reinterpret_as_uint(), 1)
-  if is_last {
-    writer.write_bits(0U, 1)
-  }
-  writer.write_bits(3U, 2)
-  writer.write_bits(0U, 1)
-  if len == 0 {
-    writer.write_bits(0U, 2)
-  } else {
-    let nbytes = (bit_length(len - 1) + 7) / 8
-    writer.write_bits(nbytes.reinterpret_as_uint(), 2)
-    writer.write_bits((len - 1).reinterpret_as_uint(), nbytes * 8)
-  }
-  writer.align_to_byte()
-  writer.write_bytes(metadata)
-}
-
-///|
 fn write_uncompressed_block(
   writer : BitWriter,
   data : BytesView,

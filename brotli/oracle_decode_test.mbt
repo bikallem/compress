@@ -147,10 +147,11 @@ test "oracle decode: truncated stream yields UnexpectedEOF" {
     b"138f03e08dd446f5ce92ecd46da92e941b0cd1643024db512e07fdc16bdce8e48c0fc2df770a2c4fb03327e6816eace51d0c3211dde5fadb0a8da95351c46cb37c0555e5da01762b61c6a7f5cf298efa450e1b862f78826d229341f682d02f4b6d25c000",
   )
   let truncated = Bytes::makei(compressed.length() - 1, fn(i) { compressed[i] })
-  match (try? @brotli.decompress(truncated)) {
-    Err(@brotli.BrotliError::UnexpectedEOF) => ()
-    Ok(_) => fail("expected UnexpectedEOF for truncated stream")
-    Err(e) => fail("expected UnexpectedEOF, got \{e}")
+  try @brotli.decompress(truncated) catch {
+    @brotli.BrotliError::UnexpectedEOF => ()
+    e => fail("expected UnexpectedEOF, got \{e}")
+  } noraise {
+    _ => fail("expected UnexpectedEOF for truncated stream")
   }
 }
 
@@ -166,19 +167,21 @@ test "oracle decode: corrupted stream yields typed error" {
       compressed[i]
     }
   })
-  match (try? @brotli.decompress(corrupted)) {
-    Err(@brotli.BrotliError::CorruptInput(_)) => ()
-    Err(@brotli.BrotliError::UnexpectedEOF) => ()
-    Ok(_) => fail("expected decoder error for corrupted stream")
-    Err(e) => fail("unexpected decoder error \{e}")
+  try @brotli.decompress(corrupted) catch {
+    @brotli.BrotliError::CorruptInput(_) => ()
+    @brotli.BrotliError::UnexpectedEOF => ()
+    e => fail("unexpected decoder error \{e}")
+  } noraise {
+    _ => fail("expected decoder error for corrupted stream")
   }
 }
 
 ///|
 test "oracle decode: invalid header yields CorruptInput" {
-  match (try? @brotli.decompress(b"\x11")) {
-    Err(@brotli.BrotliError::CorruptInput(_)) => ()
-    Ok(_) => fail("expected CorruptInput for invalid header")
-    Err(e) => fail("expected CorruptInput, got \{e}")
+  try @brotli.decompress(b"\x11") catch {
+    @brotli.BrotliError::CorruptInput(_) => ()
+    e => fail("expected CorruptInput, got \{e}")
+  } noraise {
+    _ => fail("expected CorruptInput for invalid header")
   }
 }

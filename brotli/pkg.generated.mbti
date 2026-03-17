@@ -62,8 +62,6 @@ pub(all) suberror BrotliError {
 pub impl Show for BrotliError
 
 // Types and methods
-type CommandParameters
-
 pub(all) enum CompressionLevel {
   NoCompression
   BestSpeed
@@ -94,8 +92,6 @@ pub impl Show for Decode
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
 pub fn Deflater::new(level? : CompressionLevel) -> Self
-
-type DistanceHistory
 
 pub(all) enum Encode {
   Ok
