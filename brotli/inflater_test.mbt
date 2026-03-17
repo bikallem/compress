@@ -73,6 +73,35 @@ test "decompress fox repeated" {
 }
 
 ///|
+test "round trip empty" {
+  let compressed = compress!(b"", quality=1)
+  let result = decompress!(compressed)
+  assert_eq!(result.length(), 0)
+}
+
+///|
+test "round trip hello" {
+  let input = b"hello"
+  let compressed = compress!(input, quality=1)
+  let result = decompress!(compressed)
+  assert_eq!(result.length(), input.length())
+  for i in 0..<input.length() {
+    assert_eq!(result[i], input[i])
+  }
+}
+
+///|
+test "round trip repeated" {
+  let input = Bytes::make(1000, b'\x42')
+  let compressed = compress!(input, quality=1)
+  let result = decompress!(compressed)
+  assert_eq!(result.length(), 1000)
+  for i in 0..<1000 {
+    assert_eq!(result[i], b'\x42')
+  }
+}
+
+///|
 test "streaming decode" {
   // Test streaming: feed compressed data in small chunks
   let inf = Inflater::new()
@@ -102,5 +131,28 @@ test "streaming decode" {
   let expected = b"hello"
   for i in 0..<5 {
     assert_eq!(result[i], expected[i])
+  }
+}
+
+///|
+test "round trip fox" {
+  let phrase = b"The quick brown fox jumps over the lazy dog. "
+  let input = Bytes::makei(450, fn(i) { phrase[i % 45] })
+  let compressed = compress!(input, quality=1)
+  let result = decompress!(compressed)
+  assert_eq!(result.length(), 450)
+  for i in 0..<450 {
+    assert_eq!(result[i], input[i])
+  }
+}
+
+///|
+test "round trip quality 0" {
+  let input = b"hello world hello world"
+  let compressed = compress!(input, quality=0)
+  let result = decompress!(compressed)
+  assert_eq!(result.length(), input.length())
+  for i in 0..<input.length() {
+    assert_eq!(result[i], input[i])
   }
 }
