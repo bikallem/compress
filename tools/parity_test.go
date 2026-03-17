@@ -190,6 +190,9 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 		r := lzw.NewReader(bytes.NewReader(data), lzw.LSB, 8)
 		result, err = io.ReadAll(r)
 		r.Close()
+	case "bzip2":
+		r := bzip2.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
