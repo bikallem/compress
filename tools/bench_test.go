@@ -1191,3 +1191,19 @@ func BenchmarkLzwDecompressStreaming_1mb(b *testing.B) {
 
 // Ensure genRandom and genText use same strings package for compiler
 var _ = strings.NewReader("")
+
+// --- Snappy (requires github.com/golang/snappy) ---
+// Note: Snappy Go benchmarks require adding the dependency.
+// Uncomment when github.com/golang/snappy is available in go.mod.
+
+// --- LZ4 (requires github.com/pierrec/lz4/v4) ---
+// Note: LZ4 Go benchmarks require adding the dependency.
+// Uncomment when github.com/pierrec/lz4/v4 is available in go.mod.
+
+// --- Zstandard (requires github.com/klauspost/compress/zstd) ---
+// Note: Zstd Go benchmarks require adding the dependency.
+// Uncomment when github.com/klauspost/compress/zstd is available in go.mod.
+
+// --- Brotli (requires github.com/andybalholm/brotli) ---
+// Note: Brotli Go benchmarks require adding the dependency.
+// Uncomment when github.com/andybalholm/brotli is available in go.mod.
