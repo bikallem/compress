@@ -51,8 +51,8 @@ fn compress_uncompressed(src : BytesView, src_len : Int) -> Bytes {
     bw.write_bits(0, 8 - bw.n_bits)
   }
   // Raw data bytes
-  for i in 0..<src_len {
-    bw.write_bits(src[i].to_int(), 8)
+  for x in src {
+    bw.write_bits(x.to_int(), 8)
   }
   // Final empty meta-block: ISLAST=1, ISLASTEMPTY=1
   bw.write_bits(1, 1) // ISLAST

@@ -255,8 +255,8 @@ fn compress_block_simple(
   }
 
   // Encode each sequence
-  for i in 0..<sequences.length() {
-    let (lit_len, match_len, offset) = sequences[i]
+  for seq in sequences {
+    let (lit_len, match_len, offset) = seq
     // Encode offset code
     let of_code = highest_bit(offset) - 1
     write_bits(
@@ -320,7 +320,7 @@ fn encode_ll(lit_len : Int) -> (Int, Int, Int) {
   if lit_len < 16 {
     (lit_len, 0, 0)
   } else {
-    for i = 16; i < 36; i = i + 1 {
+    for i in 16..<36 {
       if i == 35 || lit_len < ll_baselines[i + 1] {
         let extra = lit_len - ll_baselines[i]
         return (i, extra, ll_extra_bits[i])
@@ -336,7 +336,7 @@ fn encode_ml(ml_value : Int) -> (Int, Int, Int) {
   if ml_value < 32 {
     (ml_value, 0, 0)
   } else {
-    for i = 32; i < 53; i = i + 1 {
+    for i in 32..<53 {
       let baseline = ml_baselines[i] - 3
       let next_baseline = if i < 52 {
         ml_baselines[i + 1] - 3

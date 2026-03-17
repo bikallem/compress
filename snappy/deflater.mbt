@@ -31,8 +31,8 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         return Ok
       }
       // Buffer input — Snappy needs the full data for varint header
-      for i in 0..<chunk.length() {
-        s.input_buf.write_byte(chunk[i])
+      for x in chunk {
+        s.input_buf.write_byte(x)
       }
       Ok
     }

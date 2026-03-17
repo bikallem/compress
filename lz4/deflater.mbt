@@ -29,8 +29,8 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       if chunk.length() == 0 {
         return Ok
       }
-      for i in 0..<chunk.length() {
-        s.input_buf.write_byte(chunk[i])
+      for x in chunk {
+        s.input_buf.write_byte(x)
       }
       Ok
     }
