@@ -13,6 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/andybalholm/brotli"
+	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
 )
 
 // MoonBit golden manifest entry (same schema as Go golden).
@@ -84,6 +89,21 @@ func TestGoDecompressMoonBit(t *testing.T) {
 			case "bzip2":
 				r := bzip2.NewReader(bytes.NewReader(compressed))
 				decompressed, err = io.ReadAll(r)
+			case "snappy":
+				decompressed, err = snappy.Decode(nil, compressed)
+			case "lz4":
+				r := lz4.NewReader(bytes.NewReader(compressed))
+				decompressed, err = io.ReadAll(r)
+			case "zstd":
+				dec, derr := zstd.NewReader(bytes.NewReader(compressed))
+				if derr != nil {
+					t.Fatalf("zstd.NewReader failed: %v", derr)
+				}
+				decompressed, err = io.ReadAll(dec)
+				dec.Close()
+			case "brotli":
+				r := brotli.NewReader(bytes.NewReader(compressed))
+				decompressed, err = io.ReadAll(r)
 			default:
 				t.Skipf("Unknown algorithm: %s", e.Algorithm)
 				return
@@ -122,8 +142,12 @@ func TestBitIdenticalOutput(t *testing.T) {
 
 	for _, e := range entries {
 		// Skip algorithms where Go golden files don't exist (bzip2)
-		// Go stdlib has bzip2 decompressor only, no compressor
+		// Go stdlib has bzip2 decompressor only, no compressor in generate_golden
 		if e.Algorithm == "bzip2" {
+			continue
+		}
+		// Skip dictionary-based algorithms
+		if e.Algorithm == "deflate_dict" || e.Algorithm == "zlib_dict" {
 			continue
 		}
 
@@ -200,6 +224,21 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 		r := lzw.NewReader(bytes.NewReader(data), lzw.LSB, 8)
 		result, err = io.ReadAll(r)
 		r.Close()
+	case "snappy":
+		result, err = snappy.Decode(nil, data)
+	case "lz4":
+		r := lz4.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "zstd":
+		dec, derr := zstd.NewReader(bytes.NewReader(data))
+		if derr != nil {
+			t.Fatalf("zstd.NewReader: %v", derr)
+		}
+		result, err = io.ReadAll(dec)
+		dec.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	default:
 		t.Fatalf("Unknown algorithm: %s", algorithm)
 	}
@@ -311,6 +350,21 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 		r.Close()
 	case "bzip2":
 		r := bzip2.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "snappy":
+		result, err = snappy.Decode(nil, data)
+	case "lz4":
+		r := lz4.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "zstd":
+		dec, derr := zstd.NewReader(bytes.NewReader(data))
+		if derr != nil {
+			return nil
+		}
+		result, err = io.ReadAll(dec)
+		dec.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
 		result, err = io.ReadAll(r)
 	default:
 		return nil

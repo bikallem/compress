@@ -13,6 +13,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/andybalholm/brotli"
+	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
 )
 
 type GoldenEntry struct {
@@ -111,6 +116,75 @@ func main() {
 		entries = append(entries, GoldenEntry{
 			Name:       fmt.Sprintf("lzw/%s", name),
 			Algorithm:  "lzw",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate Snappy compressed files
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue
+		}
+		outName := fmt.Sprintf("snappy_%s.bin", name)
+		compressed := snappy.Encode(nil, data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("snappy/%s", name),
+			Algorithm:  "snappy",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate LZ4 compressed files (frame format)
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue
+		}
+		outName := fmt.Sprintf("lz4_%s.bin", name)
+		compressed := lz4Compress(data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("lz4/%s", name),
+			Algorithm:  "lz4",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate Zstandard compressed files
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue
+		}
+		outName := fmt.Sprintf("zstd_%s.bin", name)
+		compressed := zstdCompress(data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("zstd/%s", name),
+			Algorithm:  "zstd",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate Brotli compressed files
+	for name, data := range inputs {
+		outName := fmt.Sprintf("brotli_%s.bin", name)
+		compressed := brotliCompress(data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("brotli/%s", name),
+			Algorithm:  "brotli",
 			InputFile:  name + ".bin",
 			OutputFile: outName,
 			InputSize:  len(data),
@@ -223,6 +297,27 @@ func zlibDictCompress(data, dict []byte, level int) []byte {
 func lzwCompress(data []byte) []byte {
 	var buf bytes.Buffer
 	w := lzw.NewWriter(&buf, lzw.LSB, 8)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func lz4Compress(data []byte) []byte {
+	var buf bytes.Buffer
+	w := lz4.NewWriter(&buf)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func zstdCompress(data []byte) []byte {
+	enc, _ := zstd.NewWriter(nil)
+	return enc.EncodeAll(data, nil)
+}
+
+func brotliCompress(data []byte) []byte {
+	var buf bytes.Buffer
+	w := brotli.NewWriter(&buf)
 	w.Write(data)
 	w.Close()
 	return buf.Bytes()
