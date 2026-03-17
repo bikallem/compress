@@ -1,0 +1,9 @@
+import {
+  "bikallem/compress/brotli",
+  "moonbitlang/async/io",
+}
+
+import {
+  "moonbitlang/async" @runtime,
+  "moonbitlang/async/io",
+} for "test"
