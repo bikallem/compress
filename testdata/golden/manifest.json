@@ -533,6 +533,46 @@
     "output_size": 838
   },
   {
+    "name": "brotli/empty",
+    "algorithm": "brotli",
+    "input_file": "empty.bin",
+    "output_file": "brotli_empty.bin",
+    "input_size": 0,
+    "output_size": 1
+  },
+  {
+    "name": "brotli/hello",
+    "algorithm": "brotli",
+    "input_file": "hello.bin",
+    "output_file": "brotli_hello.bin",
+    "input_size": 13,
+    "output_size": 17
+  },
+  {
+    "name": "brotli/repeated",
+    "algorithm": "brotli",
+    "input_file": "repeated.bin",
+    "output_file": "brotli_repeated.bin",
+    "input_size": 4096,
+    "output_size": 24
+  },
+  {
+    "name": "brotli/zeros_10k",
+    "algorithm": "brotli",
+    "input_file": "zeros_10k.bin",
+    "output_file": "brotli_zeros_10k.bin",
+    "input_size": 10240,
+    "output_size": 13
+  },
+  {
+    "name": "brotli/mixed_1k",
+    "algorithm": "brotli",
+    "input_file": "mixed_1k.bin",
+    "output_file": "brotli_mixed_1k.bin",
+    "input_size": 1024,
+    "output_size": 831
+  },
+  {
     "name": "deflate_dict/mixed_1k/level1",
     "algorithm": "deflate_dict",
     "level": 1,

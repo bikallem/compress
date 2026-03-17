@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 )
@@ -206,6 +207,9 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 		}
 		result, err = io.ReadAll(dec)
 		dec.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	default:
 		t.Fatalf("Unknown algorithm: %s", algorithm)
 	}
@@ -324,6 +328,9 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 		}
 		result, err = io.ReadAll(dec)
 		dec.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	default:
 		return nil
 	}

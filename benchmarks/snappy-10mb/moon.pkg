@@ -1,5 +1,0 @@
-import {
-  "bikallem/compress/benchmarks",
-  "bikallem/compress/snappy" @snap,
-  "moonbitlang/core/bench",
-}

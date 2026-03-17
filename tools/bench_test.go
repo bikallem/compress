@@ -1324,3 +1324,6 @@ func BenchmarkLz4Decompress_1mb(b *testing.B) {
 // Note: Zstd Go benchmarks require adding the dependency.
 // Uncomment when github.com/klauspost/compress/zstd is available in go.mod.
 
+// --- Brotli (requires github.com/andybalholm/brotli) ---
+// Note: Brotli Go benchmarks require adding the dependency.
+// Uncomment when github.com/andybalholm/brotli is available in go.mod.

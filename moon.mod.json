@@ -17,9 +17,10 @@
     "snappy",
     "lz4",
     "zstd",
-    "zstandard"
+    "zstandard",
+    "brotli"
   ],
-  "description": "Compression library for MoonBit: flate, gzip, zlib, lzw, bzip2, snappy, lz4, zstd",
+  "description": "Compression library for MoonBit: flate, gzip, zlib, lzw, bzip2, snappy, lz4, zstd, brotli",
   "source": ".",
   "exclude": [
     "benchmarks",
