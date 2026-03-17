@@ -14,10 +14,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"os/exec"
+
 	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
-	"github.com/pierrec/lz4/v4"
 )
 
 type GoldenEntry struct {
@@ -303,11 +304,14 @@ func lzwCompress(data []byte) []byte {
 }
 
 func lz4Compress(data []byte) []byte {
-	var buf bytes.Buffer
-	w := lz4.NewWriter(&buf)
-	w.Write(data)
-	w.Close()
-	return buf.Bytes()
+	cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+	cmd.Stdin = bytes.NewReader(data)
+	out, err := cmd.Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lz4 command failed: %v\n", err)
+		return nil
+	}
+	return out
 }
 
 func zstdCompress(data []byte) []byte {

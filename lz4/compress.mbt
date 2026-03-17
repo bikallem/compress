@@ -8,8 +8,8 @@ pub fn compress(data : Bytes) -> Bytes {
   let max_output = 19 + src_len + (src_len / block_max_size + 1) * 16 + 12
   let out = FixedArray::make(max_output, b'\x00')
   let mut pos = 0
-  // Write frame header with content size
-  pos += write_frame_header(out, pos, Some(src_len))
+  // Write frame header (no content size, matching lz4 CLI default)
+  pos += write_frame_header(out, pos, None)
   // Content checksum hasher
   let xxh = @checksum.XXH32::new()
   xxh.update(src)

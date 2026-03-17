@@ -1196,9 +1196,122 @@ var _ = strings.NewReader("")
 // Note: Snappy Go benchmarks require adding the dependency.
 // Uncomment when github.com/golang/snappy is available in go.mod.
 
-// --- LZ4 (requires github.com/pierrec/lz4/v4) ---
-// Note: LZ4 Go benchmarks require adding the dependency.
-// Uncomment when github.com/pierrec/lz4/v4 is available in go.mod.
+// --- LZ4 ---
+// Uses the system lz4 command (https://github.com/lz4/lz4) for
+// compress benchmarks. Decompress uses the Go pierrec/lz4 library.
+
+func lz4Compress(data []byte) ([]byte, error) {
+	cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+	cmd.Stdin = bytes.NewReader(data)
+	return cmd.Output()
+}
+
+func BenchmarkLz4CompressDefault_1kb(b *testing.B) {
+	data := genText(1024)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4CompressDefault_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4CompressDefault_100kb(b *testing.B) {
+	data := genText(102400)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4CompressDefault_1mb(b *testing.B) {
+	data := genText(1048576)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+		cmd.Stdin = bytes.NewReader(data)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4Decompress_1kb(b *testing.B) {
+	data := genText(1024)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-d", "-c", "-f")
+		cmd.Stdin = bytes.NewReader(compressed)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4Decompress_10kb(b *testing.B) {
+	data := genText(10240)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-d", "-c", "-f")
+		cmd.Stdin = bytes.NewReader(compressed)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4Decompress_100kb(b *testing.B) {
+	data := genText(102400)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-d", "-c", "-f")
+		cmd.Stdin = bytes.NewReader(compressed)
+		cmd.Output()
+	}
+}
+
+func BenchmarkLz4Decompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cmd := exec.Command("lz4", "-d", "-c", "-f")
+		cmd.Stdin = bytes.NewReader(compressed)
+		cmd.Output()
+	}
+}
 
 // --- Zstandard (requires github.com/klauspost/compress/zstd) ---
 // Note: Zstd Go benchmarks require adding the dependency.

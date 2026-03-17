@@ -80,9 +80,9 @@ test "lz4 frame header checksum" {
   let original : Bytes = b"Hello, World!"
   let compressed = @lz4.compress(original)
   // The header checksum is the last byte before block data
-  // For our frame: 4(magic) + 1(flg) + 1(bd) + 8(content_size) + 1(hc) = 15
+  // For our frame: 4(magic) + 1(flg) + 1(bd) + 1(hc) = 7
   let corrupted = Bytes::makei(compressed.length(), fn(i) {
-    if i == 14 {
+    if i == 6 {
       // corrupt header checksum
       (compressed[i].to_int() ^ 0xFF).to_byte()
     } else {

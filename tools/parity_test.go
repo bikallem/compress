@@ -14,10 +14,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"os/exec"
+
 	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
-	"github.com/pierrec/lz4/v4"
 )
 
 // MoonBit golden manifest entry (same schema as Go golden).
@@ -92,8 +93,9 @@ func TestGoDecompressMoonBit(t *testing.T) {
 			case "snappy":
 				decompressed, err = snappy.Decode(nil, compressed)
 			case "lz4":
-				r := lz4.NewReader(bytes.NewReader(compressed))
-				decompressed, err = io.ReadAll(r)
+				cmd := exec.Command("lz4", "-d", "-c", "-f")
+				cmd.Stdin = bytes.NewReader(compressed)
+				decompressed, err = cmd.Output()
 			case "zstd":
 				dec, derr := zstd.NewReader(bytes.NewReader(compressed))
 				if derr != nil {
@@ -227,8 +229,9 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
-		r := lz4.NewReader(bytes.NewReader(data))
-		result, err = io.ReadAll(r)
+		cmd := exec.Command("lz4", "-d", "-c", "-f")
+		cmd.Stdin = bytes.NewReader(data)
+		result, err = cmd.Output()
 	case "zstd":
 		dec, derr := zstd.NewReader(bytes.NewReader(data))
 		if derr != nil {
@@ -354,8 +357,9 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
-		r := lz4.NewReader(bytes.NewReader(data))
-		result, err = io.ReadAll(r)
+		cmd := exec.Command("lz4", "-d", "-c", "-f")
+		cmd.Stdin = bytes.NewReader(data)
+		result, err = cmd.Output()
 	case "zstd":
 		dec, derr := zstd.NewReader(bytes.NewReader(data))
 		if derr != nil {
