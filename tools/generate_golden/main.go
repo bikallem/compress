@@ -12,9 +12,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-
 	"os/exec"
+	"path/filepath"
 
 	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
@@ -149,6 +148,9 @@ func main() {
 		}
 		outName := fmt.Sprintf("lz4_%s.bin", name)
 		compressed := lz4Compress(data)
+		if compressed == nil {
+			continue
+		}
 		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
 		entries = append(entries, GoldenEntry{
 			Name:       fmt.Sprintf("lz4/%s", name),
@@ -308,7 +310,7 @@ func lz4Compress(data []byte) []byte {
 	cmd.Stdin = bytes.NewReader(data)
 	out, err := cmd.Output()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lz4 command failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "lz4 command failed (is lz4 installed?): %v\n", err)
 		return nil
 	}
 	return out

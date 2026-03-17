@@ -920,67 +920,73 @@ func bzip2Compress(data []byte) ([]byte, error) {
 
 func BenchmarkBzip2CompressDefault_1kb(b *testing.B) {
 	data := genText(1024)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_10kb(b *testing.B) {
 	data := genText(10240)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_100kb(b *testing.B) {
 	data := genText(102400)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_1mb(b *testing.B) {
 	data := genText(1048576)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_10mb(b *testing.B) {
 	data := genText(10485760)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_100mb(b *testing.B) {
 	data := genText(104857600)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
@@ -1197,11 +1203,19 @@ var _ = strings.NewReader("")
 // Uncomment when github.com/golang/snappy is available in go.mod.
 
 // --- LZ4 ---
-// Uses the system lz4 command (https://github.com/lz4/lz4) for
-// compress benchmarks. Decompress uses the Go pierrec/lz4 library.
+// Uses the system lz4 command for both compress and decompress benchmarks.
+// NOTE: results include process spawn overhead (~2-5ms per iteration),
+// so these are not directly comparable to in-process library benchmarks.
+// They are still useful for tracking relative performance across sizes.
 
 func lz4Compress(data []byte) ([]byte, error) {
 	cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+	cmd.Stdin = bytes.NewReader(data)
+	return cmd.Output()
+}
+
+func lz4DecompressBench(data []byte) ([]byte, error) {
+	cmd := exec.Command("lz4", "-d", "-c", "-f")
 	cmd.Stdin = bytes.NewReader(data)
 	return cmd.Output()
 }
@@ -1214,42 +1228,43 @@ func BenchmarkLz4CompressDefault_1kb(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		lz4Compress(data)
 	}
 }
 
 func BenchmarkLz4CompressDefault_10kb(b *testing.B) {
 	data := genText(10240)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		lz4Compress(data)
 	}
 }
 
 func BenchmarkLz4CompressDefault_100kb(b *testing.B) {
 	data := genText(102400)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		lz4Compress(data)
 	}
 }
 
 func BenchmarkLz4CompressDefault_1mb(b *testing.B) {
 	data := genText(1048576)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		lz4Compress(data)
 	}
 }
 
@@ -1262,9 +1277,7 @@ func BenchmarkLz4Decompress_1kb(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-d", "-c", "-f")
-		cmd.Stdin = bytes.NewReader(compressed)
-		cmd.Output()
+		lz4DecompressBench(compressed)
 	}
 }
 
@@ -1277,9 +1290,7 @@ func BenchmarkLz4Decompress_10kb(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-d", "-c", "-f")
-		cmd.Stdin = bytes.NewReader(compressed)
-		cmd.Output()
+		lz4DecompressBench(compressed)
 	}
 }
 
@@ -1292,9 +1303,7 @@ func BenchmarkLz4Decompress_100kb(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-d", "-c", "-f")
-		cmd.Stdin = bytes.NewReader(compressed)
-		cmd.Output()
+		lz4DecompressBench(compressed)
 	}
 }
 
@@ -1307,9 +1316,7 @@ func BenchmarkLz4Decompress_1mb(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("lz4", "-d", "-c", "-f")
-		cmd.Stdin = bytes.NewReader(compressed)
-		cmd.Output()
+		lz4DecompressBench(compressed)
 	}
 }
 

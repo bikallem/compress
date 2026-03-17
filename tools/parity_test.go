@@ -8,18 +8,32 @@ import (
 	"compress/lzw"
 	"compress/zlib"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"os/exec"
 
 	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 )
+
+// lz4Decompress shells out to the system lz4 command to decompress data.
+// Returns an *exec.Error wrapping exec.ErrNotFound if the lz4 binary is not installed.
+func lz4Decompress(data []byte) ([]byte, error) {
+	cmd := exec.Command("lz4", "-d", "-c", "-f")
+	cmd.Stdin = bytes.NewReader(data)
+	return cmd.Output()
+}
+
+// isLz4NotFound reports whether err indicates the lz4 command is not installed.
+func isLz4NotFound(err error) bool {
+	var execErr *exec.Error
+	return errors.As(err, &execErr)
+}
 
 // MoonBit golden manifest entry (same schema as Go golden).
 type MBGoldenEntry struct {
@@ -63,57 +77,7 @@ func TestGoDecompressMoonBit(t *testing.T) {
 				t.Fatalf("Failed to read MoonBit compressed %s: %v", e.OutputFile, err)
 			}
 
-			var decompressed []byte
-			switch e.Algorithm {
-			case "deflate":
-				r := flate.NewReader(bytes.NewReader(compressed))
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "gzip":
-				r, gerr := gzip.NewReader(bytes.NewReader(compressed))
-				if gerr != nil {
-					t.Fatalf("gzip.NewReader failed: %v", gerr)
-				}
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "zlib":
-				r, zerr := zlib.NewReader(bytes.NewReader(compressed))
-				if zerr != nil {
-					t.Fatalf("zlib.NewReader failed: %v", zerr)
-				}
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "lzw":
-				r := lzw.NewReader(bytes.NewReader(compressed), lzw.LSB, 8)
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "bzip2":
-				r := bzip2.NewReader(bytes.NewReader(compressed))
-				decompressed, err = io.ReadAll(r)
-			case "snappy":
-				decompressed, err = snappy.Decode(nil, compressed)
-			case "lz4":
-				cmd := exec.Command("lz4", "-d", "-c", "-f")
-				cmd.Stdin = bytes.NewReader(compressed)
-				decompressed, err = cmd.Output()
-			case "zstd":
-				dec, derr := zstd.NewReader(bytes.NewReader(compressed))
-				if derr != nil {
-					t.Fatalf("zstd.NewReader failed: %v", derr)
-				}
-				decompressed, err = io.ReadAll(dec)
-				dec.Close()
-			case "brotli":
-				r := brotli.NewReader(bytes.NewReader(compressed))
-				decompressed, err = io.ReadAll(r)
-			default:
-				t.Skipf("Unknown algorithm: %s", e.Algorithm)
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("Go decompression of MoonBit output failed: %v", err)
-			}
+			decompressed := goDecompress(t, e.Algorithm, compressed)
 			if !bytes.Equal(decompressed, input) {
 				t.Errorf("Round-trip mismatch: MoonBit compressed → Go decompressed\n"+
 					"  input: %d bytes, got: %d bytes", len(input), len(decompressed))
@@ -229,9 +193,10 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
-		cmd := exec.Command("lz4", "-d", "-c", "-f")
-		cmd.Stdin = bytes.NewReader(data)
-		result, err = cmd.Output()
+		result, err = lz4Decompress(data)
+		if isLz4NotFound(err) {
+			t.Skip("lz4 command not available")
+		}
 	case "zstd":
 		dec, derr := zstd.NewReader(bytes.NewReader(data))
 		if derr != nil {
@@ -258,10 +223,10 @@ func TestParitySummary(t *testing.T) {
 	goDir := filepath.Join("..", "testdata", "golden")
 
 	type Result struct {
-		identical   int
-		compatible  int
-		failed      int
-		noGoGolden  int
+		identical  int
+		compatible int
+		failed     int
+		noGoGolden int
 	}
 	results := make(map[string]*Result)
 
@@ -280,20 +245,15 @@ func TestParitySummary(t *testing.T) {
 
 		goCompressed, err := os.ReadFile(filepath.Join(goDir, e.OutputFile))
 		if err != nil {
-			// No Go golden (e.g., bzip2 — Go has no compressor)
+			// No Go golden (e.g., bzip2 -- Go has no compressor)
 			// Check if Go can decompress MoonBit output
-			if e.Algorithm == "bzip2" {
-				input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
-				if ierr != nil {
-					r.failed++
-					continue
-				}
-				br := bzip2.NewReader(bytes.NewReader(mbCompressed))
-				decomp, derr := io.ReadAll(br)
-				if derr != nil || !bytes.Equal(decomp, input) {
-					r.failed++
-				} else {
+			input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
+			if ierr == nil {
+				decomp := goDecompressSafe(e.Algorithm, mbCompressed)
+				if decomp != nil && bytes.Equal(decomp, input) {
 					r.compatible++
+				} else {
+					r.failed++
 				}
 			}
 			r.noGoGolden++
@@ -357,9 +317,7 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
-		cmd := exec.Command("lz4", "-d", "-c", "-f")
-		cmd.Stdin = bytes.NewReader(data)
-		result, err = cmd.Output()
+		result, err = lz4Decompress(data)
 	case "zstd":
 		dec, derr := zstd.NewReader(bytes.NewReader(data))
 		if derr != nil {
