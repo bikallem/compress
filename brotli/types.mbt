@@ -53,7 +53,7 @@ fn compression_level_to_int(level : CompressionLevel) -> Int {
 
 ///|
 /// Maximum Brotli window bits.
-const MAX_WBITS : Int = 24
+let _MAX_WBITS : Int = 24
 
 ///|
 /// Default window bits.

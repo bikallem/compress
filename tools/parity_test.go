@@ -51,15 +51,8 @@ func TestGoDecompressMoonBit(t *testing.T) {
 	mbDir := filepath.Join("..", "testdata", "moonbit_golden")
 	goDir := filepath.Join("..", "testdata", "golden")
 
-	// Codecs with stub compressors that don't produce valid output yet.
-	stubCodecs := map[string]bool{"snappy": true, "lz4": true, "zstd": true, "brotli": true}
-
 	for _, e := range entries {
 		t.Run(e.Name, func(t *testing.T) {
-			if stubCodecs[e.Algorithm] {
-				t.Skipf("Skipping %s: compressor is a stub", e.Algorithm)
-				return
-			}
 			input, err := os.ReadFile(filepath.Join(goDir, e.InputFile))
 			if err != nil {
 				t.Fatalf("Failed to read input %s: %v", e.InputFile, err)
