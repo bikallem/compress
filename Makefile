@@ -1,5 +1,15 @@
 .PHONY: test bench parity parity-generate parity-test check roundtrip
 
+ROUNDTRIP_FILES := \
+	brotli/round_trip_test.mbt \
+	bzip2/round_trip_test.mbt \
+	flate/round_trip_test.mbt \
+	gzip/round_trip_test.mbt \
+	lzw/round_trip_test.mbt \
+	zlib/round_trip_test.mbt
+
+ROUNDTRIP_TARGETS := native wasm-gc js
+
 # Run all MoonBit tests (native)
 test:
 	moon test --target native
@@ -14,12 +24,13 @@ bench:
 
 # Run roundtrip tests on all targets
 roundtrip:
-	@echo "=== Roundtrip tests: native ==="
-	moon test --target native --filter "*round*trip*"
-	@echo "=== Roundtrip tests: wasm-gc ==="
-	moon test --target wasm-gc --filter "*round*trip*"
-	@echo "=== Roundtrip tests: js ==="
-	moon test --target js --filter "*round*trip*"
+	@set -e; \
+	for target in $(ROUNDTRIP_TARGETS); do \
+		echo "=== Roundtrip tests: $$target ==="; \
+		for file in $(ROUNDTRIP_FILES); do \
+			moon test $$file --target $$target; \
+		done; \
+	done
 
 # Full parity test: generate MoonBit golden files + compare against Go
 parity:
