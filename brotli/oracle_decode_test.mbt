@@ -31,6 +31,13 @@ fn structured_binary_fixture() -> Bytes {
 }
 
 ///|
+fn repeat_pattern(pattern : Bytes, repeats : Int) -> Bytes {
+  Bytes::makei(pattern.length() * repeats, fn(i) {
+    pattern[i % pattern.length()]
+  })
+}
+
+///|
 test "oracle decode: empty stream" {
   let compressed = hex_bytes(b"33")
   assert_eq(@brotli.decompress(compressed), b"")
@@ -70,6 +77,15 @@ test "oracle decode: static dictionary candidate" {
 }
 
 ///|
+test "oracle decode: large window-boundary fixture" {
+  let original = repeat_pattern(b"abcdef0123456789", 5000)
+  let compressed = hex_bytes(
+    b"537f38815f1e1c436dd6f0e3c11840159880ead97b406251f348",
+  )
+  assert_eq(@brotli.decompress(compressed), original)
+}
+
+///|
 test "oracle decode: chunked inflater input" {
   let compressed = hex_bytes(
     b"138f03e08dd446f5ce92ecd46da92e941b0cd1643024db512e07fdc16bdce8e48c0fc2df770a2c4fb03327e6816eace51d0c3211dde5fadb0a8da95351c46cb37c0555e5da01762b61c6a7f5cf298efa450e1b862f78826d229341f682d02f4b6d25c000",
@@ -99,5 +115,70 @@ test "oracle decode: chunked inflater input" {
     }
     End => assert_eq(out.to_bytes(), expected)
     Error(e) => raise e
+  }
+}
+
+///|
+test "oracle decode: preserves trailing bytes after end" {
+  let compressed = hex_bytes(b"130a00f825000298b0e501")
+  let buf = @buffer.new(size_hint=compressed.length() + 4)
+  buf.write_bytes(compressed)
+  buf.write_bytes(b"TAIL")
+  let inflater = @brotli.Inflater::new()
+  inflater.src(buf.to_bytes()[:])
+  let out = @buffer.new()
+  loop inflater.decode() {
+    Await => fail("unexpected Await for buffered input")
+    Data(chunk) => {
+      out.write_bytes(chunk)
+      continue inflater.decode()
+    }
+    End => {
+      assert_eq(out.to_bytes(), b"compression")
+      assert_eq(inflater.remaining(), b"TAIL")
+    }
+    Error(e) => raise e
+  }
+}
+
+///|
+test "oracle decode: truncated stream yields UnexpectedEOF" {
+  let compressed = hex_bytes(
+    b"138f03e08dd446f5ce92ecd46da92e941b0cd1643024db512e07fdc16bdce8e48c0fc2df770a2c4fb03327e6816eace51d0c3211dde5fadb0a8da95351c46cb37c0555e5da01762b61c6a7f5cf298efa450e1b862f78826d229341f682d02f4b6d25c000",
+  )
+  let truncated = Bytes::makei(compressed.length() - 1, fn(i) { compressed[i] })
+  match (try? @brotli.decompress(truncated)) {
+    Err(@brotli.BrotliError::UnexpectedEOF) => ()
+    Ok(_) => fail("expected UnexpectedEOF for truncated stream")
+    Err(e) => fail("expected UnexpectedEOF, got \{e}")
+  }
+}
+
+///|
+test "oracle decode: corrupted stream yields typed error" {
+  let compressed = hex_bytes(
+    b"138203882c0e78d3d0955d9710bb172ba9cad092cc8cad415ce6f236c8199e9e0a7b830d387048206f24be41a715ce1c1e27aa2938c281b84f8301",
+  )
+  let corrupted = Bytes::makei(compressed.length(), fn(i) {
+    if i == 10 {
+      compressed[i] ^ b"\x5a"[0]
+    } else {
+      compressed[i]
+    }
+  })
+  match (try? @brotli.decompress(corrupted)) {
+    Err(@brotli.BrotliError::CorruptInput(_)) => ()
+    Err(@brotli.BrotliError::UnexpectedEOF) => ()
+    Ok(_) => fail("expected decoder error for corrupted stream")
+    Err(e) => fail("unexpected decoder error \{e}")
+  }
+}
+
+///|
+test "oracle decode: invalid header yields CorruptInput" {
+  match (try? @brotli.decompress(b"\x11")) {
+    Err(@brotli.BrotliError::CorruptInput(_)) => ()
+    Ok(_) => fail("expected CorruptInput for invalid header")
+    Err(e) => fail("expected CorruptInput, got \{e}")
   }
 }
