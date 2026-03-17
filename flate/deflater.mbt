@@ -237,8 +237,12 @@ fn Deflater::step_stored(self : Deflater) -> Unit {
 }
 
 ///|
+/// Snappy-style fast compressor (level 1). Matches Go's deflateFast algorithm:
+/// adaptive skip on miss, immediate re-probe after match for chaining.
 fn Deflater::step_fast(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
+  let window = self.window
+  let head = self.head
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -247,32 +251,83 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     return
   }
   self.w.start_fixed_block(false)
+  let mut next_emit = i // start of pending literal run
+  // Outer loop: find matches via adaptive skip, then chain
   while i < safe_end {
-    // i < safe_end guarantees i+3 < end, safe for hash4/unsafe_get
-    let h = self.hash4(i, hash_mask)
-    let match_pos = self.head.unsafe_get(h)
-    self.head.unsafe_set(h, i)
-    if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
+    // --- Skip loop: find a 4-byte match with adaptive skipping ---
+    // After 32 bytes without a match, start skipping bytes (like Snappy).
+    let mut skip = 32
+    let mut candidate = -1
+    let mut found = false
+    let mut s = i
+    while true {
+      s = i
+      let step = skip >> 5
+      let next_i = s + step
+      skip += step
+      if next_i > safe_end {
+        break
+      }
+      let h = self.hash4(s, hash_mask)
+      candidate = head.unsafe_get(h)
+      head.unsafe_set(h, s)
+      if candidate >= 0 && s - candidate <= MAX_MATCH_OFFSET {
+        // Verify 4-byte match (hash alone may collide)
+        if window.unsafe_get(s) == window.unsafe_get(candidate) &&
+          window.unsafe_get(s + 1) == window.unsafe_get(candidate + 1) &&
+          window.unsafe_get(s + 2) == window.unsafe_get(candidate + 2) &&
+          window.unsafe_get(s + 3) == window.unsafe_get(candidate + 3) {
+          found = true
+          break
+        }
+      }
+      i = next_i
+    }
+    if not(found) {
+      break // no more matches possible
+    }
+    // Emit pending literals [next_emit, s)
+    for j in next_emit..<s {
+      self.w.write_literal_fast(window.unsafe_get(j))
+    }
+    i = s
+    // --- Match loop: extend match, emit, then try to chain ---
+    while true {
       let max_len = if end - i < MAX_MATCH_LENGTH {
         end - i
       } else {
         MAX_MATCH_LENGTH
       }
-      let length = self.match_len(i, match_pos, max_len)
-      if length >= MIN_MATCH_LENGTH {
-        self.w.write_match_fast(length, i - match_pos)
-        if i + 4 < end {
-          self.head.unsafe_set(self.hash4(i + 1, hash_mask), i + 1)
-        }
-        i += length
-        continue
+      let length = self.match_len(i, candidate, max_len)
+      self.w.write_match_fast(length, i - candidate)
+      i += length
+      next_emit = i
+      if i >= safe_end {
+        break
       }
+      // Hash i-1, then hash i and check for a chained match.
+      // i-1 is always valid (length >= MIN_MATCH_LENGTH = 3).
+      head.unsafe_set(self.hash4(i - 1, hash_mask), i - 1)
+      let h = self.hash4(i, hash_mask)
+      candidate = head.unsafe_get(h)
+      head.unsafe_set(h, i)
+      if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
+        window.unsafe_get(i) == window.unsafe_get(candidate) &&
+        window.unsafe_get(i + 1) == window.unsafe_get(candidate + 1) &&
+        window.unsafe_get(i + 2) == window.unsafe_get(candidate + 2) &&
+        window.unsafe_get(i + 3) == window.unsafe_get(candidate + 3) {
+        continue // chain to next match
+      }
+      i += 1
+      break
     }
-    self.w.write_literal_fast(self.window.unsafe_get(i))
-    i += 1
+  }
+  // Emit remaining literals
+  for j = next_emit; j < end; j = j + 1 {
+    self.w.write_literal_fast(window.unsafe_get(j))
   }
   self.w.write_fixed_symbol(END_BLOCK_MARKER)
-  self.index = i
+  self.index = end
 }
 
 ///|
