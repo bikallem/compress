@@ -1,53 +1,4 @@
 ///|
-/// Forward bit reader (LSB-first) for FSE decoding.
-priv struct BitReader {
-  data : BytesView
-  mut byte_pos : Int
-  mut bits : UInt64
-  mut n_bits : Int
-}
-
-///|
-/// Create a new forward bit reader.
-fn BitReader::new(data : BytesView) -> BitReader {
-  { data, byte_pos: 0, bits: 0UL, n_bits: 0 }
-}
-
-///|
-fn BitReader::refill(self : BitReader) -> Unit {
-  while self.n_bits <= 56 && self.byte_pos < self.data.length() {
-    self.bits = self.bits |
-      (self.data[self.byte_pos].to_uint().to_uint64() << self.n_bits)
-    self.byte_pos += 1
-    self.n_bits += 8
-  }
-}
-
-///|
-fn BitReader::read_bits(self : BitReader, n : Int) -> UInt {
-  self.refill()
-  let mask = if n >= 32 { 0xFFFFFFFF_U } else { (1U << n) - 1U }
-  let val = (self.bits & mask.to_uint64()).to_uint()
-  self.bits = self.bits >> n
-  self.n_bits -= n
-  val
-}
-
-///|
-fn BitReader::read_bits64(self : BitReader, n : Int) -> UInt64 {
-  self.refill()
-  let mask : UInt64 = if n >= 64 {
-    0xFFFFFFFFFFFFFFFFUL
-  } else {
-    (1UL << n) - 1UL
-  }
-  let val = self.bits & mask
-  self.bits = self.bits >> n
-  self.n_bits -= n
-  val
-}
-
-///|
 /// Backward bit reader for sequence decoding in zstd.
 /// Zstd sequences use a backward bit stream: bytes are read from end to start.
 priv struct BackwardBitReader {
@@ -102,10 +53,3 @@ fn BackwardBitReader::read_bits(self : BackwardBitReader, n : Int) -> UInt {
   val.to_uint()
 }
 
-///|
-/// References to suppress unused warnings for forward BitReader stubs.
-fn init {
-  ignore(BitReader::new)
-  ignore(BitReader::read_bits)
-  ignore(BitReader::read_bits64)
-}

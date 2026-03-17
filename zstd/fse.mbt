@@ -68,11 +68,9 @@ fn highest_bit(n_ : Int) -> Int {
   if n_ <= 0 {
     return 0
   }
-  let mut n = n_
   let mut bits = 0
-  while n > 0 {
+  for n = n_; n > 0; n = n >> 1 {
     bits += 1
-    n = n >> 1
   }
   bits
 }

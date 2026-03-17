@@ -121,18 +121,17 @@ pub impl Hasher for XXH32 with update(self, data) -> Unit {
     }
   }
   // Process 16-byte blocks directly from input
-  while offset + 16 <= len {
-    self.v1 = xxh32_round(self.v1, xxh32_read32(data, offset))
-    self.v2 = xxh32_round(self.v2, xxh32_read32(data, offset + 4))
-    self.v3 = xxh32_round(self.v3, xxh32_read32(data, offset + 8))
-    self.v4 = xxh32_round(self.v4, xxh32_read32(data, offset + 12))
-    offset += 16
+  for off = offset; off + 16 <= len; off = off + 16 {
+    self.v1 = xxh32_round(self.v1, xxh32_read32(data, off))
+    self.v2 = xxh32_round(self.v2, xxh32_read32(data, off + 4))
+    self.v3 = xxh32_round(self.v3, xxh32_read32(data, off + 8))
+    self.v4 = xxh32_round(self.v4, xxh32_read32(data, off + 12))
+    offset = off + 16
   }
   // Buffer remaining bytes
-  while offset < len {
-    self.buf[self.buf_used] = data[offset]
+  for off = offset; off < len; off = off + 1 {
+    self.buf[self.buf_used] = data[off]
     self.buf_used += 1
-    offset += 1
   }
 }
 
@@ -150,15 +149,14 @@ pub impl Hasher for XXH32 with checksum(self) -> UInt {
   // Process remaining buffered bytes
   let buf_bytes = Bytes::makei(self.buf_used, fn(i) { self.buf[i] })
   let mut i = 0
-  while i + 4 <= self.buf_used {
-    h = h + xxh32_read32(buf_bytes[:], i) * XXH32_PRIME3
+  for off = 0; off + 4 <= self.buf_used; off = off + 4 {
+    h = h + xxh32_read32(buf_bytes[:], off) * XXH32_PRIME3
     h = xxh32_rotl(h, 17) * XXH32_PRIME4
-    i += 4
+    i = off + 4
   }
-  while i < self.buf_used {
-    h = h + buf_bytes[i].to_uint() * XXH32_PRIME5
+  for off = i; off < self.buf_used; off = off + 1 {
+    h = h + buf_bytes[off].to_uint() * XXH32_PRIME5
     h = xxh32_rotl(h, 11) * XXH32_PRIME1
-    i += 1
   }
   xxh32_avalanche(h)
 }

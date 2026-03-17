@@ -142,18 +142,17 @@ pub fn XXH64::update(self : XXH64, data : BytesView) -> Unit {
     }
   }
   // Process 32-byte blocks directly from input
-  while offset + 32 <= len {
-    self.v1 = xxh64_round(self.v1, xxh64_read64(data, offset))
-    self.v2 = xxh64_round(self.v2, xxh64_read64(data, offset + 8))
-    self.v3 = xxh64_round(self.v3, xxh64_read64(data, offset + 16))
-    self.v4 = xxh64_round(self.v4, xxh64_read64(data, offset + 24))
-    offset += 32
+  for off = offset; off + 32 <= len; off = off + 32 {
+    self.v1 = xxh64_round(self.v1, xxh64_read64(data, off))
+    self.v2 = xxh64_round(self.v2, xxh64_read64(data, off + 8))
+    self.v3 = xxh64_round(self.v3, xxh64_read64(data, off + 16))
+    self.v4 = xxh64_round(self.v4, xxh64_read64(data, off + 24))
+    offset = off + 32
   }
   // Buffer remaining bytes
-  while offset < len {
-    self.buf[self.buf_used] = data[offset]
+  for off = offset; off < len; off = off + 1 {
+    self.buf[self.buf_used] = data[off]
     self.buf_used += 1
-    offset += 1
   }
 }
 
@@ -177,21 +176,20 @@ pub fn XXH64::checksum64(self : XXH64) -> UInt64 {
   // Process remaining buffered bytes
   let buf_bytes = Bytes::makei(self.buf_used, fn(i) { self.buf[i] })
   let mut i = 0
-  while i + 8 <= self.buf_used {
-    let k1 = xxh64_round(0UL, xxh64_read64(buf_bytes[:], i))
+  for off = 0; off + 8 <= self.buf_used; off = off + 8 {
+    let k1 = xxh64_round(0UL, xxh64_read64(buf_bytes[:], off))
     h = h ^ k1
     h = xxh64_rotl(h, 27) * XXH64_PRIME1 + XXH64_PRIME4
-    i += 8
+    i = off + 8
   }
-  while i + 4 <= self.buf_used {
-    h = h ^ (xxh64_read32(buf_bytes[:], i) * XXH64_PRIME1)
+  for off = i; off + 4 <= self.buf_used; off = off + 4 {
+    h = h ^ (xxh64_read32(buf_bytes[:], off) * XXH64_PRIME1)
     h = xxh64_rotl(h, 23) * XXH64_PRIME2 + XXH64_PRIME3
-    i += 4
+    i = off + 4
   }
-  while i < self.buf_used {
-    h = h ^ (buf_bytes[i].to_uint().to_uint64() * XXH64_PRIME5)
+  for off = i; off < self.buf_used; off = off + 1 {
+    h = h ^ (buf_bytes[off].to_uint().to_uint64() * XXH64_PRIME5)
     h = xxh64_rotl(h, 11) * XXH64_PRIME1
-    i += 1
   }
   xxh64_avalanche(h)
 }

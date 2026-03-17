@@ -105,17 +105,20 @@ test "signal protocol: deflater streaming" {
   let d = @lz4.Deflater::new()
   match d.encode(Some(data[:512])) {
     Ok => ()
-    _ => ()
+    Data(_) | End => ()
+    Error(e) => raise e
   }
   match d.encode(Some(data[512:])) {
     Ok => ()
-    _ => ()
+    Data(_) | End => ()
+    Error(e) => raise e
   }
   let buf = @buffer.new()
   match d.encode(None) {
     Data(out) => buf.write_bytes(out)
     End => ()
-    _ => ()
+    Ok => ()
+    Error(e) => raise e
   }
   let compressed = buf.to_bytes()
   let decompressed = @lz4.decompress(compressed)

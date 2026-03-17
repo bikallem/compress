@@ -35,21 +35,6 @@ fn Encoder::ensure_capacity(self : Encoder, additional : Int) -> Unit {
 }
 
 ///|
-/// Emit a single byte to the output buffer (used by streaming API).
-fn Encoder::emit_byte(self : Encoder, b : Byte) -> Unit {
-  self.ensure_capacity(1)
-  self.out_buf[self.out_pos] = b
-  self.out_pos += 1
-}
-
-///|
-/// References to suppress unused warnings for streaming API stubs.
-fn init {
-  ignore(Encoder::emit_byte)
-  ignore(Encoder::take_output)
-}
-
-///|
 /// Encodes the uncompressed length as a varint at the start.
 fn Encoder::emit_varint(self : Encoder, n_ : Int) -> Unit {
   let mut n = n_
@@ -251,14 +236,3 @@ fn Encoder::close(self : Encoder) -> Bytes {
   result.unsafe_reinterpret_as_bytes()
 }
 
-///|
-/// Retrieve accumulated output and reset the buffer.
-fn Encoder::take_output(self : Encoder) -> Bytes {
-  if self.out_pos == 0 {
-    return Bytes::default()
-  }
-  let result = @blit.make_uninit(self.out_pos)
-  @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
-  self.out_pos = 0
-  result.unsafe_reinterpret_as_bytes()
-}

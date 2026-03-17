@@ -40,22 +40,20 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     let mlen_bits = mnibbles * 4
     let mlen = br.read_bits(mlen_bits) + 1
     // Check for uncompressed meta-block
-    if is_last == false || true {
-      // peek at ISUNCOMPRESSED
-      let is_uncompressed = br.read_bool()
-      if is_uncompressed {
-        // Byte-align the reader
-        if br.n_bits % 8 != 0 {
-          let _ = br.read_bits(br.n_bits % 8)
-        }
-        // Read raw bytes
-        let block = Bytes::makei(mlen, fn(_i) { br.read_bits(8).to_byte() })
-        sink.write_bytes(block)
-        if is_last {
-          break
-        }
-        continue
+    // peek at ISUNCOMPRESSED
+    let is_uncompressed = br.read_bool()
+    if is_uncompressed {
+      // Byte-align the reader
+      if br.n_bits % 8 != 0 {
+        let _ = br.read_bits(br.n_bits % 8)
       }
+      // Read raw bytes
+      let block = Bytes::makei(mlen, fn(_i) { br.read_bits(8).to_byte() })
+      sink.write_bytes(block)
+      if is_last {
+        break
+      }
+      continue
     }
     // Compressed meta-block — decode commands
     let block = decode_compressed_metablock(br, mlen)

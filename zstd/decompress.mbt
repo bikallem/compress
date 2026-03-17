@@ -50,31 +50,35 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
     _ => 8
   }
   guard pos + fcs_size <= src_len else { raise ZstdError::UnexpectedEOF }
-  let content_size : Int? = if fcs_size == 0 {
-    None
-  } else if fcs_size == 1 {
-    let v = src[pos].to_int()
-    pos += 1
-    Some(v)
-  } else if fcs_size == 2 {
-    let v = src[pos].to_int() | (src[pos + 1].to_int() << 8)
-    pos += 2
-    Some(v + 256)
-  } else if fcs_size == 4 {
-    let v = src[pos].to_int() |
-      (src[pos + 1].to_int() << 8) |
-      (src[pos + 2].to_int() << 16) |
-      (src[pos + 3].to_int() << 24)
-    pos += 4
-    Some(v)
-  } else {
-    // 8 bytes — read lower 4 for now
-    let v = src[pos].to_int() |
-      (src[pos + 1].to_int() << 8) |
-      (src[pos + 2].to_int() << 16) |
-      (src[pos + 3].to_int() << 24)
-    pos += 8
-    Some(v)
+  let content_size : Int? = match fcs_size {
+    0 => None
+    1 => {
+      let v = src[pos].to_int()
+      pos += 1
+      Some(v)
+    }
+    2 => {
+      let v = src[pos].to_int() | (src[pos + 1].to_int() << 8)
+      pos += 2
+      Some(v + 256)
+    }
+    4 => {
+      let v = src[pos].to_int() |
+        (src[pos + 1].to_int() << 8) |
+        (src[pos + 2].to_int() << 16) |
+        (src[pos + 3].to_int() << 24)
+      pos += 4
+      Some(v)
+    }
+    _ => {
+      // 8 bytes — read lower 4 for now
+      let v = src[pos].to_int() |
+        (src[pos + 1].to_int() << 8) |
+        (src[pos + 2].to_int() << 16) |
+        (src[pos + 3].to_int() << 24)
+      pos += 8
+      Some(v)
+    }
   }
   // Set window size from content size for single segment
   if single_segment == 1 {

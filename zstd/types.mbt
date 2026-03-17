@@ -65,13 +65,3 @@ const MAX_WINDOW_SIZE : Int = 8388608
 /// Maximum block size (128 KB).
 const MAX_BLOCK_SIZE : Int = 131072
 
-///|
-/// Hash table size for compression.
-const ZSTD_HASH_SIZE : Int = 1 << 14
-
-///|
-const ZSTD_HASH_MASK : Int = ZSTD_HASH_SIZE - 1
-
-///|
-/// Minimum match length for zstd.
-const ZSTD_MIN_MATCH : Int = 3
