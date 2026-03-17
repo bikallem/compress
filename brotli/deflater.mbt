@@ -1,6 +1,7 @@
 ///|
 priv enum DeflatePhase {
   Ready
+  Finished
   Failed(BrotliError)
 }
 
@@ -8,6 +9,7 @@ priv enum DeflatePhase {
 /// Streaming Brotli compressor.
 struct Deflater {
   level : Int
+  input : @buffer.Buffer
   mut phase : DeflatePhase
 }
 
@@ -15,21 +17,40 @@ struct Deflater {
 pub fn Deflater::new(
   level? : CompressionLevel = DefaultCompression,
 ) -> Deflater {
-  { level: level.to_int(), phase: Ready }
+  { level: level.to_int(), input: @buffer.new(), phase: Ready }
 }
 
 ///|
-pub fn Deflater::encode(self : Deflater, _data : BytesView?) -> Encode {
+pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
+  if self.level < min_quality || self.level > max_quality {
+    return self.fail(BrotliError::InvalidQuality(self.level))
+  }
   match self.phase {
     Failed(e) => Error(e)
-    Ready => {
-      if self.level < min_quality || self.level > max_quality {
-        return self.fail(BrotliError::InvalidQuality(self.level))
+    Finished => End
+    Ready =>
+      match data {
+        Some(chunk) => {
+          self.input.write_bytes(
+            Bytes::makei(chunk.length(), fn(i) { chunk[i] }),
+          )
+          Ok
+        }
+        None => {
+          let result = try? trivial_compress(self.input.to_bytes())
+          match result {
+            Ok(output) => {
+              self.phase = Finished
+              if output.length() == 0 {
+                End
+              } else {
+                Data(output)
+              }
+            }
+            Err(e) => self.fail(e)
+          }
+        }
       }
-      self.fail(
-        BrotliError::UnsupportedFeature("Brotli encoder not implemented"),
-      )
-    }
   }
 }
 

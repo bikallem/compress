@@ -8,6 +8,13 @@ priv struct BitReader {
 }
 
 ///|
+priv struct BitReaderSnapshot {
+  buf : UInt64
+  count : Int
+  pos : Int
+}
+
+///|
 fn BitReader::new() -> BitReader {
   { buf: 0UL, count: 0, input: b""[:], pos: 0 }
 }
@@ -16,6 +23,18 @@ fn BitReader::new() -> BitReader {
 fn BitReader::set_input(self : BitReader, data : BytesView) -> Unit {
   self.input = data
   self.pos = 0
+}
+
+///|
+fn BitReader::snapshot(self : BitReader) -> BitReaderSnapshot {
+  { buf: self.buf, count: self.count, pos: self.pos }
+}
+
+///|
+fn BitReader::restore(self : BitReader, snapshot : BitReaderSnapshot) -> Unit {
+  self.buf = snapshot.buf
+  self.count = snapshot.count
+  self.pos = snapshot.pos
 }
 
 ///|
@@ -92,6 +111,48 @@ fn BitReader::align_to_byte(self : BitReader) -> Unit {
   if discard > 0 {
     self.drop(discard)
   }
+}
+
+///|
+fn BitReader::align_to_byte_zero(self : BitReader) -> Unit raise BrotliError {
+  let discard = self.count % 8
+  if discard == 0 {
+    return
+  }
+  guard self.peek_unchecked(discard) == 0U else {
+    raise BrotliError::CorruptInput("non-zero padding bits")
+  }
+  self.drop(discard)
+}
+
+///|
+fn BitReader::read_aligned_bytes(self : BitReader, max_len : Int) -> Bytes {
+  if max_len <= 0 {
+    return Bytes::default()
+  }
+  let buffered = self.count / 8
+  let remaining = self.input.length() - self.pos
+  let total = buffered + remaining
+  let len = if max_len < total { max_len } else { total }
+  if len == 0 {
+    return Bytes::default()
+  }
+  let output = FixedArray::make(len, b'\x00')
+  let from_buffer = if buffered < len { buffered } else { len }
+  let mut bits = self.buf
+  for i in 0..<from_buffer {
+    output[i] = (bits & 0xFFUL).to_byte()
+    bits = bits >> 8
+  }
+  if from_buffer > 0 {
+    self.drop(from_buffer * 8)
+  }
+  let from_input = len - from_buffer
+  for i in 0..<from_input {
+    output[from_buffer + i] = self.input[self.pos + i]
+  }
+  self.pos += from_input
+  output.unsafe_reinterpret_as_bytes()
 }
 
 ///|
