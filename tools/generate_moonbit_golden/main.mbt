@@ -105,6 +105,15 @@ fn flate_level(level : Int) -> @flate.CompressionLevel {
 }
 
 ///|
+fn brotli_level(level : Int) -> @brotli.CompressionLevel {
+  match level {
+    1 => @brotli.BestSpeed
+    11 => @brotli.BestCompression
+    _ => @brotli.Level(level)
+  }
+}
+
+///|
 fn main {
   let args = @env.args()
   let out_dir = if args.length() > 1 {
@@ -183,6 +192,29 @@ fn main {
       entries.push({
         name: "zlib/\{name}/level\{level}",
         algorithm: "zlib",
+        level,
+        input_file: "\{name}.bin",
+        output_file: out_name,
+        input_size: data.length(),
+        output_size: compressed.length(),
+      })
+    }
+  }
+  // Brotli
+  for pair in inputs {
+    let (name, data) = pair
+    for level in [1, 6, 11] {
+      let out_name = "brotli_\{name}_level\{level}.bin"
+      let compressed = @brotli.compress(data, level=brotli_level(level)) catch {
+        e => {
+          println("ERROR brotli \{name} level\{level}: \{e}")
+          continue
+        }
+      }
+      write_file("\{out_dir}/\{out_name}", compressed)
+      entries.push({
+        name: "brotli/\{name}/level\{level}",
+        algorithm: "brotli",
         level,
         input_file: "\{name}.bin",
         output_file: out_name,

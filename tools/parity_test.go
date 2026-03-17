@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 // MoonBit golden manifest entry (same schema as Go golden).
@@ -77,6 +79,9 @@ func TestGoDecompressMoonBit(t *testing.T) {
 				}
 				decompressed, err = io.ReadAll(r)
 				r.Close()
+			case "brotli":
+				r := brotli.NewReader(bytes.NewReader(compressed))
+				decompressed, err = io.ReadAll(r)
 			case "lzw":
 				r := lzw.NewReader(bytes.NewReader(compressed), lzw.LSB, 8)
 				decompressed, err = io.ReadAll(r)
@@ -196,6 +201,9 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 		}
 		result, err = io.ReadAll(r)
 		r.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	case "lzw":
 		r := lzw.NewReader(bytes.NewReader(data), lzw.LSB, 8)
 		result, err = io.ReadAll(r)
@@ -216,10 +224,10 @@ func TestParitySummary(t *testing.T) {
 	goDir := filepath.Join("..", "testdata", "golden")
 
 	type Result struct {
-		identical   int
-		compatible  int
-		failed      int
-		noGoGolden  int
+		identical  int
+		compatible int
+		failed     int
+		noGoGolden int
 	}
 	results := make(map[string]*Result)
 
@@ -305,6 +313,9 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 		}
 		result, err = io.ReadAll(r)
 		r.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	case "lzw":
 		r := lzw.NewReader(bytes.NewReader(data), lzw.LSB, 8)
 		result, err = io.ReadAll(r)

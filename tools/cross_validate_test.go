@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
-	"compress/zlib"
 	"compress/lzw"
+	"compress/zlib"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 type GoldenEntry struct {
@@ -91,6 +93,9 @@ func TestGoDecompressGolden(t *testing.T) {
 				}
 				decompressed, err = io.ReadAll(r)
 				r.Close()
+			case "brotli":
+				r := brotli.NewReader(bytes.NewReader(compressed))
+				decompressed, err = io.ReadAll(r)
 			case "lzw":
 				r := lzw.NewReader(bytes.NewReader(compressed), lzw.LSB, 8)
 				decompressed, err = io.ReadAll(r)

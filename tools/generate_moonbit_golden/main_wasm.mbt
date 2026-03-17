@@ -1,5 +1,6 @@
 ///|
 fn main {
+  let _ : @brotli.Deflater? = None
   let _ : @bzip2.Deflater? = None
   let _ : @flate.Deflater? = None
   let _ : @gzip.Deflater? = None

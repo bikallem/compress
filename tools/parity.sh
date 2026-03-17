@@ -24,14 +24,9 @@ warn() { printf "${YELLOW}⚠ %s${NC}\n" "$1"; }
 fail() { printf "${RED}✗ %s${NC}\n" "$1"; }
 
 generate() {
-    step "Ensuring Go golden files exist"
-    if [ ! -f "$GO_GOLDEN_DIR/manifest.json" ]; then
-        step "Generating Go golden files"
-        (cd "$ROOT/tools/generate_golden" && go run main.go)
-        ok "Go golden files generated"
-    else
-        ok "Go golden files already present"
-    fi
+    step "Generating Go golden files"
+    (cd "$ROOT/tools/generate_golden" && go run main.go)
+    ok "Go golden files generated"
 
     step "Building MoonBit golden generator"
     (cd "$ROOT" && moon build tools/generate_moonbit_golden --target native --release 2>&1)
@@ -51,7 +46,7 @@ run_tests() {
     fi
 
     step "Running Go parity tests"
-    (cd "$ROOT/tools" && go test -run 'TestGoDecompressMoonBit|TestBitIdenticalOutput|TestParitySummary' -v -count=1 -timeout 120s)
+    (cd "$ROOT/tools" && go test -run 'TestGoDecompressGolden|TestGoDecompressMoonBit|TestBitIdenticalOutput|TestParitySummary' -v -count=1 -timeout 120s)
 }
 
 CMD="${1:-all}"
