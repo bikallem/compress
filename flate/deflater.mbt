@@ -40,10 +40,15 @@ const MAX_BLOCK_TOKENS : Int = 16384
 
 ///|
 /// Maximum number of intermediate positions to rehash after a match.
-/// Positions beyond this limit are skipped — they rarely improve future
-/// match quality and dominate the CPU cost (hash4 + insert_hash = ~50%
-/// of total instructions per callgrind profiling).
-const MAX_INSERT : Int = 32
+/// At low levels, capped at 32 for speed (hash4 + insert_hash dominates
+/// CPU cost). At higher levels, rehash all positions for better ratio.
+fn max_insert(level : Int) -> Int {
+  if level <= 3 {
+    32
+  } else {
+    MAX_MATCH_LENGTH
+  }
+}
 
 ///|
 /// Streaming, non-blocking DEFLATE compressor.
@@ -274,6 +279,7 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
 fn Deflater::step_greedy(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
   let max_chain = if self.level == 2 { 8 } else { 16 }
+  let max_ins = max_insert(self.level)
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -288,11 +294,11 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
       let (length, offset) = self.find_best_match(i, match_head, max_chain)
       if length >= MIN_MATCH_LENGTH {
         self.tokens.push(Token::match_(length, offset))
-        // Rehash a capped number of intermediate positions.
-        let n_insert = if length - 1 < MAX_INSERT {
+        // Rehash intermediate positions (capped at low levels for speed).
+        let n_insert = if length - 1 < max_ins {
           length - 1
         } else {
-          MAX_INSERT
+          max_ins
         }
         let rehash_end = if i + n_insert + 4 < end {
           i + 1 + n_insert
@@ -331,6 +337,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     8 => 512
     _ => 1024
   }
+  let max_ins = max_insert(self.level)
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -363,11 +370,11 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         )
         let start = i
         let skip_end = start + self.prev_match_len - 1
-        // Rehash a capped number of intermediate positions.
-        let n_insert = if self.prev_match_len - 1 < MAX_INSERT {
+        // Rehash intermediate positions (capped at low levels for speed).
+        let n_insert = if self.prev_match_len - 1 < max_ins {
           self.prev_match_len - 1
         } else {
-          MAX_INSERT
+          max_ins
         }
         let rehash_end = if start + n_insert + 3 < end {
           start + n_insert
