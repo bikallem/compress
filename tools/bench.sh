@@ -121,6 +121,12 @@ BENCH_PKGS=(
   bikallem/compress/benchmarks/zlib-1mb
   bikallem/compress/benchmarks/zlib-10mb
   bikallem/compress/benchmarks/zlib-100mb
+  bikallem/compress/benchmarks/brotli-1kb
+  bikallem/compress/benchmarks/brotli-10kb
+  bikallem/compress/benchmarks/brotli-100kb
+  bikallem/compress/benchmarks/brotli-1mb
+  bikallem/compress/benchmarks/brotli-10mb
+  bikallem/compress/benchmarks/brotli-100mb
   bikallem/compress/benchmarks/lzw-1kb
   bikallem/compress/benchmarks/lzw-10kb
   bikallem/compress/benchmarks/lzw-100kb

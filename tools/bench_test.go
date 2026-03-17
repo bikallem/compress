@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 // genText generates repeated text data of the given size.
@@ -710,6 +712,89 @@ func BenchmarkZlibCompressDefault_100mb(b *testing.B) {
 		w.Write(data)
 		w.Close()
 	}
+}
+
+func brotliCompressWithLevel(data []byte, level int) []byte {
+	var buf bytes.Buffer
+	w := brotli.NewWriterLevel(&buf, level)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func benchBrotliCompress(b *testing.B, size int, level int) {
+	data := genText(size)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, level)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func benchBrotliDecompress(b *testing.B, size int) {
+	data := genText(size)
+	compressed := brotliCompressWithLevel(data, brotli.DefaultCompression)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliCompressDefault_1kb(b *testing.B) {
+	benchBrotliCompress(b, 1024, brotli.DefaultCompression)
+}
+
+func BenchmarkBrotliCompressDefault_10kb(b *testing.B) {
+	benchBrotliCompress(b, 10240, brotli.DefaultCompression)
+}
+
+func BenchmarkBrotliCompressSpeed_10kb(b *testing.B) {
+	benchBrotliCompress(b, 10240, brotli.BestSpeed)
+}
+
+func BenchmarkBrotliCompressDefault_100kb(b *testing.B) {
+	benchBrotliCompress(b, 102400, brotli.DefaultCompression)
+}
+
+func BenchmarkBrotliCompressDefault_1mb(b *testing.B) {
+	benchBrotliCompress(b, 1048576, brotli.DefaultCompression)
+}
+
+func BenchmarkBrotliCompressDefault_10mb(b *testing.B) {
+	benchBrotliCompress(b, 10485760, brotli.DefaultCompression)
+}
+
+func BenchmarkBrotliCompressDefault_100mb(b *testing.B) {
+	benchBrotliCompress(b, 104857600, brotli.DefaultCompression)
+}
+
+func BenchmarkBrotliDecompress_1kb(b *testing.B) {
+	benchBrotliDecompress(b, 1024)
+}
+
+func BenchmarkBrotliDecompress_10kb(b *testing.B) {
+	benchBrotliDecompress(b, 10240)
+}
+
+func BenchmarkBrotliDecompress_100kb(b *testing.B) {
+	benchBrotliDecompress(b, 102400)
+}
+
+func BenchmarkBrotliDecompress_1mb(b *testing.B) {
+	benchBrotliDecompress(b, 1048576)
+}
+
+func BenchmarkBrotliDecompress_10mb(b *testing.B) {
+	benchBrotliDecompress(b, 10485760)
+}
+
+func BenchmarkBrotliDecompress_100mb(b *testing.B) {
+	benchBrotliDecompress(b, 104857600)
 }
 
 // --- LZW ---

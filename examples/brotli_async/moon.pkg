@@ -1,0 +1,14 @@
+import {
+  "bikallem/compress/brotli" @br,
+  "moonbitlang/async" @moonasync,
+  "moonbitlang/async/io",
+  "moonbitlang/core/buffer",
+}
+
+options(
+  "is-main": true,
+  targets: {
+    "main.mbt": [ "native" ],
+    "main_wasm.mbt": [ "wasm", "wasm-gc", "js" ],
+  },
+)

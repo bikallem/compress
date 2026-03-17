@@ -378,6 +378,77 @@ def zlib_benches():
     return pkg_import, helpers, standard
 
 
+def brotli_benches():
+    pkg_import = textwrap.dedent("""\
+        import {
+          "bikallem/compress/benchmarks",
+          "bikallem/compress/brotli" @br,
+          "moonbitlang/core/bench",
+        }
+    """)
+
+    helpers = textwrap.dedent("""\
+        ///|
+        fn compress_setup(size : Int) -> Bytes raise {
+          @br.compress(@benchmarks.gen_text(size))
+        }
+
+        ///|
+        fn bench_compress(
+          b : @bench.T,
+          name~ : String,
+          size : Int,
+          level? : @br.CompressionLevel = @br.DefaultCompression,
+        ) -> Unit {
+          let data = @benchmarks.gen_text(size)
+          b.bench(name~, fn() { b.keep(try! @br.compress(data, level~)) })
+        }
+
+        ///|
+        fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
+          let compressed = compress_setup(size)
+          b.bench(name~, fn() { b.keep(try! @br.decompress(compressed)) })
+        }
+    """)
+
+    standard = {}
+    for label, size in SIZES:
+        standard[label] = []
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench brotli compress default text_{label}" (b : @bench.T) {{
+              bench_compress(b, name="brotli_compress_default_{label}", {size})
+            }}
+        """))
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench brotli decompress text_{label}" (b : @bench.T) {{
+              bench_decompress(b, name="brotli_decompress_{label}", {size})
+            }}
+        """))
+
+    extras = {
+        "10kb": [
+            textwrap.dedent("""\
+                ///|
+                test "bench brotli compress best_speed text_10kb" (b : @bench.T) {
+                  bench_compress(
+                    b,
+                    name="brotli_compress_speed_10kb",
+                    10240,
+                    level=@br.BestSpeed,
+                  )
+                }
+            """),
+        ],
+    }
+
+    for label in standard:
+        standard[label].extend(extras.get(label, []))
+
+    return pkg_import, helpers, standard
+
+
 def lzw_benches():
     pkg_import = textwrap.dedent("""\
         import {
@@ -480,6 +551,7 @@ CODECS = {
     "flate": flate_benches,
     "gzip":  gzip_benches,
     "zlib":  zlib_benches,
+    "brotli": brotli_benches,
     "lzw":   lzw_benches,
     "bzip2": bzip2_benches,
 }

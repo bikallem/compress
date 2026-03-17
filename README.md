@@ -1,10 +1,11 @@
 # bikallem/compress
 
-A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, and bzip2. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
+A pure MoonBit compression library supporting Brotli, DEFLATE, gzip, zlib, LZW, and bzip2. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
 
 ## Features
 
 - Pure MoonBit — no FFI required (optional native acceleration for blit/checksum)
+- Brotli compression/decompression (RFC 7932) with one-shot and signal-based streaming APIs
 - Multi-target: native, js, and wasm-gc backends
 - Dynamic Huffman coding with optimal fixed/dynamic block selection
 - Level-differentiated compression: fast greedy (1-3), lazy matching (4-9)
@@ -13,7 +14,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, and bzip
 - Two-level Huffman table decompression with zero-copy direct output
 - BytesView-based streaming API — zero-copy input slicing
 - Signal protocol streaming — no callbacks, no trait objects, explicit control flow
-- Cross-validated against Go's `compress/*` stdlib
+- Cross-validated against Go's `compress/*` stdlib plus `github.com/andybalholm/brotli`
 
 ## Table of Contents
 
@@ -36,6 +37,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, and bzip
 | `bikallem/compress/flate` | DEFLATE compression/decompression (RFC 1951) |
 | `bikallem/compress/gzip` | gzip format (RFC 1952) |
 | `bikallem/compress/zlib` | zlib format (RFC 1950) |
+| `bikallem/compress/brotli` | Brotli compression/decompression (RFC 7932) |
 | `bikallem/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
@@ -66,6 +68,11 @@ let compressed = @zlib.compress(data)
 let compressed = @zlib.compress(data, dict=my_dict, level=BestSpeed)
 let decompressed = @zlib.decompress(compressed)
 
+// Brotli (quality 0..11)
+let compressed = @brotli.compress(data)
+let compressed = @brotli.compress(data, level=BestCompression)
+let decompressed = @brotli.decompress(compressed)
+
 // LZW
 let compressed = @lzw.compress(data, LSB, 8)
 let decompressed = @lzw.decompress(compressed, LSB, 8)
@@ -79,6 +86,8 @@ let decompressed = @bzip2.decompress(compressed)
 let crc = @checksum.crc32(data[:])
 let adler = @checksum.adler32(data[:])
 ```
+
+Runnable examples live under `examples/brotli`, `examples/brotli_async`, and the corresponding format directories for the other codecs.
 
 ## Streaming API
 
@@ -132,6 +141,10 @@ let header = inflater.header()
 let d = @zlib.Deflater::new(dict=my_dict)
 let i = @zlib.Inflater::new(dict=my_dict)
 
+// Brotli
+let d = @brotli.Deflater::new(level=BestCompression)
+let i = @brotli.Inflater::new()
+
 // LZW with bit order and literal width
 let d = @lzw.Deflater::new(MSB, 8)
 let i = @lzw.Inflater::new(MSB, 8)
@@ -159,6 +172,18 @@ DEFLATE, gzip, and zlib support compression levels via `@flate.CompressionLevel`
 
 bzip2 uses its own level parameter (1-9), controlling block size (N x 100KB).
 
+Brotli uses `@brotli.CompressionLevel` with qualities `0..11`:
+
+| Level | Description |
+|-------|-------------|
+| `NoCompression` | Emit uncompressed meta-blocks |
+| `BestSpeed` | Fastest compressed output |
+| `Level(2..10)` | Intermediate quality settings |
+| `BestCompression` | Highest quality setting |
+| `DefaultCompression` | Current default, same as `BestCompression` |
+
+The current pure MoonBit Brotli encoder is correctness-first. Higher qualities primarily improve long-run compression; they do not yet aim for ratio parity with the reference Brotli encoder on general text and mixed data.
+
 ## Checksums
 
 Stateful hashers implement the `Hasher` trait for incremental updates:
@@ -175,6 +200,8 @@ let result = h.checksum()
 Benchmarked on the native backend against Go's standard library (v0.1.2). Ratio < 1 means MoonBit is faster.
 
 Run benchmarks: `./tools/bench.sh --go`
+
+The benchmark generator and `bench.sh` also include Brotli. To focus on those results only, run `./tools/bench.sh --go --filter brotli`.
 
 ### DEFLATE
 

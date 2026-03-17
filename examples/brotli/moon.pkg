@@ -1,0 +1,8 @@
+import {
+  "bikallem/compress/brotli" @br,
+  "moonbitlang/core/buffer",
+}
+
+options(
+  "is-main": true,
+)
