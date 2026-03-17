@@ -83,6 +83,22 @@ test "zstd all 0xFF" {
 }
 
 ///|
+test "zstd compression ratio on repeated pattern" {
+  // 4KB of "abcdefghijklmnop" repeated (256 times)
+  let pattern = b"abcdefghijklmnop"
+  let buf = @buffer.new()
+  for _ in 0..<256 {
+    buf.write_bytes(pattern)
+  }
+  let original = buf.to_bytes()
+  let compressed = @zstd.compress(original)
+  let decompressed = @zstd.decompress(compressed)
+  assert_eq(decompressed, original)
+  // Should achieve at least 2x compression
+  inspect(compressed.length() * 2 < original.length(), content="true")
+}
+
+///|
 test "zstd frame checksum" {
   let original : Bytes = b"Hello, World!"
   let compressed = @zstd.compress(original)

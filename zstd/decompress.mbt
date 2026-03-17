@@ -256,13 +256,19 @@ fn decompress_block(
   let mut of_state = br.read_bits(OF_DEFAULT_ACCURACY).reinterpret_as_int()
   let mut ml_state = br.read_bits(ML_DEFAULT_ACCURACY).reinterpret_as_int()
   for i in 0..<num_sequences {
-    // Decode offset
+    // Decode offset: per RFC 8878, offset_value > 3 means actual offset = value - 3
+    // offset_value 1/2/3 are repeat offsets (not implemented, treated as offset 1)
     let (of_sym, of_nb, of_base) = fse_decode_symbol(of_table, of_state)
     let of_code = of_sym.to_int()
-    let offset = if of_code > 0 {
+    let offset_value = if of_code > 0 {
       (1 << of_code) + br.read_bits(of_code).reinterpret_as_int()
     } else {
       1
+    }
+    let offset = if offset_value > 3 {
+      offset_value - 3
+    } else {
+      offset_value // repeat offsets: treat as small offset for compatibility
     }
     // Decode match length
     let (ml_sym, ml_nb, ml_base_state) = fse_decode_symbol(ml_table, ml_state)

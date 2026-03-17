@@ -45,20 +45,22 @@ fn FseTable::build(
       }
     }
   }
-  // Step 2: Build decoding table
+  // Step 2: Build decoding table using the reference algorithm.
+  // For each symbol, maintain a counter starting at the symbol's count
+  // (or 1 for -1 entries). Each table entry gets nbBits and newState
+  // based on this per-symbol counter.
+  let symbol_next = FixedArray::make(max_symbol + 1, 0)
+  for sym in 0..=max_symbol {
+    symbol_next[sym] = if norm_counts[sym] == -1 { 1 } else { norm_counts[sym] }
+  }
   for i in 0..<table_size {
     let sym = symbols[i].to_int()
-    let count = if norm_counts[sym] == -1 { 1 } else { norm_counts[sym] }
-    // Number of bits to read
-    let max_bits_out = accuracy_log - highest_bit(count - 1)
-    let new_state_baseline = (count << (max_bits_out + 1)) - table_size
-    if i < new_state_baseline {
-      num_bits[i] = (max_bits_out + 1).to_byte()
-      new_state_base[i] = i - new_state_baseline + (count << (max_bits_out + 1))
-    } else {
-      num_bits[i] = max_bits_out.to_byte()
-      new_state_base[i] = i - new_state_baseline + (count << max_bits_out)
-    }
+    let next_state = symbol_next[sym]
+    symbol_next[sym] = next_state + 1
+    let high_bit = highest_bit(next_state) - 1 // position of highest set bit
+    let nb = accuracy_log - high_bit
+    num_bits[i] = nb.to_byte()
+    new_state_base[i] = (next_state << nb) - table_size
   }
   { symbols, num_bits, new_state_base, _accuracy_log: accuracy_log, _table_size: table_size }
 }
@@ -113,14 +115,14 @@ let ll_default_norm : FixedArray[Int] = {
   a[21] = 2
   a[22] = 2
   a[23] = 2
-  a[24] = -1
-  a[25] = -1
-  a[26] = -1
-  a[27] = -1
-  a[28] = -1
-  a[29] = -1
-  a[30] = -1
-  a[31] = -1
+  a[24] = 2
+  a[25] = 3
+  a[26] = 2
+  a[27] = 1
+  a[28] = 1
+  a[29] = 1
+  a[30] = 1
+  a[31] = 1
   a[32] = -1
   a[33] = -1
   a[34] = -1
@@ -164,20 +166,20 @@ let ml_default_norm : FixedArray[Int] = {
   a[29] = 1
   a[30] = 1
   a[31] = 1
-  a[32] = -1
-  a[33] = -1
-  a[34] = -1
-  a[35] = -1
-  a[36] = -1
-  a[37] = -1
-  a[38] = -1
-  a[39] = -1
-  a[40] = -1
-  a[41] = -1
-  a[42] = -1
-  a[43] = -1
-  a[44] = -1
-  a[45] = -1
+  a[32] = 1
+  a[33] = 1
+  a[34] = 1
+  a[35] = 1
+  a[36] = 1
+  a[37] = 1
+  a[38] = 1
+  a[39] = 1
+  a[40] = 1
+  a[41] = 1
+  a[42] = 1
+  a[43] = 1
+  a[44] = 1
+  a[45] = 1
   a[46] = -1
   a[47] = -1
   a[48] = -1
@@ -245,23 +247,23 @@ let ll_baselines : FixedArray[Int] = {
   a[16] = 16
   a[17] = 18
   a[18] = 20
-  a[19] = 24
-  a[20] = 28
-  a[21] = 32
-  a[22] = 40
-  a[23] = 48
-  a[24] = 64
-  a[25] = 128
-  a[26] = 256
-  a[27] = 512
-  a[28] = 1024
-  a[29] = 2048
-  a[30] = 4096
-  a[31] = 8192
-  a[32] = 16384
-  a[33] = 32768
-  a[34] = 65536
-  a[35] = 131072
+  a[19] = 22
+  a[20] = 24
+  a[21] = 28
+  a[22] = 32
+  a[23] = 40
+  a[24] = 48
+  a[25] = 64
+  a[26] = 128
+  a[27] = 256
+  a[28] = 512
+  a[29] = 1024
+  a[30] = 2048
+  a[31] = 4096
+  a[32] = 8192
+  a[33] = 16384
+  a[34] = 32768
+  a[35] = 65536
   a
 }
 
@@ -272,23 +274,23 @@ let ll_extra_bits : FixedArray[Int] = {
   a[16] = 1
   a[17] = 1
   a[18] = 1
-  a[19] = 2
+  a[19] = 1
   a[20] = 2
-  a[21] = 3
+  a[21] = 2
   a[22] = 3
-  a[23] = 4
-  a[24] = 6
-  a[25] = 7
-  a[26] = 8
-  a[27] = 9
-  a[28] = 10
-  a[29] = 11
-  a[30] = 12
-  a[31] = 13
-  a[32] = 14
-  a[33] = 15
-  a[34] = 16
-  a[35] = 17
+  a[23] = 3
+  a[24] = 4
+  a[25] = 6
+  a[26] = 7
+  a[27] = 8
+  a[28] = 9
+  a[29] = 10
+  a[30] = 11
+  a[31] = 12
+  a[32] = 13
+  a[33] = 14
+  a[34] = 15
+  a[35] = 16
   a
 }
 
@@ -303,24 +305,24 @@ let ml_baselines : FixedArray[Int] = {
   a[32] = 35
   a[33] = 37
   a[34] = 39
-  a[35] = 43
-  a[36] = 47
-  a[37] = 51
-  a[38] = 59
-  a[39] = 67
-  a[40] = 83
-  a[41] = 99
-  a[42] = 131
-  a[43] = 259
-  a[44] = 515
-  a[45] = 1027
-  a[46] = 2051
-  a[47] = 4099
-  a[48] = 8195
-  a[49] = 16387
-  a[50] = 32771
-  a[51] = 65539
-  a[52] = 131075
+  a[35] = 41
+  a[36] = 43
+  a[37] = 47
+  a[38] = 51
+  a[39] = 59
+  a[40] = 67
+  a[41] = 83
+  a[42] = 99
+  a[43] = 131
+  a[44] = 259
+  a[45] = 515
+  a[46] = 1027
+  a[47] = 2051
+  a[48] = 4099
+  a[49] = 8195
+  a[50] = 16387
+  a[51] = 32771
+  a[52] = 65539
   a
 }
 
@@ -331,23 +333,23 @@ let ml_extra_bits : FixedArray[Int] = {
   a[32] = 1
   a[33] = 1
   a[34] = 1
-  a[35] = 2
+  a[35] = 1
   a[36] = 2
-  a[37] = 3
+  a[37] = 2
   a[38] = 3
-  a[39] = 4
+  a[39] = 3
   a[40] = 4
-  a[41] = 5
-  a[42] = 7
-  a[43] = 8
-  a[44] = 9
-  a[45] = 10
-  a[46] = 11
-  a[47] = 12
-  a[48] = 13
-  a[49] = 14
-  a[50] = 15
-  a[51] = 16
-  a[52] = 17
+  a[41] = 4
+  a[42] = 5
+  a[43] = 7
+  a[44] = 8
+  a[45] = 9
+  a[46] = 10
+  a[47] = 11
+  a[48] = 12
+  a[49] = 13
+  a[50] = 14
+  a[51] = 15
+  a[52] = 16
   a
 }

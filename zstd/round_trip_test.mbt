@@ -50,10 +50,8 @@ test "round-trip: large repetitive data" {
   let compressed = @zstd.compress(data)
   let decompressed = @zstd.decompress(compressed)
   inspect(decompressed == data, content="true")
-  // Note: compressed blocks not yet implemented; raw blocks won't reduce size
-  // for non-uniform data. Once compressed block encoding is complete, enable:
-  // inspect(compressed.length() < data.length(), content="true")
-  ignore(compressed)
+  // Compressed blocks should achieve meaningful compression on repetitive data
+  inspect(compressed.length() < data.length(), content="true")
 }
 
 ///|
