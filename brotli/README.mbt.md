@@ -5,6 +5,7 @@ Pure MoonBit Brotli compression and decompression, following RFC 7932.
 ## One-shot API
 
 ```mbt check
+///|
 test "brotli one-shot readme example" {
   let data = b"Brotli in pure MoonBit."
   let compressed = try! @brotli.compress(data)
@@ -16,6 +17,7 @@ test "brotli one-shot readme example" {
 ## Streaming API
 
 ```mbt check
+///|
 test "brotli streaming readme example" {
   let original = b"streaming brotli example"
 

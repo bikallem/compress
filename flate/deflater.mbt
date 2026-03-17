@@ -35,9 +35,9 @@ fn Deflater::insert_hash(self : Deflater, pos : Int, hash_mask : Int) -> Int {
 fn Deflater::match4(self : Deflater, a : Int, b : Int) -> Bool {
   let w = self.window
   w.unsafe_get(a) == w.unsafe_get(b) &&
-    w.unsafe_get(a + 1) == w.unsafe_get(b + 1) &&
-    w.unsafe_get(a + 2) == w.unsafe_get(b + 2) &&
-    w.unsafe_get(a + 3) == w.unsafe_get(b + 3)
+  w.unsafe_get(a + 1) == w.unsafe_get(b + 1) &&
+  w.unsafe_get(a + 2) == w.unsafe_get(b + 2) &&
+  w.unsafe_get(a + 3) == w.unsafe_get(b + 3)
 }
 
 ///|
@@ -301,7 +301,8 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
       let h = self.hash4(i, hash_mask)
       candidate = head.unsafe_get(h)
       head.unsafe_set(h, i)
-      if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
+      if candidate >= 0 &&
+        i - candidate <= MAX_MATCH_OFFSET &&
         self.match4(i, candidate) {
         found = true
         break
@@ -333,7 +334,8 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
       let h = self.hash4(i, hash_mask)
       candidate = head.unsafe_get(h)
       head.unsafe_set(h, i)
-      if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
+      if candidate >= 0 &&
+        i - candidate <= MAX_MATCH_OFFSET &&
         self.match4(i, candidate) {
         continue // chain: another match starts here
       }
@@ -366,11 +368,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
       if length >= MIN_MATCH_LENGTH {
         self.tokens.push(Token::match_(length, offset))
         // Rehash intermediate positions (capped at low levels for speed).
-        let n_insert = if length - 1 < max_ins {
-          length - 1
-        } else {
-          max_ins
-        }
+        let n_insert = if length - 1 < max_ins { length - 1 } else { max_ins }
         let rehash_end = if i + n_insert + 4 < end {
           i + 1 + n_insert
         } else {

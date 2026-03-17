@@ -10,8 +10,7 @@ fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
 ///|
 async fn main {
   let original = repeat_bytes(
-    b"brotli async example with repeated repeated repeated text. ",
-    128,
+    b"brotli async example with repeated repeated repeated text. ", 128,
   )
 
   let (pipe_read, pipe_write) = @io.pipe()
@@ -27,6 +26,8 @@ async fn main {
     )
     let restored = @br.decompress(compressed)
     assert_eq(restored, original)
-    println("Async brotli decompress: round-trip OK (\{restored.length()} bytes)")
+    println(
+      "Async brotli decompress: round-trip OK (\{restored.length()} bytes)",
+    )
   })
 }

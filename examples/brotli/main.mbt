@@ -10,8 +10,7 @@ fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
 ///|
 fn run() -> Unit raise {
   let original = repeat_bytes(
-    b"brotli example data with repeated phrases and repeated phrases. ",
-    128,
+    b"brotli example data with repeated phrases and repeated phrases. ", 128,
   )
 
   // --- Compress/decompress ---

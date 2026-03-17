@@ -37,7 +37,10 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
           Ok
         }
         None => {
-          let result = try? compress_with_quality(self.input.to_bytes(), self.level)
+          let result = try? compress_with_quality(
+            self.input.to_bytes(),
+            self.level,
+          )
           match result {
             Ok(output) => {
               self.phase = Finished

@@ -78,7 +78,9 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       HuffmanLoop(lit_dec, dist_dec) =>
         self.decode_huffman_loop(lit_dec, dist_dec)
       HuffmanMatchLen(lit_dec, dist_dec, length_code, extra_bits) =>
-        self.decode_huffman_match_len(lit_dec, dist_dec, length_code, extra_bits)
+        self.decode_huffman_match_len(
+          lit_dec, dist_dec, length_code, extra_bits,
+        )
       HuffmanMatchDist(lit_dec, dist_dec, length) =>
         self.decode_huffman_match_dist(lit_dec, dist_dec, length)
       HuffmanMatchDistExtra(lit_dec, dist_dec, length, dist_sym, dextra) =>

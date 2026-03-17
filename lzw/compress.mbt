@@ -208,8 +208,7 @@ fn Encoder::close(self : Encoder) -> Bytes {
       self.grow_out_buf()
     }
     match self.order {
-      MSB =>
-        self.out_buf.unsafe_set(self.out_pos, (self.bits >> 24).to_byte())
+      MSB => self.out_buf.unsafe_set(self.out_pos, (self.bits >> 24).to_byte())
       LSB =>
         self.out_buf.unsafe_set(self.out_pos, (self.bits & 0xFFU).to_byte())
     }
