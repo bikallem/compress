@@ -1,12 +1,12 @@
 .PHONY: test bench parity parity-generate parity-test check roundtrip
 
 ROUNDTRIP_FILES := \
-	brotli/round_trip_test.mbt \
 	bzip2/round_trip_test.mbt \
 	flate/round_trip_test.mbt \
 	gzip/round_trip_test.mbt \
 	lzw/round_trip_test.mbt \
-	zlib/round_trip_test.mbt
+	zlib/round_trip_test.mbt \
+	brotli/round_trip_test.mbt
 
 ROUNDTRIP_TARGETS := native wasm-gc js
 
