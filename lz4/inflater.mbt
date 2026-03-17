@@ -43,12 +43,14 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
 }
 
 ///|
-fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
+/// Stub for streaming direct-output mode (to be wired up in convenience API).
+pub fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
   self.0.sink = Some(@output_sink.OutputSink::new(capacity))
 }
 
 ///|
-fn Inflater::take_output(self : Inflater) -> Bytes {
+/// Stub for retrieving accumulated output (to be wired up in convenience API).
+pub fn Inflater::take_output(self : Inflater) -> Bytes {
   match self.0.sink {
     Some(sink) => sink.to_bytes()
     None => Bytes::default()
@@ -73,9 +75,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
     input[s.input_pos + i]
   })
-  let result = try {
-    decompress(data)
-  } catch {
+  let result = decompress(data) catch {
     e => {
       let le = Lz4Error::CorruptData(e.to_string())
       s.failed = Some(le)

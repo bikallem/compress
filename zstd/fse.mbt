@@ -4,8 +4,8 @@ priv struct FseTable {
   symbols : FixedArray[Byte]
   num_bits : FixedArray[Byte]
   new_state_base : FixedArray[Int]
-  accuracy_log : Int
-  table_size : Int
+  _accuracy_log : Int
+  _table_size : Int
 }
 
 ///|
@@ -14,7 +14,7 @@ fn FseTable::build(
   norm_counts : FixedArray[Int],
   max_symbol : Int,
   accuracy_log : Int,
-) -> FseTable raise ZstdError {
+) -> FseTable {
   let table_size = 1 << accuracy_log
   let symbols = FixedArray::make(table_size, b'\x00')
   let num_bits = FixedArray::make(table_size, b'\x00')
@@ -22,7 +22,7 @@ fn FseTable::build(
   // Step 1: Spread symbols across the table
   let mut high_threshold = table_size - 1
   // First pass: place symbols with count == -1 (less than 1)
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     if norm_counts[sym] == -1 {
       symbols[high_threshold] = sym.to_byte()
       high_threshold -= 1
@@ -32,7 +32,7 @@ fn FseTable::build(
   let step = (table_size >> 1) + (table_size >> 3) + 3
   let mask = table_size - 1
   let mut pos = 0
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     let count = norm_counts[sym]
     if count <= 0 {
       continue
@@ -60,7 +60,7 @@ fn FseTable::build(
       new_state_base[i] = i - new_state_baseline + (count << max_bits_out)
     }
   }
-  { symbols, num_bits, new_state_base, accuracy_log, table_size }
+  { symbols, num_bits, new_state_base, _accuracy_log: accuracy_log, _table_size: table_size }
 }
 
 ///|
@@ -80,11 +80,7 @@ fn highest_bit(n_ : Int) -> Int {
 ///|
 /// Decodes an FSE-encoded stream using the given table.
 fn fse_decode_symbol(table : FseTable, state : Int) -> (Byte, Int, Int) {
-  let s = if state >= 0 && state < table.symbols.length() {
-    state
-  } else {
-    0
-  }
+  let s = if state >= 0 && state < table.symbols.length() { state } else { 0 }
   let sym = table.symbols[s]
   let nb = table.num_bits[s].to_int()
   let base = table.new_state_base[s]

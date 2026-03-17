@@ -17,7 +17,8 @@ fn write_frame_header(
   // FLG byte: version=01, block_independence=1, block_checksum=0,
   //           content_size=depends, content_checksum=1, reserved=0, dict_id=0
   let has_content_size = content_size is Some(_)
-  let flg = 0b01_1_0_0_1_0_0 | (if has_content_size { 0b00_0_0_1_0_0_0 } else { 0 })
+  let flg = 0b01_1_0_0_1_0_0 |
+    (if has_content_size { 0b00_0_0_1_0_0_0 } else { 0 })
   dst[pos] = flg.to_byte()
   pos += 1
   // BD byte: block_max_size=4 (64KB)
@@ -106,9 +107,7 @@ fn parse_frame_header(
   let block_max_size = max_block_sizes[block_max_size_id]
   let mut pos = 6
   let content_size : Int? = if has_content_size {
-    guard pos + 8 <= data.length() else {
-      raise Lz4Error::UnexpectedEOF
-    }
+    guard pos + 8 <= data.length() else { raise Lz4Error::UnexpectedEOF }
     let mut size = 0
     for i in 0..<8 {
       size = size | (data[pos + i].to_int() << (i * 8))

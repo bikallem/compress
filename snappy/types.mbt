@@ -42,7 +42,7 @@ const TAG_COPY1 : Int = 0x01
 const TAG_COPY2 : Int = 0x02
 
 ///|
-const TAG_COPY4 : Int = 0x03
+let _TAG_COPY4 : Int = 0x03
 
 ///|
 /// Maximum block size for Snappy encoding.

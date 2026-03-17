@@ -57,23 +57,23 @@ const MAX_WBITS : Int = 24
 
 ///|
 /// Default window bits.
-const DEFAULT_WBITS : Int = 22
+let _DEFAULT_WBITS : Int = 22
 
 ///|
 /// Hash table size for compression.
 const BROTLI_HASH_SIZE : Int = 1 << 14
 
 ///|
-const BROTLI_HASH_MASK : Int = BROTLI_HASH_SIZE - 1
+let _BROTLI_HASH_MASK : Int = BROTLI_HASH_SIZE - 1
 
 ///|
 /// Minimum match length for Brotli.
-const BROTLI_MIN_MATCH : Int = 4
+let _BROTLI_MIN_MATCH : Int = 4
 
 ///|
 /// Insert-and-copy length code prefix lengths (Table in RFC 7932 section 5).
 /// For simplicity, we define the baselines and extra bits for insert lengths.
-let insert_baselines : FixedArray[Int] = {
+let _insert_baselines : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
   a[0] = 0
   a[1] = 1
@@ -103,7 +103,7 @@ let insert_baselines : FixedArray[Int] = {
 }
 
 ///|
-let insert_extra_bits : FixedArray[Int] = {
+let _insert_extra_bits : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
   a[0] = 0
   a[1] = 0
@@ -133,7 +133,7 @@ let insert_extra_bits : FixedArray[Int] = {
 }
 
 ///|
-let copy_baselines : FixedArray[Int] = {
+let _copy_baselines : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
   a[0] = 2
   a[1] = 3
@@ -163,7 +163,7 @@ let copy_baselines : FixedArray[Int] = {
 }
 
 ///|
-let copy_extra_bits : FixedArray[Int] = {
+let _copy_extra_bits : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
   a[0] = 0
   a[1] = 0

@@ -2,10 +2,7 @@
 /// Compresses data using the Brotli format.
 /// Uses uncompressed meta-blocks for simplicity and correctness,
 /// with LZ77 matching at higher levels.
-pub fn compress(
-  data : Bytes,
-  level? : CompressionLevel = Default,
-) -> Bytes {
+pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   let lvl = compression_level_to_int(level)
   let src = data[:]
   let src_len = data.length()
@@ -79,7 +76,7 @@ fn window_bits_for_size(size : Int) -> Int {
     return 16
   }
   let mut wbits = 10
-  while wbits < MAX_WBITS && (1 << wbits) < size {
+  while wbits < MAX_WBITS && 1 << wbits < size {
     wbits += 1
   }
   wbits
@@ -95,7 +92,7 @@ fn encode_wbits(bw : BitWriter, wbits : Int) -> Unit {
   } else if wbits >= 10 && wbits <= 17 {
     // For 10-17: use 4-bit encoding
     // 0xxx where xxx = wbits - 10 (shifted)
-    let val = wbits - 17 // -7 to 0
+    let _val = wbits - 17 // -7 to 0
     // Actually the encoding is: write 1, then specific pattern
     bw.write_bits(1, 1) // not 16
     let code = wbits - 10
@@ -119,9 +116,9 @@ fn encode_wbits(bw : BitWriter, wbits : Int) -> Unit {
 fn meta_block_nibbles(mlen : Int) -> (Int, Int) {
   if mlen <= 0 {
     (4, 0)
-  } else if mlen <= (1 << 16) {
+  } else if mlen <= 1 << 16 {
     (4, mlen - 1)
-  } else if mlen <= (1 << 20) {
+  } else if mlen <= 1 << 20 {
     (5, mlen - 1)
   } else {
     (6, mlen - 1)

@@ -1,6 +1,9 @@
 ///|
 /// Decompresses Brotli-encoded data.
 pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
+  guard data.length() > 0 else {
+    raise BrotliError::CorruptData("empty input")
+  }
   let br = BitReader::new(data[:])
   let sink = @output_sink.OutputSink::new(data.length() * 4)
   // Decode window bits
@@ -46,9 +49,7 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
           let _ = br.read_bits(br.n_bits % 8)
         }
         // Read raw bytes
-        let block = Bytes::makei(mlen, fn(_i) {
-          br.read_bits(8).to_byte()
-        })
+        let block = Bytes::makei(mlen, fn(_i) { br.read_bits(8).to_byte() })
         sink.write_bytes(block)
         if is_last {
           break
@@ -98,7 +99,7 @@ fn decode_wbits(br : BitReader) -> Int {
 fn decode_compressed_metablock(
   br : BitReader,
   mlen : Int,
-) -> Bytes raise BrotliError {
+) -> Bytes {
   // A full Brotli decompressor requires:
   // 1. Block type trees for literals, insert&copy, distances
   // 2. Context maps

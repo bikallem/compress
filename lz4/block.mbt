@@ -31,7 +31,8 @@ fn block_compress(src : BytesView, dst : FixedArray[Byte]) -> Int {
       let lit_len = ip - anchor
       // Extend match forward
       let mut match_len = MIN_MATCH
-      while ip + match_len < src_len && src[ref_pos + match_len] == src[ip + match_len] {
+      while ip + match_len < src_len &&
+            src[ref_pos + match_len] == src[ip + match_len] {
         match_len += 1
       }
       // Encode sequence
@@ -45,7 +46,7 @@ fn block_compress(src : BytesView, dst : FixedArray[Byte]) -> Int {
       if lit_len >= 15 {
         token = 0xF0
         let mut remaining = lit_len - 15
-        if op + 1 + (remaining / 255) >= dst_limit {
+        if op + 1 + remaining / 255 >= dst_limit {
           return 0
         }
         while remaining >= 255 {

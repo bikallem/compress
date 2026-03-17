@@ -29,9 +29,9 @@ fn xxh32_rotl(val : UInt, bits : Int) -> UInt {
 ///|
 fn xxh32_read32(data : BytesView, offset : Int) -> UInt {
   data[offset].to_uint() |
-    (data[offset + 1].to_uint() << 8) |
-    (data[offset + 2].to_uint() << 16) |
-    (data[offset + 3].to_uint() << 24)
+  (data[offset + 1].to_uint() << 8) |
+  (data[offset + 2].to_uint() << 16) |
+  (data[offset + 3].to_uint() << 24)
 }
 
 ///|
@@ -47,7 +47,7 @@ fn xxh32_avalanche(h_ : UInt) -> UInt {
 
 ///|
 /// Computes XXH32 checksum of the given bytes in one shot.
-pub fn xxh32(data : BytesView, seed~ : UInt = 0U) -> UInt {
+pub fn xxh32(data : BytesView, seed? : UInt = 0U) -> UInt {
   let h = XXH32::new(seed~)
   h.update(data)
   h.checksum()
@@ -68,7 +68,7 @@ pub struct XXH32 {
 
 ///|
 /// Creates a new XXH32 hasher.
-pub fn XXH32::new(seed~ : UInt = 0U) -> XXH32 {
+pub fn XXH32::new(seed? : UInt = 0U) -> XXH32 {
   {
     seed,
     v1: seed + XXH32_PRIME1 + XXH32_PRIME2,
@@ -140,9 +140,9 @@ pub impl Hasher for XXH32 with update(self, data) -> Unit {
 pub impl Hasher for XXH32 with checksum(self) -> UInt {
   let mut h : UInt = if self.total_len >= 16U {
     xxh32_rotl(self.v1, 1) +
-      xxh32_rotl(self.v2, 7) +
-      xxh32_rotl(self.v3, 12) +
-      xxh32_rotl(self.v4, 18)
+    xxh32_rotl(self.v2, 7) +
+    xxh32_rotl(self.v3, 12) +
+    xxh32_rotl(self.v4, 18)
   } else {
     self.seed + XXH32_PRIME5
   }

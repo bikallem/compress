@@ -36,21 +36,21 @@ fn xxh64_rotl(val : UInt64, bits : Int) -> UInt64 {
 ///|
 fn xxh64_read32(data : BytesView, offset : Int) -> UInt64 {
   data[offset].to_uint().to_uint64() |
-    (data[offset + 1].to_uint().to_uint64() << 8) |
-    (data[offset + 2].to_uint().to_uint64() << 16) |
-    (data[offset + 3].to_uint().to_uint64() << 24)
+  (data[offset + 1].to_uint().to_uint64() << 8) |
+  (data[offset + 2].to_uint().to_uint64() << 16) |
+  (data[offset + 3].to_uint().to_uint64() << 24)
 }
 
 ///|
 fn xxh64_read64(data : BytesView, offset : Int) -> UInt64 {
   data[offset].to_uint().to_uint64() |
-    (data[offset + 1].to_uint().to_uint64() << 8) |
-    (data[offset + 2].to_uint().to_uint64() << 16) |
-    (data[offset + 3].to_uint().to_uint64() << 24) |
-    (data[offset + 4].to_uint().to_uint64() << 32) |
-    (data[offset + 5].to_uint().to_uint64() << 40) |
-    (data[offset + 6].to_uint().to_uint64() << 48) |
-    (data[offset + 7].to_uint().to_uint64() << 56)
+  (data[offset + 1].to_uint().to_uint64() << 8) |
+  (data[offset + 2].to_uint().to_uint64() << 16) |
+  (data[offset + 3].to_uint().to_uint64() << 24) |
+  (data[offset + 4].to_uint().to_uint64() << 32) |
+  (data[offset + 5].to_uint().to_uint64() << 40) |
+  (data[offset + 6].to_uint().to_uint64() << 48) |
+  (data[offset + 7].to_uint().to_uint64() << 56)
 }
 
 ///|
@@ -66,7 +66,7 @@ fn xxh64_avalanche(h_ : UInt64) -> UInt64 {
 
 ///|
 /// Computes XXH64 checksum of the given bytes in one shot.
-pub fn xxh64(data : BytesView, seed~ : UInt64 = 0UL) -> UInt64 {
+pub fn xxh64(data : BytesView, seed? : UInt64 = 0UL) -> UInt64 {
   let h = XXH64::new(seed~)
   h.update(data)
   h.checksum64()
@@ -87,7 +87,7 @@ pub struct XXH64 {
 
 ///|
 /// Creates a new XXH64 hasher.
-pub fn XXH64::new(seed~ : UInt64 = 0UL) -> XXH64 {
+pub fn XXH64::new(seed? : UInt64 = 0UL) -> XXH64 {
   {
     seed,
     v1: seed + XXH64_PRIME1 + XXH64_PRIME2,

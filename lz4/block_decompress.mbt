@@ -43,9 +43,7 @@ fn block_decompress(
     guard src_pos + 2 <= src_end else { raise Lz4Error::UnexpectedEOF }
     let offset = src[src_pos].to_int() | (src[src_pos + 1].to_int() << 8)
     src_pos += 2
-    guard offset > 0 else {
-      raise Lz4Error::CorruptData("zero match offset")
-    }
+    guard offset > 0 else { raise Lz4Error::CorruptData("zero match offset") }
     guard offset <= dst_pos else {
       raise Lz4Error::CorruptData("match offset beyond output")
     }
@@ -67,7 +65,7 @@ fn block_decompress(
     // Copy match (with possible overlap)
     let match_start = dst_pos - offset
     for i in 0..<match_len {
-      dst[dst_pos + i] = dst[match_start + (i % offset)]
+      dst[dst_pos + i] = dst[match_start + i % offset]
     }
     dst_pos += match_len
   }

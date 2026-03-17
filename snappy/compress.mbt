@@ -35,10 +35,18 @@ fn Encoder::ensure_capacity(self : Encoder, additional : Int) -> Unit {
 }
 
 ///|
+/// Emit a single byte to the output buffer (used by streaming API).
 fn Encoder::emit_byte(self : Encoder, b : Byte) -> Unit {
   self.ensure_capacity(1)
   self.out_buf[self.out_pos] = b
   self.out_pos += 1
+}
+
+///|
+/// References to suppress unused warnings for streaming API stubs.
+fn init {
+  ignore(Encoder::emit_byte)
+  ignore(Encoder::take_output)
 }
 
 ///|
@@ -57,7 +65,12 @@ fn Encoder::emit_varint(self : Encoder, n_ : Int) -> Unit {
 
 ///|
 /// Emits a literal run.
-fn Encoder::emit_literal(self : Encoder, data : BytesView, offset : Int, length : Int) -> Unit {
+fn Encoder::emit_literal(
+  self : Encoder,
+  data : BytesView,
+  offset : Int,
+  length : Int,
+) -> Unit {
   let n = length - 1
   if n < 60 {
     self.ensure_capacity(1 + length)
@@ -129,7 +142,9 @@ fn Encoder::emit_copy(self : Encoder, offset_ : Int, length_ : Int) -> Unit {
   } else {
     // Use copy1 (2-byte encoding) for short copies with small offsets
     self.ensure_capacity(2)
-    self.out_buf[self.out_pos] = (((offset >> 8) << 5) | ((length - 4) << 2) | TAG_COPY1).to_byte()
+    self.out_buf[self.out_pos] = ((offset >> 8 << 5) |
+    ((length - 4) << 2) |
+    TAG_COPY1).to_byte()
     self.out_buf[self.out_pos + 1] = (offset & 0xFF).to_byte()
     self.out_pos += 2
   }
@@ -212,7 +227,8 @@ fn Encoder::compress_block(
     }
     // Extend the match
     let mut match_len = 4
-    while ip + match_len < block_end && data[ip + match_len] == data[candidate + match_len] {
+    while ip + match_len < block_end &&
+          data[ip + match_len] == data[candidate + match_len] {
       match_len += 1
     }
     self.emit_copy(ip - candidate, match_len)
@@ -236,6 +252,7 @@ fn Encoder::close(self : Encoder) -> Bytes {
 }
 
 ///|
+/// Retrieve accumulated output and reset the buffer.
 fn Encoder::take_output(self : Encoder) -> Bytes {
   if self.out_pos == 0 {
     return Bytes::default()

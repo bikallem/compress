@@ -28,7 +28,7 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
     pos += 1
     let exponent = (wd >> 3) + 10
     let mantissa = wd & 0x07
-    window_size = (1 << exponent) + (mantissa * (1 << (exponent - 3)))
+    window_size = (1 << exponent) + mantissa * (1 << (exponent - 3))
     guard window_size <= MAX_WINDOW_SIZE else {
       raise ZstdError::WindowTooLarge("window size \{window_size} exceeds max")
     }
@@ -92,7 +92,9 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   let xxh = @checksum.XXH64::new()
   while pos < src_len {
     guard pos + 3 <= src_len else { raise ZstdError::UnexpectedEOF }
-    let bh = src[pos].to_int() | (src[pos + 1].to_int() << 8) | (src[pos + 2].to_int() << 16)
+    let bh = src[pos].to_int() |
+      (src[pos + 1].to_int() << 8) |
+      (src[pos + 2].to_int() << 16)
     pos += 3
     let last_block = bh & 1
     let block_type = (bh >> 1) & 3
@@ -149,7 +151,9 @@ fn decompress_block(
   let mut pos = block_start
   let block_end = block_start + block_size
   // Parse literals section
-  guard pos < block_end else { raise ZstdError::CorruptData("empty compressed block") }
+  guard pos < block_end else {
+    raise ZstdError::CorruptData("empty compressed block")
+  }
   let lit_header = src[pos].to_int()
   let lit_type = lit_header & 0x03
   let mut lit_data : Bytes = b""
@@ -167,7 +171,9 @@ fn decompress_block(
     } else {
       // 3 byte header
       guard pos + 2 < block_end else { raise ZstdError::UnexpectedEOF }
-      let h = lit_header | (src[pos + 1].to_int() << 8) | (src[pos + 2].to_int() << 16)
+      let h = lit_header |
+        (src[pos + 1].to_int() << 8) |
+        (src[pos + 2].to_int() << 16)
       ((h >> 4) & 0xFFFFF, 3)
     }
     pos += header_bytes
@@ -187,7 +193,9 @@ fn decompress_block(
       ((h >> 4) & 0xFFF, 2)
     } else {
       guard pos + 2 < block_end else { raise ZstdError::UnexpectedEOF }
-      let h = lit_header | (src[pos + 1].to_int() << 8) | (src[pos + 2].to_int() << 16)
+      let h = lit_header |
+        (src[pos + 1].to_int() << 8) |
+        (src[pos + 2].to_int() << 16)
       ((h >> 4) & 0xFFFFF, 3)
     }
     pos += header_bytes
@@ -259,11 +267,8 @@ fn decompress_block(
       ml_code + 3
     } else {
       let extra = ml_extra_bits[ml_code]
-      ml_baselines[ml_code] + (if extra > 0 {
-        br.read_bits(extra).reinterpret_as_int()
-      } else {
-        0
-      })
+      ml_baselines[ml_code] +
+      (if extra > 0 { br.read_bits(extra).reinterpret_as_int() } else { 0 })
     }
     // Decode literal length
     let (ll_sym, ll_nb, ll_base_state) = fse_decode_symbol(ll_table, ll_state)
@@ -272,11 +277,8 @@ fn decompress_block(
       ll_code
     } else {
       let extra = ll_extra_bits[ll_code]
-      ll_baselines[ll_code] + (if extra > 0 {
-        br.read_bits(extra).reinterpret_as_int()
-      } else {
-        0
-      })
+      ll_baselines[ll_code] +
+      (if extra > 0 { br.read_bits(extra).reinterpret_as_int() } else { 0 })
     }
     // Update FSE states (not for last sequence)
     if i < num_sequences - 1 {
@@ -295,7 +297,7 @@ fn decompress_block(
     let out_bytes = out.to_bytes()
     let out_len = out_bytes.length()
     for j in 0..<match_len {
-      let src_idx = out_len - offset + (j % offset)
+      let src_idx = out_len - offset + j % offset
       if src_idx >= 0 && src_idx < out_bytes.length() {
         out.write_byte(out_bytes[src_idx])
       }

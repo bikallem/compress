@@ -71,9 +71,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   }
   // Parse the complete Snappy stream
   // Read varint for uncompressed length
-  let (uncompressed_len, data_start) = try {
-    read_varint(input, s.input_pos)
-  } catch {
+  let (uncompressed_len, data_start) = read_varint(input, s.input_pos) catch {
     e => {
       let se = SnappyError::CorruptInput(e.to_string())
       s.failed = Some(se)
@@ -85,9 +83,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     return End
   }
   let dst = FixedArray::make(uncompressed_len, b'\x00')
-  let n = try {
-    decode_block(input, data_start, dst, uncompressed_len)
-  } catch {
+  let n = decode_block(input, data_start, dst, uncompressed_len) catch {
     e => {
       let se = SnappyError::CorruptInput(e.to_string())
       s.failed = Some(se)

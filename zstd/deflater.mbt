@@ -10,9 +10,7 @@ priv struct EncoderState {
 struct Deflater(EncoderState)
 
 ///|
-pub fn Deflater::new(
-  level? : CompressionLevel = Default,
-) -> Deflater {
+pub fn Deflater::new(level? : CompressionLevel = Default) -> Deflater {
   Deflater({ level, input_buf: @buffer.new(), finished: false })
 }
 

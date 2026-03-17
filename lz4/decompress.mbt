@@ -36,7 +36,12 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
       xxh.update(block_bytes[:])
     } else {
       let (decoded_len, _) = block_decompress(
-        src, pos, pos + block_size, block_buf, 0, block_max_size,
+        src,
+        pos,
+        pos + block_size,
+        block_buf,
+        0,
+        block_max_size,
       )
       let decoded_bytes = Bytes::makei(decoded_len, fn(i) { block_buf[i] })
       sink.write_bytes(decoded_bytes)
@@ -59,11 +64,10 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
   // Verify content size
   let result = sink.to_bytes()
   match content_size {
-    Some(expected) => {
+    Some(expected) =>
       if result.length() != expected {
         raise Lz4Error::ContentSizeMismatch
       }
-    }
     None => ()
   }
   result

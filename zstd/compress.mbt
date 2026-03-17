@@ -2,10 +2,7 @@
 /// Compresses data using the Zstandard format.
 /// Uses a simplified encoding: raw blocks for small data, RLE for uniform data,
 /// and a simple LZ77 + literal encoding for larger data.
-pub fn compress(
-  data : Bytes,
-  level? : CompressionLevel = Default,
-) -> Bytes {
+pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   ignore(level)
   let src = data[:]
   let src_len = data.length()
@@ -47,9 +44,7 @@ pub fn compress(
       let is_last = block_end == src_len
       let last_flag = if is_last { 1 } else { 0 }
       // Use raw blocks for correctness (compressed block encoding is WIP)
-      let block_header = last_flag |
-        (BLOCK_TYPE_RAW << 1) |
-        (block_len << 3)
+      let block_header = last_flag | (BLOCK_TYPE_RAW << 1) | (block_len << 3)
       out[pos] = (block_header & 0xFF).to_byte()
       out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
       out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
@@ -183,7 +178,8 @@ fn compress_block_simple(
       }
       // Extend match
       let mut match_len = 3
-      while ip + match_len < block_end && src[ref_pos + match_len] == src[ip + match_len] {
+      while ip + match_len < block_end &&
+            src[ref_pos + match_len] == src[ip + match_len] {
         match_len += 1
       }
       let offset = ip - ref_pos
@@ -265,7 +261,11 @@ fn compress_block_simple(
     let of_code = highest_bit(offset) - 1
     write_bits(
       (offset - (1 << of_code)).reinterpret_as_uint(),
-      if of_code > 0 { of_code } else { 0 },
+      if of_code > 0 {
+        of_code
+      } else {
+        0
+      },
     )
     // Encode match length code
     let ml_value = match_len - ZSTD_MIN_MATCH
@@ -325,7 +325,7 @@ fn encode_ll(lit_len : Int) -> (Int, Int, Int) {
         let extra = lit_len - ll_baselines[i]
         return (i, extra, ll_extra_bits[i])
       }
-    } else {
+    } nobreak {
       (35, lit_len - ll_baselines[35], ll_extra_bits[35])
     }
   }
@@ -338,13 +338,23 @@ fn encode_ml(ml_value : Int) -> (Int, Int, Int) {
   } else {
     for i = 32; i < 53; i = i + 1 {
       let baseline = ml_baselines[i] - 3
-      let next_baseline = if i < 52 { ml_baselines[i + 1] - 3 } else { 0x7FFFFFFF }
+      let next_baseline = if i < 52 {
+        ml_baselines[i + 1] - 3
+      } else {
+        0x7FFFFFFF
+      }
       if ml_value < next_baseline {
         let extra = ml_value - baseline
         return (i, extra, ml_extra_bits[i])
       }
-    } else {
+    } nobreak {
       (52, ml_value - (ml_baselines[52] - 3), ml_extra_bits[52])
     }
   }
+}
+
+///|
+/// References to suppress unused warnings for compression stubs.
+fn init {
+  ignore(compress_block_simple)
 }

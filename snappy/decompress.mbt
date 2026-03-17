@@ -76,7 +76,9 @@ fn decode_block(
         lit_len += 1
         src_pos += 4
       }
-      guard src_pos + lit_len <= src_len else { raise SnappyError::UnexpectedEOF }
+      guard src_pos + lit_len <= src_len else {
+        raise SnappyError::UnexpectedEOF
+      }
       guard dst_pos + lit_len <= uncompressed_len else {
         raise SnappyError::CorruptInput("literal extends past end of output")
       }
@@ -90,7 +92,7 @@ fn decode_block(
       src_pos += 1
       guard src_pos < src_len else { raise SnappyError::UnexpectedEOF }
       let length = ((tag >> 2) & 0x07) + 4
-      let offset = ((tag >> 5) << 8) | src[src_pos].to_int()
+      let offset = (tag >> 5 << 8) | src[src_pos].to_int()
       src_pos += 1
       guard offset > 0 && offset <= dst_pos else {
         raise SnappyError::CorruptInput("invalid copy offset \{offset}")
@@ -100,7 +102,7 @@ fn decode_block(
       }
       let copy_start = dst_pos - offset
       for i in 0..<length {
-        dst[dst_pos + i] = dst[copy_start + (i % offset)]
+        dst[dst_pos + i] = dst[copy_start + i % offset]
       }
       dst_pos += length
     } else if tag_type == TAG_COPY2 {
@@ -118,7 +120,7 @@ fn decode_block(
       }
       let copy_start = dst_pos - offset
       for i in 0..<length {
-        dst[dst_pos + i] = dst[copy_start + (i % offset)]
+        dst[dst_pos + i] = dst[copy_start + i % offset]
       }
       dst_pos += length
     } else {
@@ -139,7 +141,7 @@ fn decode_block(
       }
       let copy_start = dst_pos - offset
       for i in 0..<length {
-        dst[dst_pos + i] = dst[copy_start + (i % offset)]
+        dst[dst_pos + i] = dst[copy_start + i % offset]
       }
       dst_pos += length
     }
