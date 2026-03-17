@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/brotli/async"
+
+import {
+  "bikallem/compress/brotli",
+  "moonbitlang/async/io",
+}
+
+// Values
+pub async fn compress(&@io.Reader, &@io.Writer, level? : @brotli.CompressionLevel) -> Unit
+
+pub async fn decompress(&@io.Reader, &@io.Writer) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+
