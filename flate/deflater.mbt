@@ -239,6 +239,7 @@ fn Deflater::step_stored(self : Deflater) -> Unit {
 ///|
 /// Snappy-style fast compressor (level 1). Matches Go's deflateFast algorithm:
 /// adaptive skip on miss, immediate re-probe after match for chaining.
+/// Uses dynamic Huffman blocks for optimal encoding.
 fn Deflater::step_fast(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
   let window = self.window
@@ -250,7 +251,6 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     self.index = i
     return
   }
-  self.w.start_fixed_block(false)
   let mut next_emit = i // start of pending literal run
   // Outer loop: find matches via adaptive skip, then chain
   while i < safe_end {
@@ -286,9 +286,9 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     if not(found) {
       break // no more matches possible
     }
-    // Emit pending literals [next_emit, s)
+    // Collect pending literals [next_emit, s) as tokens
     for j in next_emit..<s {
-      self.w.write_literal_fast(window.unsafe_get(j))
+      self.tokens.push(Token::literal(window.unsafe_get(j)))
     }
     i = s
     // --- Match loop: extend match, emit, then try to chain ---
@@ -299,9 +299,13 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
         MAX_MATCH_LENGTH
       }
       let length = self.match_len(i, candidate, max_len)
-      self.w.write_match_fast(length, i - candidate)
+      self.tokens.push(Token::match_(length, i - candidate))
       i += length
       next_emit = i
+      if self.tokens.length() >= MAX_BLOCK_TOKENS {
+        self.w.write_dynamic_block(self.tokens, false)
+        self.tokens.clear()
+      }
       if i >= safe_end {
         break
       }
@@ -322,11 +326,10 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
       break
     }
   }
-  // Emit remaining literals
+  // Collect remaining literals as tokens
   for j = next_emit; j < end; j = j + 1 {
-    self.w.write_literal_fast(window.unsafe_get(j))
+    self.tokens.push(Token::literal(window.unsafe_get(j)))
   }
-  self.w.write_fixed_symbol(END_BLOCK_MARKER)
   self.index = end
 }
 
