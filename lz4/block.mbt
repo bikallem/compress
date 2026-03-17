@@ -7,31 +7,37 @@ fn block_compress(src : BytesView, dst : FixedArray[Byte]) -> Int {
     // Too small to compress
     return 0
   }
-  let table = FixedArray::make(LZ4_HASH_SIZE, 0)
+  // LZ4 requires the last 5 bytes to be literals (LASTLITERALS).
+  let last_literals = 5
+  let mf_limit = src_len - last_literals // match-finding limit
+  let match_limit = src_len - last_literals // last position a match can end
+  let table = FixedArray::make(LZ4_HASH_SIZE, -1)
   let mut ip = 0 // input position
   let mut op = 0 // output position
   let mut anchor = 0 // start of pending literal
-  let ip_limit = src_len - 5 // leave room for last literals
-  let match_limit = src_len - MIN_MATCH
   let dst_limit = dst.length()
-  while ip < ip_limit {
+  while ip < mf_limit {
     let hash = lz4_hash(src, ip)
     let ref_pos = table[hash]
     table[hash] = ip
-    // Check for match (ip != ref_pos guards against self-match from zero-init table)
-    if ref_pos >= anchor &&
-      ip != ref_pos &&
+    // Check for match:
+    // - ref_pos >= 0: valid table entry (not -1 init)
+    // - ip - ref_pos < 65536: offset fits in 16 bits
+    // - ref_pos + 3 < src_len: can read 4 bytes at ref_pos
+    // - first 4 bytes match
+    if ref_pos >= 0 &&
       ip - ref_pos < 65536 &&
-      ip <= match_limit &&
+      ref_pos + 3 < src_len &&
       src[ref_pos] == src[ip] &&
       src[ref_pos + 1] == src[ip + 1] &&
       src[ref_pos + 2] == src[ip + 2] &&
       src[ref_pos + 3] == src[ip + 3] {
       // Found match - emit literal + match sequence
       let lit_len = ip - anchor
-      // Extend match forward
+      // Extend match forward, respecting match_limit and ref bounds
       let mut match_len = MIN_MATCH
-      while ip + match_len < src_len &&
+      while ip + match_len < match_limit &&
+            ref_pos + match_len < src_len &&
             src[ref_pos + match_len] == src[ip + match_len] {
         match_len += 1
       }
