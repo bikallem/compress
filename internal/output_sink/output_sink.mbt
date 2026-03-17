@@ -49,6 +49,26 @@ pub fn OutputSink::write_bytes(self : OutputSink, src : Bytes) -> Unit {
 }
 
 ///|
+/// Write a single byte.
+pub fn OutputSink::write_byte(self : OutputSink, b : Byte) -> Unit {
+  self.ensure_capacity(1)
+  self.buf[self.pos] = b
+  self.pos += 1
+}
+
+///|
+/// Get a byte at absolute position in the output.
+pub fn OutputSink::get_byte(self : OutputSink, pos : Int) -> Byte {
+  self.buf[pos]
+}
+
+///|
+/// Current number of bytes written.
+pub fn OutputSink::length(self : OutputSink) -> Int {
+  self.pos
+}
+
+///|
 /// Produce the final Bytes result. Single allocation.
 pub fn OutputSink::to_bytes(self : OutputSink) -> Bytes {
   let result = @blit.make_uninit(self.pos)
