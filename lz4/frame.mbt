@@ -3,9 +3,10 @@
 /// Returns the number of bytes written.
 fn write_frame_header(
   dst : FixedArray[Byte],
-  mut pos : Int,
+  pos_ : Int,
   content_size : Int?,
 ) -> Int {
+  let mut pos = pos_
   let start = pos
   // Magic number (little-endian)
   dst[pos] = (LZ4_FRAME_MAGIC & 0xFFU).to_byte()
@@ -48,9 +49,10 @@ fn write_frame_header(
 /// Returns bytes written.
 fn write_frame_footer(
   dst : FixedArray[Byte],
-  mut pos : Int,
+  pos_ : Int,
   content_checksum : UInt?,
 ) -> Int {
+  let mut pos = pos_
   let start = pos
   // End mark: 0x00000000
   dst[pos] = b'\x00'
@@ -101,7 +103,7 @@ fn parse_frame_header(
   guard block_max_size_id >= 4 && block_max_size_id <= 7 else {
     raise Lz4Error::InvalidHeader("invalid block max size id")
   }
-  let block_max_size = MAX_BLOCK_SIZES[block_max_size_id]
+  let block_max_size = max_block_sizes[block_max_size_id]
   let mut pos = 6
   let content_size : Int? = if has_content_size {
     guard pos + 8 <= data.length() else {

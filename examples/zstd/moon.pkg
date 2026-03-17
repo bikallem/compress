@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/zstd",
+  "bikallem/compress/zstd" @zstd_codec,
   "moonbitlang/core/buffer",
 }
 

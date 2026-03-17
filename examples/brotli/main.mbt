@@ -2,15 +2,15 @@
 fn run() -> Unit raise {
   // One-shot compress/decompress
   let original = b"Hello, Brotli compression!"
-  let compressed = @brotli.compress(original)
-  let decompressed = @brotli.decompress(compressed)
+  let compressed = @brotli_codec.compress(original)
+  let decompressed = @brotli_codec.decompress(compressed)
   assert_eq(decompressed, original)
   println(
     "Brotli: \{original.length()} -> \{compressed.length()} bytes, round-trip OK",
   )
 
   // Streaming API
-  let d = @brotli.Deflater::new()
+  let d = @brotli_codec.Deflater::new()
   let data = b"Streaming Brotli data for compression"
   match d.encode(Some(data[:])) {
     Ok | Data(_) | End | Error(_) => ()
@@ -24,7 +24,7 @@ fn run() -> Unit raise {
     End | Ok | Error(_) => break
   }
   let rt_compressed = cbuf.to_bytes()
-  let inf = @brotli.Inflater::new()
+  let inf = @brotli_codec.Inflater::new()
   inf.src(rt_compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {

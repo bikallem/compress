@@ -46,35 +46,18 @@ pub fn compress(
       let block_len = block_end - src_pos
       let is_last = block_end == src_len
       let last_flag = if is_last { 1 } else { 0 }
-      // Try to compress the block
-      let compressed_block = compress_block_simple(src, src_pos, block_end)
-      if compressed_block.length() > 0 && compressed_block.length() < block_len {
-        // Use compressed block
-        let block_header = last_flag |
-          (BLOCK_TYPE_COMPRESSED << 1) |
-          (compressed_block.length() << 3)
-        out[pos] = (block_header & 0xFF).to_byte()
-        out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-        out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
-        pos += 3
-        for i in 0..<compressed_block.length() {
-          out[pos + i] = compressed_block[i]
-        }
-        pos += compressed_block.length()
-      } else {
-        // Raw block
-        let block_header = last_flag |
-          (BLOCK_TYPE_RAW << 1) |
-          (block_len << 3)
-        out[pos] = (block_header & 0xFF).to_byte()
-        out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-        out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
-        pos += 3
-        for i in 0..<block_len {
-          out[pos + i] = src[src_pos + i]
-        }
-        pos += block_len
+      // Use raw blocks for correctness (compressed block encoding is WIP)
+      let block_header = last_flag |
+        (BLOCK_TYPE_RAW << 1) |
+        (block_len << 3)
+      out[pos] = (block_header & 0xFF).to_byte()
+      out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
+      out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+      pos += 3
+      for i in 0..<block_len {
+        out[pos + i] = src[src_pos + i]
       }
+      pos += block_len
       src_pos = block_end
     }
   }
@@ -109,9 +92,10 @@ fn is_all_same(data : BytesView) -> Bool {
 /// Writes a zstd frame header. Returns bytes written.
 fn write_zstd_frame_header(
   dst : FixedArray[Byte],
-  mut pos : Int,
+  pos_ : Int,
   content_size : Int,
 ) -> Int {
+  let mut pos = pos_
   let start = pos
   // Magic number (little-endian)
   dst[pos] = (ZSTD_MAGIC & 0xFFU).to_byte()

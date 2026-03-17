@@ -59,10 +59,11 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
   // Verify content size
   let result = sink.to_bytes()
   match content_size {
-    Some(expected) =>
-      guard result.length() == expected else {
+    Some(expected) => {
+      if result.length() != expected {
         raise Lz4Error::ContentSizeMismatch
       }
+    }
     None => ()
   }
   result

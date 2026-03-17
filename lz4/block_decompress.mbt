@@ -2,12 +2,14 @@
 /// Decompresses an LZ4 block into dst. Returns bytes written.
 fn block_decompress(
   src : BytesView,
-  mut src_pos : Int,
+  src_pos_ : Int,
   src_end : Int,
   dst : FixedArray[Byte],
-  mut dst_pos : Int,
+  dst_pos_ : Int,
   dst_capacity : Int,
 ) -> (Int, Int) raise Lz4Error {
+  let mut src_pos = src_pos_
+  let mut dst_pos = dst_pos_
   while src_pos < src_end {
     let token = src[src_pos].to_int()
     src_pos += 1

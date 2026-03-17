@@ -4,7 +4,7 @@
 
 test "xxh64 empty seed 0" {
   // XXH64("", 0) = 0xEF46DB3751D8E999
-  inspect(@checksum.xxh64(b""[:]), content="17241709254890532637")
+  inspect(@checksum.xxh64(b""[:]), content="17241709254077376921")
 }
 
 ///|

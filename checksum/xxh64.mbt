@@ -54,7 +54,8 @@ fn xxh64_read64(data : BytesView, offset : Int) -> UInt64 {
 }
 
 ///|
-fn xxh64_avalanche(mut h : UInt64) -> UInt64 {
+fn xxh64_avalanche(h_ : UInt64) -> UInt64 {
+  let mut h = h_
   h = h ^ (h >> 33)
   h = h * XXH64_PRIME2
   h = h ^ (h >> 29)

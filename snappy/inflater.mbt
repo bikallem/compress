@@ -75,17 +75,9 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     read_varint(input, s.input_pos)
   } catch {
     e => {
-      match e {
-        SnappyError(se) => {
-          s.failed = Some(se)
-          return Error(se)
-        }
-        _ => {
-          let se = SnappyError::CorruptInput("failed to read varint")
-          s.failed = Some(se)
-          return Error(se)
-        }
-      }
+      let se = SnappyError::CorruptInput(e.to_string())
+      s.failed = Some(se)
+      return Error(se)
     }
   }
   if uncompressed_len == 0 {
@@ -97,17 +89,9 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     decode_block(input, data_start, dst, uncompressed_len)
   } catch {
     e => {
-      match e {
-        SnappyError(se) => {
-          s.failed = Some(se)
-          return Error(se)
-        }
-        _ => {
-          let se = SnappyError::CorruptInput("decode failed")
-          s.failed = Some(se)
-          return Error(se)
-        }
-      }
+      let se = SnappyError::CorruptInput(e.to_string())
+      s.failed = Some(se)
+      return Error(se)
     }
   }
   s.finished = true

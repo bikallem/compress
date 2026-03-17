@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/brotli",
+  "bikallem/compress/brotli" @brotli_codec,
   "moonbitlang/core/buffer",
 }
 

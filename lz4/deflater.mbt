@@ -6,7 +6,7 @@
 ///   match d.encode(Some(data)) { Ok => ...; Data(out) => ... }
 ///   match d.encode(None) { Data(out) => ...; End => ... }
 priv struct EncoderState {
-  input_buf : @buffer.T
+  input_buf : @buffer.Buffer
   mut finished : Bool
 }
 

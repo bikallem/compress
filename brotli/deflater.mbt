@@ -2,7 +2,7 @@
 /// Streaming Brotli compressor using signal protocol.
 priv struct EncoderState {
   level : CompressionLevel
-  input_buf : @buffer.T
+  input_buf : @buffer.Buffer
   mut finished : Bool
 }
 

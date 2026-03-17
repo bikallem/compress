@@ -35,7 +35,8 @@ fn xxh32_read32(data : BytesView, offset : Int) -> UInt {
 }
 
 ///|
-fn xxh32_avalanche(mut h : UInt) -> UInt {
+fn xxh32_avalanche(h_ : UInt) -> UInt {
+  let mut h = h_
   h = h ^ (h >> 15)
   h = h * XXH32_PRIME2
   h = h ^ (h >> 13)

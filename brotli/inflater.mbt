@@ -66,17 +66,9 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     decompress(data)
   } catch {
     e => {
-      match e {
-        BrotliError(be) => {
-          s.failed = Some(be)
-          return Error(be)
-        }
-        _ => {
-          let be = BrotliError::CorruptData("decode failed")
-          s.failed = Some(be)
-          return Error(be)
-        }
-      }
+      let be = BrotliError::CorruptData(e.to_string())
+      s.failed = Some(be)
+      return Error(be)
     }
   }
   s.finished = true

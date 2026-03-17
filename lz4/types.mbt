@@ -52,7 +52,7 @@ const LZ4_HASH_MASK : Int = LZ4_HASH_SIZE - 1
 ///|
 /// Maximum block sizes by index (from frame descriptor BD byte).
 /// Index 4=64KB, 5=256KB, 6=1MB, 7=4MB
-let MAX_BLOCK_SIZES : FixedArray[Int] = [
+let max_block_sizes : FixedArray[Int] = [
   0, 0, 0, 0, 65536, 262144, 1048576, 4194304,
 ]
 

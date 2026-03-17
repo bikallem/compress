@@ -2,15 +2,15 @@
 fn run() -> Unit raise {
   // One-shot compress/decompress
   let original = b"Hello, Zstandard compression!"
-  let compressed = @zstd.compress(original)
-  let decompressed = @zstd.decompress(compressed)
+  let compressed = @zstd_codec.compress(original)
+  let decompressed = @zstd_codec.decompress(compressed)
   assert_eq(decompressed, original)
   println(
     "Zstd: \{original.length()} -> \{compressed.length()} bytes, round-trip OK",
   )
 
   // Streaming API
-  let d = @zstd.Deflater::new()
+  let d = @zstd_codec.Deflater::new()
   let data = b"Streaming Zstandard data for compression"
   match d.encode(Some(data[:])) {
     Ok | Data(_) | End | Error(_) => ()
@@ -24,7 +24,7 @@ fn run() -> Unit raise {
     End | Ok | Error(_) => break
   }
   let rt_compressed = cbuf.to_bytes()
-  let inf = @zstd.Inflater::new()
+  let inf = @zstd_codec.Inflater::new()
   inf.src(rt_compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {

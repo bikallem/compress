@@ -2,15 +2,15 @@
 fn run() -> Unit raise {
   // One-shot compress/decompress
   let original = b"Hello, Snappy compression!"
-  let compressed = @snappy.compress(original)
-  let decompressed = @snappy.decompress(compressed)
+  let compressed = @snappy_codec.compress(original)
+  let decompressed = @snappy_codec.decompress(compressed)
   assert_eq(decompressed, original)
   println(
     "Snappy: \{original.length()} -> \{compressed.length()} bytes, round-trip OK",
   )
 
   // Streaming API
-  let d = @snappy.Deflater::new()
+  let d = @snappy_codec.Deflater::new()
   let data = b"Streaming Snappy data for compression"
   match d.encode(Some(data[:])) {
     Ok | Data(_) | End | Error(_) => ()
@@ -24,7 +24,7 @@ fn run() -> Unit raise {
     End | Ok | Error(_) => break
   }
   let rt_compressed = cbuf.to_bytes()
-  let inf = @snappy.Inflater::new()
+  let inf = @snappy_codec.Inflater::new()
   inf.src(rt_compressed[:])
   let dbuf = @buffer.new()
   loop inf.decode() {

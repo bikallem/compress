@@ -43,7 +43,8 @@ fn Encoder::emit_byte(self : Encoder, b : Byte) -> Unit {
 
 ///|
 /// Encodes the uncompressed length as a varint at the start.
-fn Encoder::emit_varint(self : Encoder, mut n : Int) -> Unit {
+fn Encoder::emit_varint(self : Encoder, n_ : Int) -> Unit {
+  let mut n = n_
   self.ensure_capacity(5)
   while n >= 128 {
     self.out_buf[self.out_pos] = ((n & 0x7F) | 0x80).to_byte()
@@ -98,7 +99,9 @@ fn Encoder::emit_literal(self : Encoder, data : BytesView, offset : Int, length 
 
 ///|
 /// Emits a copy (back-reference).
-fn Encoder::emit_copy(self : Encoder, mut offset : Int, mut length : Int) -> Unit {
+fn Encoder::emit_copy(self : Encoder, offset_ : Int, length_ : Int) -> Unit {
+  let offset = offset_
+  let mut length = length_
   // Emit copy2 for lengths > 64 or offsets > 2047
   while length >= 68 {
     self.ensure_capacity(3)
@@ -192,8 +195,9 @@ fn Encoder::compress_block(
     if ip + 1 <= ip_limit {
       next_hash = snappy_hash(data, ip + 1)
     }
-    // Check match
+    // Check match (ip == candidate guards against self-match from zero-init table)
     if candidate < block_start ||
+      ip == candidate ||
       ip - candidate >= MAX_BLOCK_SIZE ||
       data[ip] != data[candidate] ||
       data[ip + 1] != data[candidate + 1] ||

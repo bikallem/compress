@@ -64,10 +64,11 @@ fn FseTable::build(
 }
 
 ///|
-fn highest_bit(mut n : Int) -> Int {
-  if n <= 0 {
+fn highest_bit(n_ : Int) -> Int {
+  if n_ <= 0 {
     return 0
   }
+  let mut n = n_
   let mut bits = 0
   while n > 0 {
     bits += 1
@@ -79,9 +80,14 @@ fn highest_bit(mut n : Int) -> Int {
 ///|
 /// Decodes an FSE-encoded stream using the given table.
 fn fse_decode_symbol(table : FseTable, state : Int) -> (Byte, Int, Int) {
-  let sym = table.symbols[state]
-  let nb = table.num_bits[state].to_int()
-  let base = table.new_state_base[state]
+  let s = if state >= 0 && state < table.symbols.length() {
+    state
+  } else {
+    0
+  }
+  let sym = table.symbols[s]
+  let nb = table.num_bits[s].to_int()
+  let base = table.new_state_base[s]
   (sym, nb, base)
 }
 

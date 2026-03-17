@@ -7,7 +7,7 @@
 ///   match d.encode(None) { Data(out) => ...; End => ... }
 priv struct DeflaterState {
   state : Encoder
-  mut input_buf : @buffer.T
+  input_buf : @buffer.Buffer
   mut finished : Bool
 }
 

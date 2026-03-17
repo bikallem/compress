@@ -15,7 +15,8 @@ pub fn decompress(data : Bytes) -> Bytes raise SnappyError {
 
 ///|
 /// Reads a varint from data starting at pos. Returns (value, new_pos).
-fn read_varint(data : BytesView, mut pos : Int) -> (Int, Int) raise SnappyError {
+fn read_varint(data : BytesView, pos_ : Int) -> (Int, Int) raise SnappyError {
+  let mut pos = pos_
   let mut result = 0
   let mut shift = 0
   while pos < data.length() {
@@ -37,10 +38,11 @@ fn read_varint(data : BytesView, mut pos : Int) -> (Int, Int) raise SnappyError 
 /// Decompresses a Snappy stream from src into dst. Returns bytes written.
 fn decode_block(
   src : BytesView,
-  mut src_pos : Int,
+  src_pos_ : Int,
   dst : FixedArray[Byte],
   uncompressed_len : Int,
 ) -> Int raise SnappyError {
+  let mut src_pos = src_pos_
   let mut dst_pos = 0
   let src_len = src.length()
   while src_pos < src_len && dst_pos < uncompressed_len {

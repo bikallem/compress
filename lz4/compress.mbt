@@ -3,7 +3,7 @@
 pub fn compress(data : Bytes) -> Bytes {
   let src = data[:]
   let src_len = data.length()
-  let block_max_size = MAX_BLOCK_SIZES[DEFAULT_BLOCK_MAX_SIZE_ID]
+  let block_max_size = max_block_sizes[DEFAULT_BLOCK_MAX_SIZE_ID]
   // Worst case: header + blocks + footer
   let max_output = 19 + src_len + (src_len / block_max_size + 1) * 16 + 12
   let out = FixedArray::make(max_output, b'\x00')

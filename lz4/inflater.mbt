@@ -77,17 +77,9 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     decompress(data)
   } catch {
     e => {
-      match e {
-        Lz4Error(le) => {
-          s.failed = Some(le)
-          return Error(le)
-        }
-        _ => {
-          let le = Lz4Error::CorruptData("decode failed")
-          s.failed = Some(le)
-          return Error(le)
-        }
-      }
+      let le = Lz4Error::CorruptData(e.to_string())
+      s.failed = Some(le)
+      return Error(le)
     }
   }
   s.finished = true

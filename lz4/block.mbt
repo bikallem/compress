@@ -18,8 +18,9 @@ fn block_compress(src : BytesView, dst : FixedArray[Byte]) -> Int {
     let hash = lz4_hash(src, ip)
     let ref_pos = table[hash]
     table[hash] = ip
-    // Check for match
+    // Check for match (ip != ref_pos guards against self-match from zero-init table)
     if ref_pos >= anchor &&
+      ip != ref_pos &&
       ip - ref_pos < 65536 &&
       ip <= match_limit &&
       src[ref_pos] == src[ip] &&
@@ -109,7 +110,7 @@ fn block_compress(src : BytesView, dst : FixedArray[Byte]) -> Int {
     return 0
   }
   if last_lit_len >= 15 {
-    dst[token_pos] = 0xF0.to_byte()
+    dst[token_pos] = (0xF0).to_byte()
     let mut remaining = last_lit_len - 15
     while remaining >= 255 {
       if op >= dst_limit {
