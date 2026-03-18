@@ -1053,26 +1053,53 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
   let cmd_dev = FixedArray::make(cap, 0)
   let cmd_deb = FixedArray::make(cap, 0)
   let mut ci = 0
+  let mut last_distance = 0
   for cmd in cmds {
     if cmd.copy_len > 0 {
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
       let (cc, cev, ceb) = encode_copy_len(cmd.copy_len)
-      let iac = insert_copy_combined(ic, cc)
-      let (dc, dev, deb) = encode_distance_val(cmd.distance)
-      if iac > max_iac {
-        max_iac = iac
+      // Use implicit distance (IAC codes 0-127) when the distance matches
+      // the last used distance. Implicit codes only support insert_code < 8
+      // and copy_code < 16 (per RFC 7932 Table 11).
+      let use_implicit = cmd.distance == last_distance &&
+        last_distance > 0 &&
+        ic < 8 &&
+        cc < 16
+      let iac = if use_implicit {
+        insert_copy_implicit(ic, cc)
+      } else {
+        insert_copy_combined(ic, cc)
       }
-      if dc > max_dist {
-        max_dist = dc
+      if use_implicit {
+        if iac > max_iac {
+          max_iac = iac
+        }
+        cmd_iac[ci] = iac
+        cmd_iev[ci] = iev
+        cmd_ieb[ci] = ieb
+        cmd_cev[ci] = cev
+        cmd_ceb[ci] = ceb
+        cmd_dc[ci] = -1
+        cmd_dev[ci] = 0
+        cmd_deb[ci] = 0
+      } else {
+        let (dc, dev, deb) = encode_distance_val(cmd.distance)
+        if iac > max_iac {
+          max_iac = iac
+        }
+        if dc > max_dist {
+          max_dist = dc
+        }
+        cmd_iac[ci] = iac
+        cmd_iev[ci] = iev
+        cmd_ieb[ci] = ieb
+        cmd_cev[ci] = cev
+        cmd_ceb[ci] = ceb
+        cmd_dc[ci] = dc
+        cmd_dev[ci] = dev
+        cmd_deb[ci] = deb
+        last_distance = cmd.distance
       }
-      cmd_iac[ci] = iac
-      cmd_iev[ci] = iev
-      cmd_ieb[ci] = ieb
-      cmd_cev[ci] = cev
-      cmd_ceb[ci] = ceb
-      cmd_dc[ci] = dc
-      cmd_dev[ci] = dev
-      cmd_deb[ci] = deb
       ci += 1
     } else if cmd.insert_len > 0 {
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
