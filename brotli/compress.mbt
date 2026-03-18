@@ -53,25 +53,14 @@ priv struct BrotliCmd {
 
 ///|
 fn compress_lz77(src : BytesView, src_len : Int, _level : Int) -> Bytes {
-  // Count distinct literals
-  let seen = FixedArray::make(256, false)
-  let mut distinct = 0
-  for i in 0..<src_len {
-    let b = src[i].to_int()
-    if not(seen[b]) {
-      seen[b] = true
-      distinct += 1
-    }
-  }
-  // Use LZ77 compression only when beneficial and reliable.
-  // Currently limited to data with 1-4 distinct byte values (simple prefix codes).
-  // Also limited to moderate size to avoid encoder issues with many commands.
-  if distinct > 4 || src_len > 4096 {
+  let cmds = lz77_find_matches(src, src_len)
+  let compressed = encode_compressed_metablock(src, src_len, cmds)
+  // If compressed is larger than uncompressed, fall back
+  let uncompressed_size = src_len + 16 // rough overhead estimate
+  if compressed.length() > uncompressed_size {
     return compress_uncompressed(src, src_len)
   }
-  ignore(distinct)
-  let cmds = lz77_find_matches(src, src_len)
-  encode_compressed_metablock(src, src_len, cmds)
+  compressed
 }
 
 // ─── LZ77 match finder ──────────────────────────────────────────────
@@ -198,6 +187,20 @@ fn insert_copy_combined(insert_code : Int, copy_code : Int) -> Int {
 }
 
 ///|
+/// RFC 7932 Table 11 - implicit distance (codes < 128).
+/// Used for insert-only trailing commands where no explicit distance is needed.
+fn insert_copy_implicit(insert_code : Int, copy_code : Int) -> Int {
+  let ir = insert_code & 7
+  let cr = copy_code & 7
+  let bits64 = cr | (ir << 3)
+  if copy_code < 8 {
+    bits64
+  } else {
+    bits64 | 64
+  }
+}
+
+///|
 fn encode_distance_val(distance : Int) -> (Int, Int, Int) {
   let mut n = 1
   while n < 24 {
@@ -319,27 +322,81 @@ fn brotli_code_lengths(
     }
   }
   if needs_limit {
+    // Count code lengths
+    let counts = FixedArray::make(max_bits + 1, 0)
+    for _, b in bl {
+      if b > 0 {
+        if b > max_bits {
+          counts[max_bits] += 1
+        } else {
+          counts[b] += 1
+        }
+      }
+    }
+    // Clamp in bl array
     for i, b in bl {
       if b > max_bits {
         bl[i] = max_bits
       }
     }
+    // Compute overflow: how much over the Kraft budget we are
+    let target = 1 << max_bits
     let mut kraft = 0
-    for _, b in bl {
-      if b > 0 {
-        kraft += 1 << (max_bits - b)
+    for len = 1; len <= max_bits; len = len + 1 {
+      kraft += counts[len] * (1 << (max_bits - len))
+    }
+    let mut overflow = kraft - target
+    // Remove overflow by moving symbols to longer lengths.
+    // Process from the longest lengths downward: when we move a symbol
+    // from length L to L+1, we free 2^(max_bits-L) - 2^(max_bits-L-1) =
+    // 2^(max_bits-L-1) worth of code space.
+    // But we can't go beyond max_bits, so when L = max_bits-1, we move
+    // symbols from max_bits-1 to max_bits.
+    overflow = overflow >> 1
+    for len = max_bits - 1; len >= 1 && overflow > 0; len = len - 1 {
+      // How many symbols at this length can we demote?
+      let can_move = if counts[len] < overflow { counts[len] } else { overflow }
+      if can_move > 0 {
+        counts[len] -= can_move
+        counts[len + 1] += can_move
+        overflow -= can_move
+      }
+      // Each remaining overflow at this level doubles in significance
+      // when we go to shorter lengths
+      overflow = overflow << 1
+    }
+    // Reassign bl values based on counts, longest codes first.
+    // Collect active symbols sorted by their current depth (descending)
+    // so the deepest (least frequent) symbols get the longest new codes.
+    let syms_by_depth : Array[(Int, Int)] = [] // (depth, symbol_index)
+    for i in 0..<n {
+      if bl[i] > 0 {
+        syms_by_depth.push((bl[i], i))
       }
     }
-    let target = 1 << max_bits
-    while kraft > target {
-      for len = 1; len < max_bits && kraft > target; len = len + 1 {
-        for i in 0..<n {
-          if bl[i] == len && kraft > target {
-            bl[i] += 1
-            kraft -= 1 << (max_bits - len - 1)
-          }
-        }
+    // Sort descending by depth
+    for i in 1..<syms_by_depth.length() {
+      let key = syms_by_depth[i]
+      let mut j = i - 1
+      while j >= 0 && syms_by_depth[j].0 < key.0 {
+        syms_by_depth[j + 1] = syms_by_depth[j]
+        j -= 1
       }
+      syms_by_depth[j + 1] = key
+    }
+    // Assign new lengths from longest to shortest
+    let mut len = max_bits
+    let mut remaining = counts[len]
+    for k in 0..<syms_by_depth.length() {
+      while remaining == 0 {
+        len -= 1
+        if len <= 0 {
+          break
+        }
+        remaining = counts[len]
+      }
+      bl[syms_by_depth[k].1] = len
+      remaining -= 1
     }
   }
   bl
@@ -389,6 +446,81 @@ fn brotli_reverse(val : Int, n : Int) -> Int {
   }
   result
 }
+
+///|
+/// Rebuild codes to match the brotli simple prefix tree structure.
+/// The simple prefix tree assigns specific depths and codes based on
+/// sorted symbol order, per RFC 7932 section 3.4.
+fn rebuild_simple_codes(
+  syms_arr : Array[Int],
+  nsym : Int,
+  codes : FixedArray[Int],
+  code_lengths~ : FixedArray[Int] = FixedArray::make(0, 0),
+) -> Unit {
+  // Sort symbols
+  let syms = FixedArray::make(nsym, 0)
+  for i in 0..<nsym {
+    syms[i] = syms_arr[i]
+  }
+  for i in 1..<nsym {
+    let key = syms[i]
+    let mut j = i - 1
+    while j >= 0 && syms[j] > key {
+      syms[j + 1] = syms[j]
+      j -= 1
+    }
+    syms[j + 1] = key
+  }
+  // Clear all existing codes
+  for i in 0..<codes.length() {
+    codes[i] = 0
+  }
+  // Assign codes based on simple prefix tree structure
+  match nsym {
+    1 => ()
+      // Single symbol: 0 bits per read; codes[syms[0]] stays 0 (len=0)
+    2 => {
+      // 2 symbols: each 1 bit
+      // sym[0] → code 0, depth 1
+      // sym[1] → code 1, depth 1
+      codes[syms[0]] = (0 << 8) | 1
+      codes[syms[1]] = (1 << 8) | 1
+    }
+    3 => {
+      // 3 symbols:
+      // sym[0] → depth 1, code 0
+      // sym[1] → depth 2, code 10 (reversed: 01)
+      // sym[2] → depth 2, code 11 (reversed: 11)
+      codes[syms[0]] = (0 << 8) | 1       // 0, 1 bit
+      codes[syms[1]] = (1 << 8) | 2       // 01, 2 bits (reversed 10)
+      codes[syms[2]] = (3 << 8) | 2       // 11, 2 bits (reversed 11)
+    }
+    _ => {
+      // 4 symbols: depends on tree_select
+      let tree_select = if code_lengths.length() > 0 &&
+        syms[0] < code_lengths.length() &&
+        code_lengths[syms[0]] == 1 {
+        1
+      } else {
+        0
+      }
+      if tree_select == 0 {
+        // All depth 2
+        codes[syms[0]] = (0 << 8) | 2
+        codes[syms[1]] = (1 << 8) | 2
+        codes[syms[2]] = (2 << 8) | 2
+        codes[syms[3]] = (3 << 8) | 2
+      } else {
+        // sym[0] depth 1, sym[1] depth 2, sym[2] depth 3, sym[3] depth 3
+        codes[syms[0]] = (0 << 8) | 1        // 0, 1 bit
+        codes[syms[1]] = (1 << 8) | 2        // 01, 2 bits (reversed 10)
+        codes[syms[2]] = (3 << 8) | 3        // 011, 3 bits (reversed 110)
+        codes[syms[3]] = (7 << 8) | 3        // 111, 3 bits (reversed 111)
+      }
+    }
+  }
+}
+
 
 ///|
 fn write_symbol(bw : BitWriter, codes : FixedArray[Int], sym : Int) -> Unit {
@@ -443,6 +575,7 @@ fn encode_prefix_code(
   bw : BitWriter,
   code_lengths : FixedArray[Int],
   num_symbols : Int,
+  codes : FixedArray[Int],
 ) -> Unit {
   let mut nsym = 0
   let syms : Array[Int] = []
@@ -460,6 +593,10 @@ fn encode_prefix_code(
   }
   if nsym <= 4 {
     write_simple_prefix(bw, syms, nsym, num_symbols, code_lengths)
+    // Rebuild codes to match the simple prefix tree structure.
+    // The simple prefix tree assigns codes based on sorted symbol order,
+    // not frequency.
+    rebuild_simple_codes(syms, nsym, codes, code_lengths=code_lengths)
     return
   }
   write_complex_prefix(bw, code_lengths, num_symbols)
@@ -517,15 +654,24 @@ fn write_complex_prefix(
   code_lengths : FixedArray[Int],
   num_symbols : Int,
 ) -> Unit {
+  // Find the last non-zero code length position. The decoder stops reading
+  // when the Huffman code space is full, so we must not write trailing zeros
+  // beyond the last non-zero entry.
+  let mut rle_end = 0
+  for idx in 0..<num_symbols {
+    if idx < code_lengths.length() && code_lengths[idx] > 0 {
+      rle_end = idx + 1
+    }
+  }
   // Build RLE sequence. Avoid consecutive code-16/17 to prevent accumulation.
   let cl_syms : Array[Int] = []
   let cl_extra : Array[Int] = []
   let mut i = 0
-  while i < num_symbols {
+  while i < rle_end {
     let cl = if i < code_lengths.length() { code_lengths[i] } else { 0 }
     if cl == 0 {
       let mut run = 1
-      while i + run < num_symbols {
+      while i + run < rle_end {
         let next = if i + run < code_lengths.length() {
           code_lengths[i + run]
         } else {
@@ -553,7 +699,7 @@ fn write_complex_prefix(
       cl_extra.push(0)
       i += 1
       let mut run = 0
-      while i + run < num_symbols {
+      while i + run < rle_end {
         let next = if i + run < code_lengths.length() {
           code_lengths[i + run]
         } else {
@@ -673,23 +819,41 @@ fn encode_compressed_metablock(
       cmd_dev.push(dev)
       cmd_deb.push(deb)
     } else if cmd.insert_len > 0 {
+      // Insert-only (trailing literals): encode with copy_len=2 (minimum).
+      // The decoder will truncate the copy at the meta-block boundary.
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
-      let cc = 0
-      let iac = insert_copy_combined(ic, cc)
-      if iac > max_iac {
-        max_iac = iac
+      let cc = 0 // copy_code=0 means copy_len=2
+      if ic < 8 {
+        // Small insert: use implicit last distance (IAC < 128, no
+        // explicit distance needed).
+        let iac = insert_copy_implicit(ic, cc)
+        if iac > max_iac {
+          max_iac = iac
+        }
+        cmd_iac.push(iac)
+        cmd_iev.push(iev)
+        cmd_ieb.push(ieb)
+        cmd_cev.push(0)
+        cmd_ceb.push(0)
+        cmd_dc.push(-1) // no distance code
+        cmd_dev.push(0)
+        cmd_deb.push(0)
+      } else {
+        // Large insert: must use explicit distance.
+        // Use distance code 0 (last distance from ring buffer).
+        let iac = insert_copy_combined(ic, cc)
+        if iac > max_iac {
+          max_iac = iac
+        }
+        cmd_iac.push(iac)
+        cmd_iev.push(iev)
+        cmd_ieb.push(ieb)
+        cmd_cev.push(0)
+        cmd_ceb.push(0)
+        cmd_dc.push(0)
+        cmd_dev.push(0)
+        cmd_deb.push(0)
       }
-      if 16 > max_dist {
-        max_dist = 16
-      }
-      cmd_iac.push(iac)
-      cmd_iev.push(iev)
-      cmd_ieb.push(ieb)
-      cmd_cev.push(0)
-      cmd_ceb.push(0)
-      cmd_dc.push(16)
-      cmd_dev.push(0)
-      cmd_deb.push(1)
     }
   }
 
@@ -702,7 +866,7 @@ fn encode_compressed_metablock(
     iac_freqs[iac] += 1
   }
   for _, dc in cmd_dc {
-    if dc < dist_size {
+    if dc >= 0 && dc < dist_size {
       dist_freqs[dc] += 1
     }
   }
@@ -713,11 +877,13 @@ fn encode_compressed_metablock(
   let iac_codes = brotli_build_codes(iac_lengths)
   let dist_lengths = brotli_code_lengths(dist_freqs, 15)
   let dist_codes = brotli_build_codes(dist_lengths)
+  // Note: encode_prefix_code rebuilds the codes array for simple
+  // prefix trees to match the spec's tree structure.
 
   let dist_alphabet = 16 + 48
-  encode_prefix_code(bw, lit_lengths, 256)
-  encode_prefix_code(bw, iac_lengths, 704)
-  encode_prefix_code(bw, dist_lengths, dist_alphabet)
+  encode_prefix_code(bw, lit_lengths, 256, lit_codes)
+  encode_prefix_code(bw, iac_lengths, 704, iac_codes)
+  encode_prefix_code(bw, dist_lengths, dist_alphabet, dist_codes)
 
   let mut ci = 0
   for cmd in cmds {
@@ -734,9 +900,12 @@ fn encode_compressed_metablock(
     for j in 0..<cmd.insert_len {
       write_symbol(bw, lit_codes, src[cmd.insert_pos + j].to_int())
     }
-    write_symbol(bw, dist_codes, cmd_dc[ci])
-    if cmd_deb[ci] > 0 {
-      bw.write_bits(cmd_dev[ci], cmd_deb[ci])
+    // Only write distance code for explicit-distance commands (cmd_dc >= 0)
+    if cmd_dc[ci] >= 0 {
+      write_symbol(bw, dist_codes, cmd_dc[ci])
+      if cmd_deb[ci] > 0 {
+        bw.write_bits(cmd_dev[ci], cmd_deb[ci])
+      }
     }
     ci += 1
   }

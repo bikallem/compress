@@ -53,24 +53,37 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
 
 ///|
 fn decode_wbits(br : BitReader) -> Int {
-  let first = br.read_bits(1)
-  if first == 0 {
+  // Bit 0
+  let b0 = br.read_bits(1)
+  if b0 == 0 {
     return 16
   }
-  let next3 = br.read_bits(3)
-  if next3 == 0 {
+  // Bit 1
+  let b1 = br.read_bits(1)
+  if b1 == 1 {
+    // 4-bit pattern with bit1=1: values 0b0011, 0b0111, 0b1011, 0b1111
+    let b23 = br.read_bits(2)
+    // Full 4-bit value = 1 + 2 + b23*4 = 3 + b23*4
+    // WBITS = (value >> 1) + 17 = ((3 + b23*4) >> 1) + 17
+    //       = (1 + b23*2) + 17 = 18 + b23*2
+    return 18 + b23 * 2
+  }
+  // Bit 1 = 0. Bit 2 discriminates 4-bit vs 7-bit.
+  let b2 = br.read_bits(1)
+  if b2 == 1 {
+    // 4-bit pattern with bit1=0, bit2=1: values 0b0101, 0b1101
+    let b3 = br.read_bits(1)
+    // Full 4-bit value = 1 + 0 + 4 + b3*8 = 5 + b3*8
+    // WBITS = (value >> 1) + 17 = (2 + b3*4) + 17 = 19 + b3*4
+    return 19 + b3 * 4
+  }
+  // 7-bit pattern: bits 0,1,2 = 1,0,0. Read remaining 4 bits (bits 3-6).
+  let remaining = br.read_bits(4)
+  if remaining == 0 {
     return 17
   }
-  if next3 < 7 {
-    return next3 + 10
-  }
-  let extra = br.read_bits(1)
-  if extra == 0 {
-    18
-  } else {
-    let more = br.read_bits(2)
-    19 + more
-  }
+  // remaining is even in {4,6,8,10,12,14} → WBITS = remaining/2 + 8
+  remaining / 2 + 8
 }
 
 ///|
@@ -267,10 +280,10 @@ fn decode_simple_prefix(br : BitReader, alphabet_size : Int) -> HuffTree {
   }
   match nsym {
     1 => {
-      let table = FixedArray::make(2, 0)
-      table[0] = (syms[0] << 8) | 1
-      table[1] = (syms[0] << 8) | 1
-      { table, max_bits: 1 }
+      // Single symbol: 0 bits consumed per read (symbol is implicit).
+      let table = FixedArray::make(1, 0)
+      table[0] = (syms[0] << 8) | 0
+      { table, max_bits: 0 }
     }
     2 => {
       let table = FixedArray::make(2, 0)
@@ -360,12 +373,14 @@ fn decode_complex_prefix(
   let code_lengths = FixedArray::make(alphabet_size, 0)
   let mut i = 0
   let mut prev_cl = 8
-  while i < alphabet_size {
+  let mut space = 32768
+  while i < alphabet_size && space > 0 {
     let sym = read_huffman_symbol(br, cl_tree)
     if sym >= 0 && sym <= 15 {
       code_lengths[i] = sym
       if sym > 0 {
         prev_cl = sym
+        space -= 32768 >> sym
       }
       i += 1
     } else if sym == 16 {
@@ -373,6 +388,7 @@ fn decode_complex_prefix(
       for _ in 0..<repeat {
         if i < alphabet_size {
           code_lengths[i] = prev_cl
+          space -= 32768 >> prev_cl
           i += 1
         }
       }
