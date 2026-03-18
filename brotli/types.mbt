@@ -52,23 +52,28 @@ fn compression_level_to_int(level : CompressionLevel) -> Int {
 }
 
 ///|
-/// Maximum Brotli window bits.
-let _MAX_WBITS : Int = 24
-
-///|
-/// Default window bits.
-let _DEFAULT_WBITS : Int = 22
-
-///|
 /// Hash table size for compression.
 const BROTLI_HASH_SIZE : Int = 1 << 14
 
 ///|
-let _BROTLI_HASH_MASK : Int = BROTLI_HASH_SIZE - 1
+/// Maximum backward reference distance (window size for WBITS=22).
+const MAX_BACKWARD_DISTANCE : Int = 1 << 22
 
 ///|
-/// Minimum match length for Brotli.
-let _BROTLI_MIN_MATCH : Int = 4
+/// Maximum LZ77 match length.
+const MAX_MATCH_LENGTH : Int = 258
+
+///|
+/// Minimum LZ77 match length.
+const MIN_MATCH_LENGTH : Int = 4
+
+///|
+/// Number of literal contexts per block type (2^LITERAL_CONTEXT_BITS).
+const NUM_LITERAL_CONTEXTS : Int = 64
+
+///|
+/// Number of short distance codes in the distance alphabet.
+const NUM_DISTANCE_SHORT_CODES : Int = 16
 
 ///|
 /// Insert-and-copy length code prefix lengths (Table in RFC 7932 section 5).

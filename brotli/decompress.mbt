@@ -138,7 +138,7 @@ fn decode_compressed_block(
   } else {
     0
   }
-  let mut _iac_block_type = 0
+  let mut iac_block_type = 0
 
   // Distance block types
   let dist_btype_tree : HuffTree = if nbltypesd > 1 {
@@ -211,17 +211,10 @@ fn decode_compressed_block(
   dist_rb[2] = 15
   dist_rb[3] = 16
 
-  // Track previous literal block type for block type switching
-  let mut _lit_prev_type = 1
-  let mut _iac_prev_type = 1
-  let mut _dist_prev_type = 1
-  // Suppress unused variable warnings
-  let _ = lit_btype_tree
-  let _ = lit_bcount_tree
-  let _ = iac_btype_tree
-  let _ = iac_bcount_tree
-  let _ = dist_btype_tree
-  let _ = dist_bcount_tree
+  // Previous block type per category (for block type ring buffer)
+  let mut lit_prev_type = 1
+  let mut iac_prev_type = 1
+  let mut dist_prev_type = 1
 
   sink.ensure_capacity(mlen)
   let start_pos = sink.length()
@@ -232,10 +225,10 @@ fn decode_compressed_block(
     if nbltypesi > 1 && iac_block_remaining == 0 {
       let new_type = read_huffman_symbol(br, iac_btype_tree)
       let resolved = resolve_block_type(
-        new_type, _iac_block_type, _iac_prev_type, nbltypesi,
+        new_type, iac_block_type, iac_prev_type, nbltypesi,
       )
-      _iac_prev_type = _iac_block_type
-      _iac_block_type = resolved
+      iac_prev_type = iac_block_type
+      iac_block_type = resolved
       iac_block_remaining = decode_block_count(br, iac_bcount_tree)
     }
     if nbltypesi > 1 {
@@ -254,9 +247,9 @@ fn decode_compressed_block(
       if nbltypesl > 1 && lit_block_remaining == 0 {
         let new_type = read_huffman_symbol(br, lit_btype_tree)
         let resolved = resolve_block_type(
-          new_type, lit_block_type, _lit_prev_type, nbltypesl,
+          new_type, lit_block_type, lit_prev_type, nbltypesl,
         )
-        _lit_prev_type = lit_block_type
+        lit_prev_type = lit_block_type
         lit_block_type = resolved
         lit_block_remaining = decode_block_count(br, lit_bcount_tree)
       }
@@ -288,9 +281,9 @@ fn decode_compressed_block(
       if nbltypesd > 1 && dist_block_remaining == 0 {
         let new_type = read_huffman_symbol(br, dist_btype_tree)
         let resolved = resolve_block_type(
-          new_type, dist_block_type, _dist_prev_type, nbltypesd,
+          new_type, dist_block_type, dist_prev_type, nbltypesd,
         )
-        _dist_prev_type = dist_block_type
+        dist_prev_type = dist_block_type
         dist_block_type = resolved
         dist_block_remaining = decode_block_count(br, dist_bcount_tree)
       }

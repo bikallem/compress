@@ -33,13 +33,13 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
 }
 
 ///|
-/// Stub for streaming direct-output mode (to be wired up in convenience API).
+/// Enable zero-copy direct output mode for one-shot decompression.
 pub fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
   self.0.sink = Some(@output_sink.OutputSink::new(capacity))
 }
 
 ///|
-/// Stub for retrieving accumulated output (to be wired up in convenience API).
+/// Retrieve accumulated output after decompression completes.
 pub fn Inflater::take_output(self : Inflater) -> Bytes {
   match self.0.sink {
     Some(sink) => sink.to_bytes()
@@ -64,11 +64,10 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
     input[s.input_pos + i]
   })
-  let result = decompress(data) catch {
+  let result = try { decompress(data) } catch {
     e => {
-      let be = BrotliError::CorruptData(e.to_string())
-      s.failed = Some(be)
-      return Error(be)
+      s.failed = Some(e)
+      return Error(e)
     }
   }
   s.finished = true

@@ -72,22 +72,22 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
 ///|
 fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
   let cmds : Array[BrotliCmd] = []
-  if src_len < 4 {
+  if src_len < MIN_MATCH_LENGTH {
     cmds.push({ insert_pos: 0, insert_len: src_len, copy_len: 0, distance: 0 })
     return cmds
   }
   let hash_table : FixedArray[Int] = FixedArray::make(BROTLI_HASH_SIZE, -1)
   let mut pos = 0
   let mut insert_start = 0
-  let max_distance = 1 << 22
+  let max_distance = MAX_BACKWARD_DISTANCE
   while pos + 3 < src_len {
     let h = brotli_hash4(src, pos)
     let match_pos = hash_table[h]
     hash_table[h] = pos
     if match_pos >= 0 && pos - match_pos <= max_distance && pos - match_pos > 0 {
-      let max_len = if src_len - pos < 258 { src_len - pos } else { 258 }
+      let max_len = if src_len - pos < MAX_MATCH_LENGTH { src_len - pos } else { MAX_MATCH_LENGTH }
       let mlen = count_match(src, pos, match_pos, max_len)
-      if mlen >= 4 {
+      if mlen >= MIN_MATCH_LENGTH {
         let insert_len = pos - insert_start
         let dist = pos - match_pos
         cmds.push({
@@ -163,7 +163,7 @@ fn lz77_find_matches_chain(
   level : Int,
 ) -> Array[BrotliCmd] {
   let cmds : Array[BrotliCmd] = []
-  if src_len < 4 {
+  if src_len < MIN_MATCH_LENGTH {
     cmds.push({ insert_pos: 0, insert_len: src_len, copy_len: 0, distance: 0 })
     return cmds
   }
@@ -174,9 +174,20 @@ fn lz77_find_matches_chain(
   // head[h] = most recent position with hash h, -1 if none
   let head : FixedArray[Int] = FixedArray::make(hash_size, -1)
   // prev[pos & mask] = previous position in chain with same hash
-  let win_mask = (1 << 22) - 1 // 4MB window mask for prev array
-  let prev : FixedArray[Int] = FixedArray::make(win_mask + 1, -1)
-  let max_distance = 1 << 22
+  // Size to min(src_len, MAX_BACKWARD_DISTANCE) to avoid wasteful allocation for small inputs
+  let prev_size = if src_len < MAX_BACKWARD_DISTANCE {
+    // Round up to next power of 2 for efficient masking
+    let mut s = 1
+    while s < src_len {
+      s = s << 1
+    }
+    s
+  } else {
+    MAX_BACKWARD_DISTANCE
+  }
+  let win_mask = prev_size - 1
+  let prev : FixedArray[Int] = FixedArray::make(prev_size, -1)
+  let max_distance = MAX_BACKWARD_DISTANCE
   let mut pos = 0
   let mut insert_start = 0
 
@@ -198,7 +209,7 @@ fn lz77_find_matches_chain(
     let mut best_dist = 0
     let mut candidate = head[h]
     let mut chains = 0
-    let max_len = if src_len - p < 258 { src_len - p } else { 258 }
+    let max_len = if src_len - p < MAX_MATCH_LENGTH { src_len - p } else { MAX_MATCH_LENGTH }
     while candidate >= 0 && chains < max_chain {
       let dist = p - candidate
       if dist <= 0 || dist > max_distance {
@@ -224,7 +235,7 @@ fn lz77_find_matches_chain(
 
   while pos + 3 < src_len {
     let (mlen, mdist) = find_best(pos)
-    if mlen < 4 {
+    if mlen < MIN_MATCH_LENGTH {
       insert_hash(pos)
       pos += 1
       continue
@@ -612,6 +623,20 @@ fn brotli_build_codes(lengths : FixedArray[Int]) -> FixedArray[Int] {
 }
 
 ///|
+/// In-place insertion sort for a FixedArray[Int] (ascending).
+fn sort_ints(arr : FixedArray[Int], len : Int) -> Unit {
+  for i in 1..<len {
+    let key = arr[i]
+    let mut j = i - 1
+    while j >= 0 && arr[j] > key {
+      arr[j + 1] = arr[j]
+      j -= 1
+    }
+    arr[j + 1] = key
+  }
+}
+
+///|
 fn brotli_reverse(val : Int, n : Int) -> Int {
   let (result, _) = for result = 0, v = val, i = 0; i < n; {
     continue (result << 1) | (v & 1), v >> 1, i + 1
@@ -631,20 +656,11 @@ fn rebuild_simple_codes(
   codes : FixedArray[Int],
   code_lengths~ : FixedArray[Int] = FixedArray::make(0, 0),
 ) -> Unit {
-  // Sort symbols
   let syms = FixedArray::make(nsym, 0)
   for i in 0..<nsym {
     syms[i] = syms_arr[i]
   }
-  for i in 1..<nsym {
-    let key = syms[i]
-    let mut j = i - 1
-    while j >= 0 && syms[j] > key {
-      syms[j + 1] = syms[j]
-      j -= 1
-    }
-    syms[j + 1] = key
-  }
+  sort_ints(syms, nsym)
   // Clear all existing codes
   for i in 0..<codes.length() {
     codes[i] = 0
@@ -788,15 +804,7 @@ fn write_simple_prefix(
   for i in 0..<nsym {
     syms[i] = syms_arr[i]
   }
-  for i in 1..<nsym {
-    let key = syms[i]
-    let mut j = i - 1
-    while j >= 0 && syms[j] > key {
-      syms[j + 1] = syms[j]
-      j -= 1
-    }
-    syms[j + 1] = key
-  }
+  sort_ints(syms, nsym)
   bw.write_bits(1, 2) // simple prefix code
   bw.write_bits(nsym - 1, 2)
   let sb = sym_bits(alphabet_size)
@@ -934,24 +942,23 @@ fn write_complex_prefix(
 // ─── Meta-block encoder ─────────────────────────────────────────────
 
 ///|
-fn encode_compressed_metablock(
-  src : BytesView,
-  src_len : Int,
-  cmds : Array[BrotliCmd],
-  level : Int,
-) -> Bytes {
-  let bw = BitWriter::new(src_len * 2 + 256)
-  encode_wbits(bw, 22)
-  bw.write_bits(1, 1) // ISLAST=1
-  bw.write_bits(0, 1) // ISLASTEMPTY=0
-  let (mnibbles, _) = meta_block_nibbles(src_len)
-  bw.write_bits(mnibbles - 4, 2)
-  bw.write_bits(src_len - 1, mnibbles * 4)
+priv struct EncodedCommands {
+  iac : Array[Int] // insert-and-copy codes
+  iev : Array[Int] // insert extra values
+  ieb : Array[Int] // insert extra bits count
+  cev : Array[Int] // copy extra values
+  ceb : Array[Int] // copy extra bits count
+  dc : Array[Int] // distance codes (-1 = none)
+  dev : Array[Int] // distance extra values
+  deb : Array[Int] // distance extra bits count
+  max_iac : Int
+  max_dist : Int
+}
 
-  // Pre-encode commands (insert/copy/distance codes)
+///|
+fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
   let mut max_iac = 0
   let mut max_dist = 0
-
   let cmd_iac : Array[Int] = []
   let cmd_iev : Array[Int] = []
   let cmd_ieb : Array[Int] = []
@@ -960,7 +967,6 @@ fn encode_compressed_metablock(
   let cmd_dc : Array[Int] = []
   let cmd_dev : Array[Int] = []
   let cmd_deb : Array[Int] = []
-
   for cmd in cmds {
     if cmd.copy_len > 0 {
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
@@ -1013,16 +1019,47 @@ fn encode_compressed_metablock(
       }
     }
   }
+  {
+    iac: cmd_iac,
+    iev: cmd_iev,
+    ieb: cmd_ieb,
+    cev: cmd_cev,
+    ceb: cmd_ceb,
+    dc: cmd_dc,
+    dev: cmd_dev,
+    deb: cmd_deb,
+    max_iac,
+    max_dist,
+  }
+}
 
-  let iac_size = max_iac + 1
-  let dist_size = max_dist + 1
+///|
+fn encode_compressed_metablock(
+  src : BytesView,
+  src_len : Int,
+  cmds : Array[BrotliCmd],
+  level : Int,
+) -> Bytes {
+  let bw = BitWriter::new(src_len * 2 + 256)
+  encode_wbits(bw, 22)
+  bw.write_bits(1, 1) // ISLAST=1
+  bw.write_bits(0, 1) // ISLASTEMPTY=0
+  let (mnibbles, _) = meta_block_nibbles(src_len)
+  bw.write_bits(mnibbles - 4, 2)
+  bw.write_bits(src_len - 1, mnibbles * 4)
+
+  // Pre-encode commands (insert/copy/distance codes)
+  let ec = precompute_commands(cmds)
+
+  let iac_size = ec.max_iac + 1
+  let dist_size = ec.max_dist + 1
   let iac_freqs = FixedArray::make(iac_size, 0)
   let dist_freqs = FixedArray::make(dist_size, 0)
 
-  for _, iac in cmd_iac {
+  for _, iac in ec.iac {
     iac_freqs[iac] += 1
   }
-  for _, dc in cmd_dc {
+  for _, dc in ec.dc {
     if dc >= 0 && dc < dist_size {
       dist_freqs[dc] += 1
     }
@@ -1081,31 +1118,31 @@ fn encode_compressed_metablock(
   // Write command data
   let mut ci = 0
   for cmd in cmds {
-    if ci >= cmd_iac.length() {
+    if ci >= ec.iac.length() {
       break
     }
-    write_symbol(bw, iac_codes, cmd_iac[ci])
-    if cmd_ieb[ci] > 0 {
-      bw.write_bits(cmd_iev[ci], cmd_ieb[ci])
+    write_symbol(bw, iac_codes, ec.iac[ci])
+    if ec.ieb[ci] > 0 {
+      bw.write_bits(ec.iev[ci], ec.ieb[ci])
     }
-    if cmd_ceb[ci] > 0 {
-      bw.write_bits(cmd_cev[ci], cmd_ceb[ci])
+    if ec.ceb[ci] > 0 {
+      bw.write_bits(ec.cev[ci], ec.ceb[ci])
     }
     for j in 0..<cmd.insert_len {
       if ntreesl > 1 {
         let pos = cmd.insert_pos + j
         let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
-        let ctx = p1 & 0x3f
+        let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
         let tree_idx = cmap[ctx]
         write_symbol(bw, lit_codes_arr[tree_idx], src[pos].to_int())
       } else {
         write_symbol(bw, lit_codes_arr[0], src[cmd.insert_pos + j].to_int())
       }
     }
-    if cmd_dc[ci] >= 0 {
-      write_symbol(bw, dist_codes, cmd_dc[ci])
-      if cmd_deb[ci] > 0 {
-        bw.write_bits(cmd_dev[ci], cmd_deb[ci])
+    if ec.dc[ci] >= 0 {
+      write_symbol(bw, dist_codes, ec.dc[ci])
+      if ec.deb[ci] > 0 {
+        bw.write_bits(ec.dev[ci], ec.deb[ci])
       }
     }
     ci += 1
@@ -1142,7 +1179,7 @@ fn build_context_model(
     for j in 0..<cmd.insert_len {
       let pos = cmd.insert_pos + j
       let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
-      let ctx = p1 & 0x3f
+      let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
       ctx_hists[ctx][src[pos].to_int()] += 1
     }
   }
@@ -1157,7 +1194,7 @@ fn build_context_model(
     for j in 0..<cmd.insert_len {
       let pos = cmd.insert_pos + j
       let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
-      let ctx = p1 & 0x3f
+      let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
       if cmap[ctx] == 0 {
         has_tree0 = true
       } else {
@@ -1192,7 +1229,7 @@ fn build_context_model(
     for j in 0..<cmd.insert_len {
       let pos = cmd.insert_pos + j
       let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
-      let ctx = p1 & 0x3f
+      let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
       let tree_idx = cmap[ctx]
       tree_freqs[tree_idx][src[pos].to_int()] += 1
     }
