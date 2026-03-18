@@ -120,12 +120,19 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
           copy_len: mlen,
           distance: dist,
         })
-        let end = if pos + mlen < src_len - 3 {
+        let match_end = if pos + mlen < src_len - 3 {
           pos + mlen
         } else {
           src_len - 4
         }
-        for i = pos + 1; i <= end; i = i + 1 {
+        // Cap rehash: for long matches, only hash a few positions near boundaries
+        let rehash_limit = if mlen > 32 { 4 } else { mlen }
+        let rehash_end = if pos + rehash_limit < match_end {
+          pos + rehash_limit
+        } else {
+          match_end
+        }
+        for i = pos + 1; i <= rehash_end; i = i + 1 {
           hash_table[brotli_hash4(src, i)] = i
         }
         pos += mlen
@@ -158,11 +165,7 @@ fn brotli_hash4(src : BytesView, pos : Int) -> Int {
 
 ///|
 fn count_match(src : BytesView, a : Int, b : Int, max_len : Int) -> Int {
-  let mut i = 0
-  while i < max_len && src[a + i] == src[b + i] {
-    i += 1
-  }
-  i
+  @blit.match_length_bv(src, a, b, max_len)
 }
 
 // ─── LZ77 hash-chain match finder (levels 2-9) ─────────────────────
@@ -191,6 +194,10 @@ fn lz77_find_matches_chain(
   }
   let max_chain = chain_depth(level)
   let use_lazy = level >= 4
+  // For levels <= 9, cap rehash to a few positions for long matches.
+  // This avoids O(match_len) hash insertions for each long match, trading
+  // minor compression ratio for major speed gains on repetitive data.
+  let rehash_cap = if level <= 9 { 4 } else { MAX_MATCH_LENGTH }
   let hash_size = BROTLI_HASH_SIZE
   let hash_mask = hash_size - 1
   // head[h] = most recent position with hash h, -1 if none
@@ -241,7 +248,7 @@ fn lz77_find_matches_chain(
       if mlen > best_len {
         best_len = mlen
         best_dist = dist
-        if mlen == max_len {
+        if mlen == max_len || mlen >= 32 {
           break
         }
       }
@@ -279,13 +286,18 @@ fn lz77_find_matches_chain(
           copy_len: mlen2,
           distance: mdist2,
         })
-        // Insert all positions covered by the match into hash chains
-        let end = if pos + mlen2 < src_len - 3 {
+        // Insert positions near match boundaries into hash chains
+        let match_end2 = if pos + mlen2 < src_len - 3 {
           pos + mlen2
         } else {
           src_len - 4
         }
-        for i = pos + 1; i <= end; i = i + 1 {
+        let rehash_end2 = if mlen2 > rehash_cap {
+          if pos + rehash_cap < match_end2 { pos + rehash_cap } else { match_end2 }
+        } else {
+          match_end2
+        }
+        for i = pos + 1; i <= rehash_end2; i = i + 1 {
           insert_hash(i)
         }
         pos += mlen2
@@ -301,12 +313,17 @@ fn lz77_find_matches_chain(
         copy_len: mlen,
         distance: mdist,
       })
-      let end = if pos + mlen < src_len - 3 {
+      let match_end_c = if pos + mlen < src_len - 3 {
         pos + mlen
       } else {
         src_len - 4
       }
-      for i = pos + 1; i <= end; i = i + 1 {
+      let rehash_end_c = if mlen > rehash_cap {
+        if pos + rehash_cap < match_end_c { pos + rehash_cap } else { match_end_c }
+      } else {
+        match_end_c
+      }
+      for i = pos + 1; i <= rehash_end_c; i = i + 1 {
         insert_hash(i)
       }
       pos += mlen
@@ -322,12 +339,17 @@ fn lz77_find_matches_chain(
       copy_len: mlen,
       distance: mdist,
     })
-    let end = if pos + mlen < src_len - 3 {
+    let match_end_n = if pos + mlen < src_len - 3 {
       pos + mlen
     } else {
       src_len - 4
     }
-    for i = pos + 1; i <= end; i = i + 1 {
+    let rehash_end_n = if mlen > rehash_cap {
+      if pos + rehash_cap < match_end_n { pos + rehash_cap } else { match_end_n }
+    } else {
+      match_end_n
+    }
+    for i = pos + 1; i <= rehash_end_n; i = i + 1 {
       insert_hash(i)
     }
     pos += mlen

@@ -53,6 +53,22 @@ pub fn match_length(
 }
 
 ///|
+/// Word-at-a-time match length comparison on Bytes (byte-by-byte fallback for non-native).
+pub fn match_length_bytes(
+  a : Bytes,
+  a_offset : Int,
+  b : Bytes,
+  b_offset : Int,
+  max_len : Int,
+) -> Int {
+  let mut i = 0
+  while i < max_len && a[a_offset + i] == b[b_offset + i] {
+    i += 1
+  }
+  i
+}
+
+///|
 /// Allocate a FixedArray[Byte] without zeroing memory.
 /// The caller MUST fully initialize the buffer before reading from it.
 pub fn make_uninit(len : Int) -> FixedArray[Byte] {
