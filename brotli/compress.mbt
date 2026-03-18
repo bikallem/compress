@@ -23,19 +23,31 @@ fn compress_empty() -> Bytes {
 
 ///|
 fn compress_uncompressed(src : BytesView, src_len : Int) -> Bytes {
-  let bw = BitWriter::new(src_len + 32)
+  let bw = BitWriter::new(if src_len < 1048576 { src_len + 32 } else { 1048576 })
   encode_wbits(bw, 22)
-  bw.write_bits(0, 1) // ISLAST=0
-  let (mnibbles, _) = meta_block_nibbles(src_len)
-  bw.write_bits(mnibbles - 4, 2)
-  bw.write_bits(src_len - 1, mnibbles * 4)
-  bw.write_bits(1, 1) // ISUNCOMPRESSED=1
-  if bw.n_bits > 0 {
-    bw.write_bits(0, 8 - bw.n_bits)
+  let mut offset = 0
+  while offset < src_len {
+    let chunk_size = if src_len - offset < MAX_METABLOCK_SIZE {
+      src_len - offset
+    } else {
+      MAX_METABLOCK_SIZE
+    }
+    // All uncompressed chunks are ISLAST=0 (the decoder only reads
+    // ISUNCOMPRESSED for non-last metablocks)
+    bw.write_bits(0, 1) // ISLAST=0
+    let (mnibbles, _) = meta_block_nibbles(chunk_size)
+    bw.write_bits(mnibbles - 4, 2)
+    bw.write_bits(chunk_size - 1, mnibbles * 4)
+    bw.write_bits(1, 1) // ISUNCOMPRESSED=1
+    if bw.n_bits > 0 {
+      bw.write_bits(0, 8 - bw.n_bits)
+    }
+    for i in offset..<(offset + chunk_size) {
+      bw.write_bits(src[i].to_int(), 8)
+    }
+    offset += chunk_size
   }
-  for x in src {
-    bw.write_bits(x.to_int(), 8)
-  }
+  // Trailing empty last metablock
   bw.write_bits(1, 1) // ISLAST
   bw.write_bits(1, 1) // ISLASTEMPTY
   bw.to_bytes()
@@ -50,7 +62,18 @@ priv struct BrotliCmd {
 }
 
 ///|
+///|
+/// Maximum metablock size (RFC 7932: 2^24 = 16MB).
+const MAX_METABLOCK_SIZE : Int = 1 << 24
+
+///|
 fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
+  // For data larger than max metablock size, use uncompressed chunking.
+  // Multi-metablock compressed encoding requires cross-metablock distance
+  // tracking which is not yet implemented.
+  if src_len > MAX_METABLOCK_SIZE {
+    return compress_uncompressed(src, src_len)
+  }
   let cmds = if level <= 1 {
     lz77_find_matches(src, src_len)
   } else {
@@ -58,12 +81,13 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   }
   let compressed = encode_compressed_metablock(src, src_len, cmds, level)
   // If compressed is larger than uncompressed, fall back
-  let uncompressed_size = src_len + 16 // rough overhead estimate
+  let uncompressed_size = src_len + 16
   if compressed.length() > uncompressed_size {
     return compress_uncompressed(src, src_len)
   }
   compressed
 }
+
 
 // ─── LZ77 match finder ──────────────────────────────────────────────
 
@@ -1037,13 +1061,31 @@ fn encode_compressed_metablock(
   cmds : Array[BrotliCmd],
   level : Int,
 ) -> Bytes {
-  let bw = BitWriter::new(src_len * 2 + 256)
+  let bw = BitWriter::new(if src_len < 1048576 { src_len * 2 + 256 } else { 1048576 })
   encode_wbits(bw, 22)
-  bw.write_bits(1, 1) // ISLAST=1
-  bw.write_bits(0, 1) // ISLASTEMPTY=0
+  encode_metablock_into(bw, src, src_len, cmds, level, true)
+  bw.to_bytes()
+}
+
+///|
+fn encode_metablock_into(
+  bw : BitWriter,
+  src : BytesView,
+  src_len : Int,
+  cmds : Array[BrotliCmd],
+  level : Int,
+  is_last : Bool,
+) -> Unit {
+  bw.write_bits(if is_last { 1 } else { 0 }, 1) // ISLAST
+  if is_last {
+    bw.write_bits(0, 1) // ISLASTEMPTY=0
+  }
   let (mnibbles, _) = meta_block_nibbles(src_len)
   bw.write_bits(mnibbles - 4, 2)
   bw.write_bits(src_len - 1, mnibbles * 4)
+  if not(is_last) {
+    bw.write_bits(0, 1) // ISUNCOMPRESSED=0 (only present for non-last)
+  }
 
   // Pre-encode commands (insert/copy/distance codes)
   let ec = precompute_commands(cmds)
@@ -1144,7 +1186,6 @@ fn encode_compressed_metablock(
     }
     ci += 1
   }
-  bw.to_bytes()
 }
 
 ///|

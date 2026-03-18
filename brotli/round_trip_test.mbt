@@ -114,3 +114,20 @@ test "signal protocol: deflater streaming" {
   let decompressed = @brotli.decompress(compressed)
   assert_eq(decompressed, data)
 }
+
+///|
+test "round-trip: 20MB default (multi-metablock)" {
+  let data = Bytes::makei(20_000_000, fn(i) { (i % 256).to_byte() })
+  let compressed = @brotli.compress(data)
+  let decompressed = @brotli.decompress(compressed)
+  inspect!(decompressed.length(), content="20000000")
+  // Check first mismatch position
+  let mut first_diff = -1
+  for i in 0..<decompressed.length() {
+    if decompressed[i] != data[i] {
+      first_diff = i
+      break
+    }
+  }
+  inspect!(first_diff, content="-1")
+}
