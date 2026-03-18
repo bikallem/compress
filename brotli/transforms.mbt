@@ -2,32 +2,24 @@
 /// Brotli static dictionary transforms (RFC 7932, Appendix B).
 /// 121 transforms, each consisting of a prefix, a transform type, and a suffix.
 
-// Transform types
-let transform_identity : Int = 0
-let transform_omit_last_1 : Int = 1
-let transform_omit_last_2 : Int = 2
-let transform_omit_last_3 : Int = 3
-let transform_omit_last_4 : Int = 4
-let transform_omit_last_5 : Int = 5
-let transform_omit_last_6 : Int = 6
-let transform_omit_last_7 : Int = 7
-let transform_omit_last_8 : Int = 8
-let transform_omit_last_9 : Int = 9
-let transform_uppercase_first : Int = 10
-let transform_uppercase_all : Int = 11
-let transform_omit_first_1 : Int = 12
-let transform_omit_first_2 : Int = 13
-let transform_omit_first_3 : Int = 14
-let transform_omit_first_4 : Int = 15
-let transform_omit_first_5 : Int = 16
-let transform_omit_first_6 : Int = 17
-let transform_omit_first_7 : Int = 18
-let transform_omit_first_8 : Int = 19
-let transform_omit_first_9 : Int = 20
+// Transform type constants (RFC 7932 Appendix B)
+// Types 0-9: identity / omit last 1-9 bytes
+// Type 10: uppercase first letter
+// Type 11: uppercase all letters
+// Types 12-20: omit first 1-9 bytes
+const TRANSFORM_OMIT_LAST_9 : Int = 9
 
 ///|
-/// Number of transforms.
-let num_transforms : Int = 121
+const TRANSFORM_UPPERCASE_FIRST : Int = 10
+
+///|
+const TRANSFORM_UPPERCASE_ALL : Int = 11
+
+///|
+const TRANSFORM_OMIT_FIRST_1 : Int = 12
+
+///|
+const TRANSFORM_OMIT_FIRST_9 : Int = 20
 
 ///|
 /// Prefix/suffix string data. Each string is stored as [length, bytes...].
@@ -297,14 +289,14 @@ fn transform_dictionary_word(
   // Determine effective word after omit transforms
   let mut w_off = word_offset
   let mut w_len = word_len
-  if ttype <= transform_omit_last_9 {
+  if ttype <= TRANSFORM_OMIT_LAST_9 {
     // omit_last: ttype == number of bytes to omit from end
     w_len -= ttype
     if w_len < 0 {
       w_len = 0
     }
-  } else if ttype >= transform_omit_first_1 && ttype <= transform_omit_first_9 {
-    let skip = ttype - transform_omit_first_1 + 1
+  } else if ttype >= TRANSFORM_OMIT_FIRST_1 && ttype <= TRANSFORM_OMIT_FIRST_9 {
+    let skip = ttype - TRANSFORM_OMIT_FIRST_1 + 1
     w_off += skip
     w_len -= skip
     if w_len < 0 {
@@ -318,9 +310,9 @@ fn transform_dictionary_word(
     idx += 1
   }
   // Apply uppercase transforms in-place
-  if ttype == transform_uppercase_first {
+  if ttype == TRANSFORM_UPPERCASE_FIRST {
     ignore(to_upper_case(dst, word_start_in_dst))
-  } else if ttype == transform_uppercase_all {
+  } else if ttype == TRANSFORM_UPPERCASE_ALL {
     let mut pos = word_start_in_dst
     let end = word_start_in_dst + w_len
     while pos < end {

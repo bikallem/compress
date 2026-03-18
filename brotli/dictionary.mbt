@@ -33,15 +33,3 @@ fn dict_word_offset(length : Int, word_idx : Int) -> Int {
   dict_offsets_by_length[length] + word_idx * length
 }
 
-///|
-/// Get the number of words for a given length.
-fn dict_num_words(length : Int) -> Int {
-  if length < dict_min_word_length || length > dict_max_word_length {
-    return 0
-  }
-  let bits = dict_size_bits_by_length[length]
-  if bits == 0 {
-    return 0
-  }
-  1 << bits
-}
