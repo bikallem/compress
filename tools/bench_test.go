@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 // genText generates repeated text data of the given size.
@@ -1324,6 +1326,202 @@ func BenchmarkLz4Decompress_1mb(b *testing.B) {
 // Note: Zstd Go benchmarks require adding the dependency.
 // Uncomment when github.com/klauspost/compress/zstd is available in go.mod.
 
-// --- Brotli (requires github.com/andybalholm/brotli) ---
-// Note: Brotli Go benchmarks require adding the dependency.
-// Uncomment when github.com/andybalholm/brotli is available in go.mod.
+// --- Brotli (github.com/andybalholm/brotli) ---
+
+func BenchmarkBrotliCompress_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompress_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompress_100kb(b *testing.B) {
+	data := genText(102400)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompress_10mb(b *testing.B) {
+	data := genText(10485760)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompress_100mb(b *testing.B) {
+	data := genText(104857600)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliDecompress_1kb(b *testing.B) {
+	data := genText(1024)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_10kb(b *testing.B) {
+	data := genText(10240)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_100kb(b *testing.B) {
+	data := genText(102400)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_10mb(b *testing.B) {
+	data := genText(10485760)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_100mb(b *testing.B) {
+	data := genText(104857600)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliCompressSpeed_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 1)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressSpeed_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 1)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressSpeed_100kb(b *testing.B) {
+	data := genText(102400)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 1)
+		w.Write(data)
+		w.Close()
+	}
+}

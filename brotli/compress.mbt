@@ -52,8 +52,12 @@ priv struct BrotliCmd {
 }
 
 ///|
-fn compress_lz77(src : BytesView, src_len : Int, _level : Int) -> Bytes {
-  let cmds = lz77_find_matches(src, src_len)
+fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
+  let cmds = if level <= 1 {
+    lz77_find_matches(src, src_len)
+  } else {
+    lz77_find_matches_chain(src, src_len, level)
+  }
   let compressed = encode_compressed_metablock(src, src_len, cmds)
   // If compressed is larger than uncompressed, fall back
   let uncompressed_size = src_len + 16 // rough overhead estimate
@@ -135,6 +139,176 @@ fn count_match(src : BytesView, a : Int, b : Int, max_len : Int) -> Int {
     i += 1
   }
   i
+}
+
+// ─── LZ77 hash-chain match finder (levels 2-9) ─────────────────────
+
+///|
+fn chain_depth(level : Int) -> Int {
+  if level <= 3 {
+    8
+  } else if level <= 5 {
+    16
+  } else if level <= 7 {
+    32
+  } else {
+    64
+  }
+}
+
+///|
+fn lz77_find_matches_chain(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+) -> Array[BrotliCmd] {
+  let cmds : Array[BrotliCmd] = []
+  if src_len < 4 {
+    cmds.push({ insert_pos: 0, insert_len: src_len, copy_len: 0, distance: 0 })
+    return cmds
+  }
+  let max_chain = chain_depth(level)
+  let use_lazy = level >= 4
+  let hash_size = BROTLI_HASH_SIZE
+  let hash_mask = hash_size - 1
+  // head[h] = most recent position with hash h, -1 if none
+  let head : FixedArray[Int] = FixedArray::make(hash_size, -1)
+  // prev[pos & mask] = previous position in chain with same hash
+  let win_mask = (1 << 22) - 1 // 4MB window mask for prev array
+  let prev : FixedArray[Int] = FixedArray::make(win_mask + 1, -1)
+  let max_distance = 1 << 22
+  let mut pos = 0
+  let mut insert_start = 0
+
+  // Insert a position into the hash chain
+  fn insert_hash(p : Int) -> Unit {
+    let h = brotli_hash4(src, p) & hash_mask
+    prev[p & win_mask] = head[h]
+    head[h] = p
+  }
+
+  // Find best match at position p using hash chains
+  fn find_best(p : Int) -> (Int, Int) {
+    // returns (match_len, distance)
+    if p + 3 >= src_len {
+      return (0, 0)
+    }
+    let h = brotli_hash4(src, p) & hash_mask
+    let mut best_len = 3 // minimum match is 4, so we need > 3
+    let mut best_dist = 0
+    let mut candidate = head[h]
+    let mut chains = 0
+    let max_len = if src_len - p < 258 { src_len - p } else { 258 }
+    while candidate >= 0 && chains < max_chain {
+      let dist = p - candidate
+      if dist <= 0 || dist > max_distance {
+        break
+      }
+      let mlen = count_match(src, p, candidate, max_len)
+      if mlen > best_len {
+        best_len = mlen
+        best_dist = dist
+        if mlen == max_len {
+          break
+        }
+      }
+      candidate = prev[candidate & win_mask]
+      chains += 1
+    }
+    if best_dist > 0 {
+      (best_len, best_dist)
+    } else {
+      (0, 0)
+    }
+  }
+
+  while pos + 3 < src_len {
+    let (mlen, mdist) = find_best(pos)
+    if mlen < 4 {
+      insert_hash(pos)
+      pos += 1
+      continue
+    }
+    // Lazy matching: check if next position has a strictly better match
+    if use_lazy && pos + 4 < src_len {
+      // Tentatively insert current pos so next position can chain through it
+      insert_hash(pos)
+      let (mlen2, mdist2) = find_best(pos + 1)
+      if mlen2 > mlen + 1 {
+        // Skip current position, emit next match instead
+        pos += 1
+        // Insert pos into chain and emit match at pos
+        insert_hash(pos)
+        let insert_len = pos - insert_start
+        cmds.push({
+          insert_pos: insert_start,
+          insert_len,
+          copy_len: mlen2,
+          distance: mdist2,
+        })
+        // Insert all positions covered by the match into hash chains
+        let end = if pos + mlen2 < src_len - 3 {
+          pos + mlen2
+        } else {
+          src_len - 4
+        }
+        for i = pos + 1; i <= end; i = i + 1 {
+          insert_hash(i)
+        }
+        pos += mlen2
+        insert_start = pos
+        continue
+      }
+      // Current match is good enough, emit it
+      // (pos was already inserted above)
+      let insert_len = pos - insert_start
+      cmds.push({
+        insert_pos: insert_start,
+        insert_len,
+        copy_len: mlen,
+        distance: mdist,
+      })
+      let end = if pos + mlen < src_len - 3 {
+        pos + mlen
+      } else {
+        src_len - 4
+      }
+      for i = pos + 1; i <= end; i = i + 1 {
+        insert_hash(i)
+      }
+      pos += mlen
+      insert_start = pos
+      continue
+    }
+    // No lazy matching (levels 2-3)
+    insert_hash(pos)
+    let insert_len = pos - insert_start
+    cmds.push({
+      insert_pos: insert_start,
+      insert_len,
+      copy_len: mlen,
+      distance: mdist,
+    })
+    let end = if pos + mlen < src_len - 3 {
+      pos + mlen
+    } else {
+      src_len - 4
+    }
+    for i = pos + 1; i <= end; i = i + 1 {
+      insert_hash(i)
+    }
+    pos += mlen
+    insert_start = pos
+  }
+  if insert_start < src_len {
+    cmds.push({
+      insert_pos: insert_start,
+      insert_len: src_len - insert_start,
+      copy_len: 0,
+      distance: 0,
+    })
+  }
+  cmds
 }
 
 // ─── Insert/copy/distance encoding ──────────────────────────────────
