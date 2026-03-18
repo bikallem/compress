@@ -17,7 +17,7 @@ fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit {
 
 ///|
 test "bench lz4 compress text_1kb" (b : @bench.T) {
-  bench_compress(b, name="lz4_compress_1kb", 1024)
+  bench_compress(b, name="lz4_compress_default_1kb", 1024)
 }
 
 ///|

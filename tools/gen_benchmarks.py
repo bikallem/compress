@@ -557,7 +557,7 @@ def lz4_benches():
         standard[label].append(textwrap.dedent(f"""\
             ///|
             test "bench lz4 compress text_{label}" (b : @bench.T) {{
-              bench_compress(b, name="lz4_compress_{label}", {size})
+              bench_compress(b, name="lz4_compress_default_{label}", {size})
             }}
         """))
         standard[label].append(textwrap.dedent(f"""\
