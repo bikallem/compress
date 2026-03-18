@@ -23,7 +23,7 @@ fn compress_empty() -> Bytes {
 
 ///|
 fn compress_uncompressed(src : BytesView, src_len : Int) -> Bytes {
-  let bw = BitWriter::new(if src_len < 1048576 { src_len + 32 } else { 1048576 })
+  let bw = BitWriter::new(src_len + 64)
   encode_wbits(bw, 22)
   let mut offset = 0
   while offset < src_len {
@@ -42,9 +42,11 @@ fn compress_uncompressed(src : BytesView, src_len : Int) -> Bytes {
     if bw.n_bits > 0 {
       bw.write_bits(0, 8 - bw.n_bits)
     }
-    for i in offset..<(offset + chunk_size) {
-      bw.write_bits(src[i].to_int(), 8)
-    }
+    // Bulk copy bytes directly into the BitWriter buffer
+    bw.flush_final() // ensure bit buffer is fully flushed
+    bw.ensure_capacity(chunk_size)
+    @blit.blit_bytesview(bw.buf, bw.pos, src, offset, chunk_size)
+    bw.pos += chunk_size
     offset += chunk_size
   }
   // Trailing empty last metablock
@@ -346,26 +348,30 @@ fn lz77_find_matches_chain(
 
 ///|
 fn encode_insert_len(insert_len : Int) -> (Int, Int, Int) {
-  let mut code = 0
-  for i in 0..<24 {
-    if i == 23 || _insert_baselines[i + 1] > insert_len {
-      code = i
-      break
-    }
-  }
+  let code = bsearch_baselines(_insert_baselines, insert_len)
   (code, insert_len - _insert_baselines[code], _insert_extra_bits[code])
 }
 
 ///|
 fn encode_copy_len(copy_len : Int) -> (Int, Int, Int) {
-  let mut code = 0
-  for i in 0..<24 {
-    if i == 23 || _copy_baselines[i + 1] > copy_len {
-      code = i
-      break
+  let code = bsearch_baselines(_copy_baselines, copy_len)
+  (code, copy_len - _copy_baselines[code], _copy_extra_bits[code])
+}
+
+///|
+/// Binary search for the largest index where baselines[index] <= value.
+fn bsearch_baselines(baselines : FixedArray[Int], value : Int) -> Int {
+  let mut lo = 0
+  let mut hi = baselines.length() - 1
+  while lo < hi {
+    let mid = (lo + hi + 1) >> 1
+    if baselines[mid] <= value {
+      lo = mid
+    } else {
+      hi = mid - 1
     }
   }
-  (code, copy_len - _copy_baselines[code], _copy_extra_bits[code])
+  lo
 }
 
 ///|
@@ -407,10 +413,16 @@ fn insert_copy_implicit(insert_code : Int, copy_code : Int) -> Int {
 
 ///|
 fn encode_distance_val(distance : Int) -> (Int, Int, Int) {
-  let mut n = 1
-  while n < 24 {
-    let range = 1 << n
+  // O(1) computation using bit-scan (floor(log2)) instead of linear search.
+  // For distance d, we need to find n such that:
+  //   base0 = (2 << n) - 3, range = 1 << n: d in [base0, base0+range)
+  //   base1 = (3 << n) - 3, range = 1 << n: d in [base1, base1+range)
+  // Equivalent: n = floor(log2(distance + 3)) - 1
+  let d3 = distance + 3
+  let n = ilog2(d3) - 1
+  if n >= 1 && n < 24 {
     let base0 = (2 << n) - 3
+    let range = 1 << n
     if distance >= base0 && distance < base0 + range {
       let dextra = (n - 1) * 2
       return (16 + dextra, distance - base0, n)
@@ -420,9 +432,37 @@ fn encode_distance_val(distance : Int) -> (Int, Int, Int) {
       let dextra = (n - 1) * 2 + 1
       return (16 + dextra, distance - base1, n)
     }
-    n += 1
+  }
+  // Fallback for edge cases (distance near boundaries)
+  let mut nn = 1
+  while nn < 24 {
+    let range = 1 << nn
+    let b0 = (2 << nn) - 3
+    if distance >= b0 && distance < b0 + range {
+      let dextra = (nn - 1) * 2
+      return (16 + dextra, distance - b0, nn)
+    }
+    let b1 = (3 << nn) - 3
+    if distance >= b1 && distance < b1 + range {
+      let dextra = (nn - 1) * 2 + 1
+      return (16 + dextra, distance - b1, nn)
+    }
+    nn += 1
   }
   (16, distance - 1, 24)
+}
+
+///|
+/// Integer log2 (floor). Returns the position of the highest set bit.
+fn ilog2(v : Int) -> Int {
+  let mut n = 0
+  let mut x = v
+  if x >= (1 << 16) { n += 16; x = x >> 16 }
+  if x >= (1 << 8) { n += 8; x = x >> 8 }
+  if x >= (1 << 4) { n += 4; x = x >> 4 }
+  if x >= (1 << 2) { n += 2; x = x >> 2 }
+  if x >= (1 << 1) { n += 1 }
+  n
 }
 
 // ─── Huffman coding ─────────────────────────────────────────────────
@@ -964,14 +1004,15 @@ fn write_complex_prefix(
 
 ///|
 priv struct EncodedCommands {
-  iac : Array[Int] // insert-and-copy codes
-  iev : Array[Int] // insert extra values
-  ieb : Array[Int] // insert extra bits count
-  cev : Array[Int] // copy extra values
-  ceb : Array[Int] // copy extra bits count
-  dc : Array[Int] // distance codes (-1 = none)
-  dev : Array[Int] // distance extra values
-  deb : Array[Int] // distance extra bits count
+  iac : FixedArray[Int] // insert-and-copy codes
+  iev : FixedArray[Int] // insert extra values
+  ieb : FixedArray[Int] // insert extra bits count
+  cev : FixedArray[Int] // copy extra values
+  ceb : FixedArray[Int] // copy extra bits count
+  dc : FixedArray[Int] // distance codes (-1 = none)
+  dev : FixedArray[Int] // distance extra values
+  deb : FixedArray[Int] // distance extra bits count
+  count : Int
   max_iac : Int
   max_dist : Int
 }
@@ -980,14 +1021,16 @@ priv struct EncodedCommands {
 fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
   let mut max_iac = 0
   let mut max_dist = 0
-  let cmd_iac : Array[Int] = []
-  let cmd_iev : Array[Int] = []
-  let cmd_ieb : Array[Int] = []
-  let cmd_cev : Array[Int] = []
-  let cmd_ceb : Array[Int] = []
-  let cmd_dc : Array[Int] = []
-  let cmd_dev : Array[Int] = []
-  let cmd_deb : Array[Int] = []
+  let cap = cmds.length()
+  let cmd_iac = FixedArray::make(cap, 0)
+  let cmd_iev = FixedArray::make(cap, 0)
+  let cmd_ieb = FixedArray::make(cap, 0)
+  let cmd_cev = FixedArray::make(cap, 0)
+  let cmd_ceb = FixedArray::make(cap, 0)
+  let cmd_dc = FixedArray::make(cap, 0)
+  let cmd_dev = FixedArray::make(cap, 0)
+  let cmd_deb = FixedArray::make(cap, 0)
+  let mut ci = 0
   for cmd in cmds {
     if cmd.copy_len > 0 {
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
@@ -1000,14 +1043,15 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
       if dc > max_dist {
         max_dist = dc
       }
-      cmd_iac.push(iac)
-      cmd_iev.push(iev)
-      cmd_ieb.push(ieb)
-      cmd_cev.push(cev)
-      cmd_ceb.push(ceb)
-      cmd_dc.push(dc)
-      cmd_dev.push(dev)
-      cmd_deb.push(deb)
+      cmd_iac[ci] = iac
+      cmd_iev[ci] = iev
+      cmd_ieb[ci] = ieb
+      cmd_cev[ci] = cev
+      cmd_ceb[ci] = ceb
+      cmd_dc[ci] = dc
+      cmd_dev[ci] = dev
+      cmd_deb[ci] = deb
+      ci += 1
     } else if cmd.insert_len > 0 {
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
       let cc = 0
@@ -1016,27 +1060,20 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
         if iac > max_iac {
           max_iac = iac
         }
-        cmd_iac.push(iac)
-        cmd_iev.push(iev)
-        cmd_ieb.push(ieb)
-        cmd_cev.push(0)
-        cmd_ceb.push(0)
-        cmd_dc.push(-1)
-        cmd_dev.push(0)
-        cmd_deb.push(0)
+        cmd_iac[ci] = iac
+        cmd_iev[ci] = iev
+        cmd_ieb[ci] = ieb
+        cmd_dc[ci] = -1
+        ci += 1
       } else {
         let iac = insert_copy_combined(ic, cc)
         if iac > max_iac {
           max_iac = iac
         }
-        cmd_iac.push(iac)
-        cmd_iev.push(iev)
-        cmd_ieb.push(ieb)
-        cmd_cev.push(0)
-        cmd_ceb.push(0)
-        cmd_dc.push(0)
-        cmd_dev.push(0)
-        cmd_deb.push(0)
+        cmd_iac[ci] = iac
+        cmd_iev[ci] = iev
+        cmd_ieb[ci] = ieb
+        ci += 1
       }
     }
   }
@@ -1049,6 +1086,7 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
     dc: cmd_dc,
     dev: cmd_dev,
     deb: cmd_deb,
+    count: ci,
     max_iac,
     max_dist,
   }
@@ -1095,10 +1133,11 @@ fn encode_metablock_into(
   let iac_freqs = FixedArray::make(iac_size, 0)
   let dist_freqs = FixedArray::make(dist_size, 0)
 
-  for _, iac in ec.iac {
-    iac_freqs[iac] += 1
+  for i in 0..<ec.count {
+    iac_freqs[ec.iac[i]] += 1
   }
-  for _, dc in ec.dc {
+  for i in 0..<ec.count {
+    let dc = ec.dc[i]
     if dc >= 0 && dc < dist_size {
       dist_freqs[dc] += 1
     }
@@ -1157,29 +1196,37 @@ fn encode_metablock_into(
   // Write command data
   let mut ci = 0
   for cmd in cmds {
-    if ci >= ec.iac.length() {
+    if ci >= ec.count {
       break
     }
-    write_symbol(bw, iac_codes, ec.iac[ci])
+    let iac_entry = iac_codes[ec.iac[ci]]
+    bw.write_bits(iac_entry >> 8, iac_entry & 0xFF)
     if ec.ieb[ci] > 0 {
       bw.write_bits(ec.iev[ci], ec.ieb[ci])
     }
     if ec.ceb[ci] > 0 {
       bw.write_bits(ec.cev[ci], ec.ceb[ci])
     }
-    for j in 0..<cmd.insert_len {
-      if ntreesl > 1 {
+    if ntreesl > 1 {
+      for j in 0..<cmd.insert_len {
         let pos = cmd.insert_pos + j
         let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
         let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
         let tree_idx = cmap[ctx]
-        write_symbol(bw, lit_codes_arr[tree_idx], src[pos].to_int())
-      } else {
-        write_symbol(bw, lit_codes_arr[0], src[cmd.insert_pos + j].to_int())
+        let codes = lit_codes_arr[tree_idx]
+        let entry = codes[src[pos].to_int()]
+        bw.write_bits(entry >> 8, entry & 0xFF)
+      }
+    } else {
+      let codes = lit_codes_arr[0]
+      for j in 0..<cmd.insert_len {
+        let entry = codes[src[cmd.insert_pos + j].to_int()]
+        bw.write_bits(entry >> 8, entry & 0xFF)
       }
     }
     if ec.dc[ci] >= 0 {
-      write_symbol(bw, dist_codes, ec.dc[ci])
+      let dist_entry = dist_codes[ec.dc[ci]]
+      bw.write_bits(dist_entry >> 8, dist_entry & 0xFF)
       if ec.deb[ci] > 0 {
         bw.write_bits(ec.dev[ci], ec.deb[ci])
       }
@@ -1225,53 +1272,41 @@ fn build_context_model(
   // Cluster 64 contexts into 2 groups
   let cmap = cluster_contexts(ctx_hists, 2)
 
-  // Check if clustering produced a useful split (both trees must have data)
+  // Build per-tree histograms directly from ctx_hists + cmap
+  // (avoids re-scanning all commands/literals)
+  let tree_freqs : Array[FixedArray[Int]] = [
+    FixedArray::make(256, 0),
+    FixedArray::make(256, 0),
+  ]
   let mut has_tree0 = false
   let mut has_tree1 = false
-  for cmd in cmds {
-    for j in 0..<cmd.insert_len {
-      let pos = cmd.insert_pos + j
-      let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
-      let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
-      if cmap[ctx] == 0 {
-        has_tree0 = true
-      } else {
-        has_tree1 = true
+  for ctx in 0..<64 {
+    let tree_idx = cmap[ctx]
+    let hist = ctx_hists[ctx]
+    let dst = tree_freqs[tree_idx]
+    for sym in 0..<256 {
+      if hist[sym] > 0 {
+        dst[sym] += hist[sym]
+        if tree_idx == 0 {
+          has_tree0 = true
+        } else {
+          has_tree1 = true
+        }
       }
-      if has_tree0 && has_tree1 {
-        break
-      }
-    }
-    if has_tree0 && has_tree1 {
-      break
     }
   }
 
   if not(has_tree0 && has_tree1) {
     // All contexts map to one tree; fall back to single tree
-    let lit_freqs = FixedArray::make(256, 0)
-    for cmd in cmds {
-      for j in 0..<cmd.insert_len {
-        lit_freqs[src[cmd.insert_pos + j].to_int()] += 1
-      }
+    // Merge both tree_freqs into one
+    let lit_freqs = tree_freqs[0]
+    let other = tree_freqs[1]
+    for sym in 0..<256 {
+      lit_freqs[sym] += other[sym]
     }
     return (1, FixedArray::make(64, 0), [lit_freqs])
   }
 
-  // Build per-tree histograms
-  let tree_freqs : Array[FixedArray[Int]] = [
-    FixedArray::make(256, 0),
-    FixedArray::make(256, 0),
-  ]
-  for cmd in cmds {
-    for j in 0..<cmd.insert_len {
-      let pos = cmd.insert_pos + j
-      let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
-      let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
-      let tree_idx = cmap[ctx]
-      tree_freqs[tree_idx][src[pos].to_int()] += 1
-    }
-  }
   (2, cmap, tree_freqs)
 }
 

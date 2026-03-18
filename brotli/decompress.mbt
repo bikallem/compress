@@ -43,9 +43,7 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
         br.read_bits(br.n_bits % 8) |> ignore
       }
       sink.ensure_capacity(mlen)
-      for _byte_idx in 0..<mlen {
-        sink.write_byte_unchecked(br.read_bits(8).to_byte())
-      }
+      br.read_bytes_to_sink(sink, mlen)
       continue
     }
     decode_compressed_block(br, mlen, sink, max_backward)

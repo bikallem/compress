@@ -73,6 +73,45 @@ fn BitReader::read_bool(self : BitReader) -> Bool {
 }
 
 ///|
+/// Read `len` bytes directly from the underlying data when the bit reader is
+/// byte-aligned. Writes them into `sink` using bulk blit. This avoids per-byte
+/// read_bits(8) calls for uncompressed metablocks.
+fn BitReader::read_bytes_to_sink(
+  self : BitReader,
+  sink : @output_sink.OutputSink,
+  len : Int,
+) -> Unit {
+  // First, drain any buffered bits as individual bytes
+  let mut remaining = len
+  while remaining > 0 && self.n_bits >= 8 {
+    sink.write_byte((self.bits & 0xFFUL).to_uint().to_byte())
+    self.bits = self.bits >> 8
+    self.n_bits -= 8
+    remaining -= 1
+  }
+  if remaining <= 0 {
+    return
+  }
+  // Now n_bits < 8. If n_bits == 0, we can bulk copy from data.
+  // If n_bits > 0, we have partial bits that don't form a full byte,
+  // which shouldn't happen after byte alignment, but handle gracefully.
+  if self.n_bits == 0 {
+    // Bulk copy directly from input data to sink
+    sink.write_bytesview(self.data, self.byte_pos, remaining)
+    self.byte_pos += remaining
+  } else {
+    // Fallback: read byte by byte
+    for _ in 0..<remaining {
+      self.refill()
+      let b = (self.bits & 0xFFUL).to_uint().to_byte()
+      self.bits = self.bits >> 8
+      self.n_bits -= 8
+      sink.write_byte(b)
+    }
+  }
+}
+
+///|
 /// LSB-first bit writer for Brotli compression.
 priv struct BitWriter {
   mut buf : FixedArray[Byte]

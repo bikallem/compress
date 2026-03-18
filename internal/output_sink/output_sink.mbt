@@ -40,6 +40,19 @@ pub fn OutputSink::write_fixed(
 }
 
 ///|
+/// Write bytes from a BytesView region into the sink.
+pub fn OutputSink::write_bytesview(
+  self : OutputSink,
+  src : BytesView,
+  offset : Int,
+  len : Int,
+) -> Unit {
+  self.ensure_capacity(len)
+  @blit.blit_bytesview(self.buf, self.pos, src, offset, len)
+  self.pos += len
+}
+
+///|
 /// Write all bytes from a Bytes value into the sink.
 pub fn OutputSink::write_bytes(self : OutputSink, src : Bytes) -> Unit {
   let len = src.length()
