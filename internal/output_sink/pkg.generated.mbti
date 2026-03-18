@@ -11,8 +11,11 @@ pub struct OutputSink {
   mut pos : Int
 }
 pub fn OutputSink::ensure_capacity(Self, Int) -> Unit
+pub fn OutputSink::get_byte(Self, Int) -> Byte
+pub fn OutputSink::length(Self) -> Int
 pub fn OutputSink::new(Int) -> Self
 pub fn OutputSink::to_bytes(Self) -> Bytes
+pub fn OutputSink::write_byte(Self, Byte) -> Unit
 pub fn OutputSink::write_bytes(Self, Bytes) -> Unit
 pub fn OutputSink::write_fixed(Self, FixedArray[Byte], Int, Int) -> Unit
 
