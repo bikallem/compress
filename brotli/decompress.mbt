@@ -7,7 +7,8 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
   let br = BitReader::new(data[:])
   let sink = @output_sink.OutputSink::new(data.length() * 4)
   let wbits = decode_wbits(br)
-  let _window_size = 1 << wbits
+  let window_size = 1 << wbits
+  let max_backward = window_size
   while true {
     let is_last = br.read_bool()
     if is_last {
@@ -33,7 +34,7 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     let mlen_bits = mnibbles * 4
     let mlen = br.read_bits(mlen_bits) + 1
     if is_last {
-      decode_compressed_block(br, mlen, sink)
+      decode_compressed_block(br, mlen, sink, max_backward)
       break
     }
     let is_uncompressed = br.read_bool()
@@ -46,7 +47,7 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
       }
       continue
     }
-    decode_compressed_block(br, mlen, sink)
+    decode_compressed_block(br, mlen, sink, max_backward)
   }
   sink.to_bytes()
 }
@@ -91,10 +92,72 @@ fn decode_compressed_block(
   br : BitReader,
   mlen : Int,
   sink : @output_sink.OutputSink,
+  max_backward : Int,
 ) -> Unit {
   let nbltypesl = decode_block_type_count(br)
-  let _nbltypesi = decode_block_type_count(br)
-  let _nbltypesd = decode_block_type_count(br)
+  let nbltypesi = decode_block_type_count(br)
+  let nbltypesd = decode_block_type_count(br)
+
+  // When NBLTYPES > 1, read block type/count prefix codes and first block count
+  let dummy_tree : HuffTree = {
+    table: FixedArray::make(1, 0),
+    max_bits: 0,
+  }
+
+  // Literal block types
+  let lit_btype_tree : HuffTree = if nbltypesl > 1 {
+    decode_prefix_code(br, nbltypesl + 2)
+  } else {
+    dummy_tree
+  }
+  let lit_bcount_tree : HuffTree = if nbltypesl > 1 {
+    decode_prefix_code(br, 26)
+  } else {
+    dummy_tree
+  }
+  let mut lit_block_remaining = if nbltypesl > 1 {
+    decode_block_count(br, lit_bcount_tree)
+  } else {
+    0
+  }
+  let mut lit_block_type = 0
+
+  // Insert-and-copy block types
+  let iac_btype_tree : HuffTree = if nbltypesi > 1 {
+    decode_prefix_code(br, nbltypesi + 2)
+  } else {
+    dummy_tree
+  }
+  let iac_bcount_tree : HuffTree = if nbltypesi > 1 {
+    decode_prefix_code(br, 26)
+  } else {
+    dummy_tree
+  }
+  let mut iac_block_remaining = if nbltypesi > 1 {
+    decode_block_count(br, iac_bcount_tree)
+  } else {
+    0
+  }
+  let mut _iac_block_type = 0
+
+  // Distance block types
+  let dist_btype_tree : HuffTree = if nbltypesd > 1 {
+    decode_prefix_code(br, nbltypesd + 2)
+  } else {
+    dummy_tree
+  }
+  let dist_bcount_tree : HuffTree = if nbltypesd > 1 {
+    decode_prefix_code(br, 26)
+  } else {
+    dummy_tree
+  }
+  let mut dist_block_remaining = if nbltypesd > 1 {
+    decode_block_count(br, dist_bcount_tree)
+  } else {
+    0
+  }
+  let mut dist_block_type = 0
+
   let npostfix = br.read_bits(2)
   let ndirect_raw = br.read_bits(4)
   let ndirect = ndirect_raw << npostfix
@@ -113,7 +176,15 @@ fn decode_compressed_block(
     FixedArray::make(cmap_size, 0)
   }
 
-  let _ntreesd = decode_block_type_count(br)
+  let ntreesd = decode_block_type_count(br)
+
+  // Read context map for distances
+  let cmap_d_size = 4 * nbltypesd
+  let cmap_d = if ntreesd > 1 {
+    decode_context_map(br, cmap_d_size, ntreesd)
+  } else {
+    FixedArray::make(cmap_d_size, 0)
+  }
 
   // Read NTREESL literal prefix codes
   let lit_trees : FixedArray[HuffTree] = FixedArray::make(ntreesl, {
@@ -125,7 +196,14 @@ fn decode_compressed_block(
   }
   let iac_tree = decode_prefix_code(br, 704)
   let dist_alphabet = 16 + ndirect + (48 << npostfix)
-  let dist_tree = decode_prefix_code(br, dist_alphabet)
+  // Read NTREESD distance prefix codes
+  let dist_trees : FixedArray[HuffTree] = FixedArray::make(ntreesd, {
+    table: FixedArray::make(1, 0),
+    max_bits: 0,
+  })
+  for i in 0..<ntreesd {
+    dist_trees[i] = decode_prefix_code(br, dist_alphabet)
+  }
 
   let dist_rb = FixedArray::make(4, 1)
   dist_rb[0] = 4
@@ -133,11 +211,37 @@ fn decode_compressed_block(
   dist_rb[2] = 15
   dist_rb[3] = 16
 
+  // Track previous literal block type for block type switching
+  let mut _lit_prev_type = 1
+  let mut _iac_prev_type = 1
+  let mut _dist_prev_type = 1
+  // Suppress unused variable warnings
+  let _ = lit_btype_tree
+  let _ = lit_bcount_tree
+  let _ = iac_btype_tree
+  let _ = iac_bcount_tree
+  let _ = dist_btype_tree
+  let _ = dist_bcount_tree
+
   sink.ensure_capacity(mlen)
   let start_pos = sink.length()
   let mut produced = 0
 
   while produced < mlen {
+    // Check for insert-and-copy block type switch
+    if nbltypesi > 1 && iac_block_remaining == 0 {
+      let new_type = read_huffman_symbol(br, iac_btype_tree)
+      let resolved = resolve_block_type(
+        new_type, _iac_block_type, _iac_prev_type, nbltypesi,
+      )
+      _iac_prev_type = _iac_block_type
+      _iac_block_type = resolved
+      iac_block_remaining = decode_block_count(br, iac_bcount_tree)
+    }
+    if nbltypesi > 1 {
+      iac_block_remaining -= 1
+    }
+
     let iac_code = read_huffman_symbol(br, iac_tree)
     let (insert_len, copy_len, needs_dist) = decode_insert_copy(br, iac_code)
     let ilimit = if insert_len > mlen - produced {
@@ -146,13 +250,28 @@ fn decode_compressed_block(
       insert_len
     }
     for _ in 0..<ilimit {
+      // Check for literal block type switch
+      if nbltypesl > 1 && lit_block_remaining == 0 {
+        let new_type = read_huffman_symbol(br, lit_btype_tree)
+        let resolved = resolve_block_type(
+          new_type, lit_block_type, _lit_prev_type, nbltypesl,
+        )
+        _lit_prev_type = lit_block_type
+        lit_block_type = resolved
+        lit_block_remaining = decode_block_count(br, lit_bcount_tree)
+      }
+      if nbltypesl > 1 {
+        lit_block_remaining -= 1
+      }
       // Compute context ID from previous 2 bytes
       let lit_tree = if ntreesl > 1 {
         let pos = start_pos + produced
         let p1 = if pos > 0 { sink.get_byte(pos - 1).to_int() } else { 0 }
         let p2 = if pos > 1 { sink.get_byte(pos - 2).to_int() } else { 0 }
-        let context_id = compute_context_id(context_modes[0], p1, p2)
-        let tree_idx = cmap_l[context_id]
+        let context_id = compute_context_id(
+          context_modes[lit_block_type], p1, p2,
+        )
+        let tree_idx = cmap_l[lit_block_type * 64 + context_id]
         lit_trees[tree_idx]
       } else {
         lit_trees[0]
@@ -165,8 +284,30 @@ fn decode_compressed_block(
       break
     }
     let distance = if needs_dist {
+      // Check for distance block type switch
+      if nbltypesd > 1 && dist_block_remaining == 0 {
+        let new_type = read_huffman_symbol(br, dist_btype_tree)
+        let resolved = resolve_block_type(
+          new_type, dist_block_type, _dist_prev_type, nbltypesd,
+        )
+        _dist_prev_type = dist_block_type
+        dist_block_type = resolved
+        dist_block_remaining = decode_block_count(br, dist_bcount_tree)
+      }
+      if nbltypesd > 1 {
+        dist_block_remaining -= 1
+      }
+      // Select the distance tree based on distance block type and context
+      let dist_tree = if ntreesd > 1 {
+        // Distance context is 0-3 based on copy length
+        let dist_ctx = if copy_len > 4 { 3 } else { copy_len - 2 }
+        let tree_idx = cmap_d[dist_block_type * 4 + dist_ctx]
+        dist_trees[tree_idx]
+      } else {
+        dist_trees[0]
+      }
       let dist_code = read_huffman_symbol(br, dist_tree)
-      let d = decode_distance(br, dist_code, ndirect, dist_rb)
+      let d = decode_distance(br, dist_code, ndirect, dist_rb, npostfix)
       dist_rb[3] = dist_rb[2]
       dist_rb[2] = dist_rb[1]
       dist_rb[1] = dist_rb[0]
@@ -180,16 +321,44 @@ fn decode_compressed_block(
     } else {
       copy_len
     }
-    let copy_src = start_pos + produced - distance
-    for j in 0..<climit {
-      let src_pos = copy_src + j
-      let b = if src_pos >= 0 && src_pos < sink.length() {
-        sink.get_byte(src_pos)
-      } else {
-        b'\x00'
+    // Check if this is a dictionary reference
+    let max_dist = if start_pos + produced < max_backward {
+      start_pos + produced
+    } else {
+      max_backward
+    }
+    if distance > max_dist &&
+      copy_len >= dict_min_word_length &&
+      copy_len <= dict_max_word_length {
+      // Static dictionary reference
+      let address = distance - max_dist - 1
+      let shift = dict_size_bits_by_length[copy_len]
+      let mask = (1 << shift) - 1
+      let word_idx = address & mask
+      let transform_idx = address >> shift
+      let word_off = dict_offsets_by_length[copy_len] + word_idx * copy_len
+      // Apply transform to get the output bytes
+      let tmp = FixedArray::make(copy_len + 128, b'\x00')
+      let out_len = transform_dictionary_word(
+        tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
+      )
+      let write_len = if out_len < climit { out_len } else { climit }
+      for j in 0..<write_len {
+        sink.write_byte(tmp[j])
+        produced += 1
       }
-      sink.write_byte(b)
-      produced += 1
+    } else {
+      let copy_src = start_pos + produced - distance
+      for j in 0..<climit {
+        let src_pos = copy_src + j
+        let b = if src_pos >= 0 && src_pos < sink.length() {
+          sink.get_byte(src_pos)
+        } else {
+          b'\x00'
+        }
+        sink.write_byte(b)
+        produced += 1
+      }
     }
   }
 }
@@ -197,17 +366,10 @@ fn decode_compressed_block(
 ///|
 /// Compute context ID from previous 2 bytes based on context mode.
 /// RFC 7932 Section 7.1.
+/// Uses the official context lookup table for all 4 modes.
 fn compute_context_id(mode : Int, p1 : Int, p2 : Int) -> Int {
-  match mode {
-    0 => p1 & 0x3f // LSB6
-    1 => p1 >> 2   // MSB6
-    _ => {
-      // For modes 2 (UTF8) and 3 (Signed), fall back to LSB6
-      // since we don't use these modes in the encoder.
-      let _ = p2
-      p1 & 0x3f
-    }
-  }
+  let lut_offset = mode * 512
+  context_lut[lut_offset + p1] | context_lut[lut_offset + 256 + p2]
 }
 
 ///|
@@ -329,24 +491,26 @@ fn decode_distance(
   code : Int,
   ndirect : Int,
   dist_rb : FixedArray[Int],
+  npostfix : Int,
 ) -> Int {
   if code < 4 {
     return dist_rb[code]
   }
   if code < 16 {
+    // RFC 7932 Table 9: distance codes 4-15
     let (rb_idx, delta) = match code {
-      4 => (0, 1)
-      5 => (0, -1)
-      6 => (0, 2)
-      7 => (0, -2)
-      8 => (0, 3)
-      9 => (0, -3)
-      10 => (1, 1)
-      11 => (1, -1)
-      12 => (1, 2)
-      13 => (1, -2)
-      14 => (2, 1)
-      _ => (2, -1)
+      4 => (0, -1)
+      5 => (0, 1)
+      6 => (0, -2)
+      7 => (0, 2)
+      8 => (0, -3)
+      9 => (0, 3)
+      10 => (1, -1)
+      11 => (1, 1)
+      12 => (1, -2)
+      13 => (1, 2)
+      14 => (2, -1)
+      _ => (2, 1)
     }
     let d = dist_rb[rb_idx] + delta
     if d < 1 { 1 } else { d }
@@ -354,11 +518,78 @@ fn decode_distance(
     code - 16 + 1
   } else {
     let dcode = code - 16 - ndirect
-    let hcode = dcode & 1
-    let ndistbits = 1 + (dcode >> 1)
-    let extra = br.read_bits(ndistbits)
-    let offset = ((2 + hcode) << ndistbits) - 4
-    offset + extra + ndirect + 1
+    if npostfix == 0 {
+      let hcode = dcode & 1
+      let ndistbits = 1 + (dcode >> 1)
+      let extra = br.read_bits(ndistbits)
+      let offset = ((2 + hcode) << ndistbits) - 4
+      offset + extra + ndirect + 1
+    } else {
+      // With postfix bits: RFC 7932 section 4
+      let postfix_mask = (1 << npostfix) - 1
+      let postfix = dcode & postfix_mask
+      let dcode2 = dcode >> npostfix
+      let hcode = dcode2 & 1
+      let ndistbits = 1 + (dcode2 >> 1)
+      let extra = br.read_bits(ndistbits)
+      let offset = ((2 + hcode) << ndistbits) - 4
+      ((offset + extra) << npostfix) + postfix + ndirect + 1
+    }
+  }
+}
+
+///|
+/// Decode a block count value (RFC 7932 section 6).
+fn decode_block_count(br : BitReader, tree : HuffTree) -> Int {
+  let code = read_huffman_symbol(br, tree)
+  // RFC 7932 Table 2: Block count codes
+  let (base, extra) = match code {
+    0 => (1, 2)
+    1 => (5, 2)
+    2 => (9, 2)
+    3 => (13, 2)
+    4 => (17, 3)
+    5 => (25, 3)
+    6 => (33, 3)
+    7 => (41, 3)
+    8 => (49, 4)
+    9 => (65, 4)
+    10 => (81, 4)
+    11 => (97, 4)
+    12 => (113, 5)
+    13 => (145, 5)
+    14 => (177, 5)
+    15 => (209, 5)
+    16 => (241, 6)
+    17 => (305, 6)
+    18 => (369, 7)
+    19 => (497, 8)
+    20 => (753, 9)
+    21 => (1265, 10)
+    22 => (2289, 11)
+    23 => (4337, 12)
+    24 => (8433, 13)
+    _ => (16625, 24)
+  }
+  base + br.read_bits(extra)
+}
+
+///|
+/// Resolve a block type symbol to an actual type index.
+/// RFC 7932 section 6: symbol 0 = previous type, symbol 1 = current+1 mod n,
+/// symbol >= 2 = symbol - 2.
+fn resolve_block_type(
+  sym : Int,
+  current : Int,
+  prev : Int,
+  num_types : Int,
+) -> Int {
+  if sym == 0 {
+    prev
+  } else if sym == 1 {
+    (current + 1) % num_types
+  } else {
+    sym - 2
   }
 }
 
@@ -483,9 +714,15 @@ fn decode_complex_prefix(
   let mut i = 0
   let mut prev_cl = 8
   let mut space = 32768
+  // Repeat state for RFC 7932 section 3.5:
+  // Consecutive repeat symbols (16 or 17) accumulate their repeat count.
+  let mut repeat = 0
+  let mut repeat_code_len = 8
   while i < alphabet_size && space > 0 {
     let sym = read_huffman_symbol(br, cl_tree)
     if sym >= 0 && sym <= 15 {
+      // Regular code length symbol
+      repeat = 0
       code_lengths[i] = sym
       if sym > 0 {
         prev_cl = sym
@@ -493,17 +730,43 @@ fn decode_complex_prefix(
       }
       i += 1
     } else if sym == 16 {
-      let repeat = br.read_bits(2) + 3
-      for _ in 0..<repeat {
+      // Repeat previous code length
+      let extra_bits = 2
+      let repeat_delta = br.read_bits(extra_bits) + 3
+      let new_len = prev_cl
+      if repeat_code_len != new_len {
+        repeat = 0
+        repeat_code_len = new_len
+      }
+      let old_repeat = repeat
+      if repeat > 0 {
+        repeat = (repeat - 2) << extra_bits
+      }
+      repeat += repeat_delta
+      let delta = repeat - old_repeat
+      for _ in 0..<delta {
         if i < alphabet_size {
-          code_lengths[i] = prev_cl
-          space -= 32768 >> prev_cl
+          code_lengths[i] = repeat_code_len
+          space -= 32768 >> repeat_code_len
           i += 1
         }
       }
     } else if sym == 17 {
-      let repeat = br.read_bits(3) + 3
-      for _ in 0..<repeat {
+      // Repeat zero code length
+      let extra_bits = 3
+      let repeat_delta = br.read_bits(extra_bits) + 3
+      let new_len = 0
+      if repeat_code_len != new_len {
+        repeat = 0
+        repeat_code_len = new_len
+      }
+      let old_repeat = repeat
+      if repeat > 0 {
+        repeat = (repeat - 2) << extra_bits
+      }
+      repeat += repeat_delta
+      let delta = repeat - old_repeat
+      for _ in 0..<delta {
         if i < alphabet_size {
           code_lengths[i] = 0
           i += 1
