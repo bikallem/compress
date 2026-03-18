@@ -42,8 +42,9 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
       if br.n_bits % 8 != 0 {
         br.read_bits(br.n_bits % 8) |> ignore
       }
+      sink.ensure_capacity(mlen)
       for _byte_idx in 0..<mlen {
-        sink.write_byte(br.read_bits(8).to_byte())
+        sink.write_byte_unchecked(br.read_bits(8).to_byte())
       }
       continue
     }
@@ -242,36 +243,47 @@ fn decode_compressed_block(
     } else {
       insert_len
     }
-    for _lit_idx in 0..<ilimit {
-      // Check for literal block type switch
-      if nbltypesl > 1 && lit_block_remaining == 0 {
-        let new_type = read_huffman_symbol(br, lit_btype_tree)
-        let resolved = resolve_block_type(
-          new_type, lit_block_type, lit_prev_type, nbltypesl,
-        )
-        lit_prev_type = lit_block_type
-        lit_block_type = resolved
-        lit_block_remaining = decode_block_count(br, lit_bcount_tree)
+    if ntreesl == 1 && nbltypesl == 1 {
+      // Fast path: single literal tree, no block type switching
+      let single_tree = lit_trees[0]
+      sink.ensure_capacity(ilimit)
+      for _lit_idx in 0..<ilimit {
+        let lit = read_huffman_symbol(br, single_tree)
+        sink.write_byte_unchecked(lit.to_byte())
+        produced += 1
       }
-      if nbltypesl > 1 {
-        lit_block_remaining -= 1
+    } else {
+      for _lit_idx in 0..<ilimit {
+        // Check for literal block type switch
+        if nbltypesl > 1 && lit_block_remaining == 0 {
+          let new_type = read_huffman_symbol(br, lit_btype_tree)
+          let resolved = resolve_block_type(
+            new_type, lit_block_type, lit_prev_type, nbltypesl,
+          )
+          lit_prev_type = lit_block_type
+          lit_block_type = resolved
+          lit_block_remaining = decode_block_count(br, lit_bcount_tree)
+        }
+        if nbltypesl > 1 {
+          lit_block_remaining -= 1
+        }
+        // Compute context ID from previous 2 bytes
+        let lit_tree = if ntreesl > 1 {
+          let pos = start_pos + produced
+          let p1 = if pos > 0 { sink.get_byte(pos - 1).to_int() } else { 0 }
+          let p2 = if pos > 1 { sink.get_byte(pos - 2).to_int() } else { 0 }
+          let context_id = compute_context_id(
+            context_modes[lit_block_type], p1, p2,
+          )
+          let tree_idx = cmap_l[lit_block_type * 64 + context_id]
+          lit_trees[tree_idx]
+        } else {
+          lit_trees[0]
+        }
+        let lit = read_huffman_symbol(br, lit_tree)
+        sink.write_byte(lit.to_byte())
+        produced += 1
       }
-      // Compute context ID from previous 2 bytes
-      let lit_tree = if ntreesl > 1 {
-        let pos = start_pos + produced
-        let p1 = if pos > 0 { sink.get_byte(pos - 1).to_int() } else { 0 }
-        let p2 = if pos > 1 { sink.get_byte(pos - 2).to_int() } else { 0 }
-        let context_id = compute_context_id(
-          context_modes[lit_block_type], p1, p2,
-        )
-        let tree_idx = cmap_l[lit_block_type * 64 + context_id]
-        lit_trees[tree_idx]
-      } else {
-        lit_trees[0]
-      }
-      let lit = read_huffman_symbol(br, lit_tree)
-      sink.write_byte(lit.to_byte())
-      produced += 1
     }
     if produced >= mlen {
       break
@@ -336,21 +348,25 @@ fn decode_compressed_block(
         tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
       )
       let write_len = if out_len < climit { out_len } else { climit }
-      for j in 0..<write_len {
-        sink.write_byte(tmp[j])
-        produced += 1
-      }
+      sink.write_fixed(tmp, 0, write_len)
+      produced += write_len
     } else {
       let copy_src = start_pos + produced - distance
-      for j in 0..<climit {
-        let src_pos = copy_src + j
-        let b = if src_pos >= 0 && src_pos < sink.length() {
-          sink.get_byte(src_pos)
-        } else {
-          b'\x00'
+      if copy_src >= 0 {
+        sink.copy_from_self(copy_src, climit)
+        produced += climit
+      } else {
+        // Edge case: src starts before buffer (pad with zeros)
+        for j in 0..<climit {
+          let src_pos = copy_src + j
+          let b = if src_pos >= 0 && src_pos < sink.length() {
+            sink.get_byte(src_pos)
+          } else {
+            b'\x00'
+          }
+          sink.write_byte(b)
+          produced += 1
         }
-        sink.write_byte(b)
-        produced += 1
       }
     }
   }
