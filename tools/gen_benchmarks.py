@@ -646,6 +646,7 @@ def brotli_benches():
     """)
 
     standard = {}
+    speed_sizes = {"1kb", "10kb", "100kb"}
     for label, size in SIZES:
         standard[label] = []
         standard[label].append(textwrap.dedent(f"""\
@@ -660,6 +661,14 @@ def brotli_benches():
               bench_decompress(b, name="brotli_decompress_{label}", {size})
             }}
         """))
+        if label in speed_sizes:
+            standard[label].append(textwrap.dedent(f"""\
+                ///|
+                test "bench brotli compress speed text_{label}" (b : @bench.T) {{
+                  let data = @benchmarks.gen_text({size})
+                  b.bench(name="brotli_compress_speed_{label}", fn() {{ b.keep(@br.compress(data, level=@br.Level(1))) }})
+                }}
+            """))
 
     return pkg_import, helpers, standard
 

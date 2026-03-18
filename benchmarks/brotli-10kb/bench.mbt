@@ -24,3 +24,9 @@ test "bench brotli compress default text_10kb" (b : @bench.T) {
 test "bench brotli decompress text_10kb" (b : @bench.T) {
   bench_decompress(b, name="brotli_decompress_10kb", 10240)
 }
+
+///|
+test "bench brotli compress speed text_10kb" (b : @bench.T) {
+  let data = @benchmarks.gen_text(10240)
+  b.bench(name="brotli_compress_speed_10kb", fn() { b.keep(@br.compress(data, level=@br.Level(1))) })
+}

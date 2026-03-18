@@ -1328,7 +1328,7 @@ func BenchmarkLz4Decompress_1mb(b *testing.B) {
 
 // --- Brotli (github.com/andybalholm/brotli) ---
 
-func BenchmarkBrotliCompress_1kb(b *testing.B) {
+func BenchmarkBrotliCompressDefault_1kb(b *testing.B) {
 	data := genText(1024)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
@@ -1340,7 +1340,7 @@ func BenchmarkBrotliCompress_1kb(b *testing.B) {
 	}
 }
 
-func BenchmarkBrotliCompress_10kb(b *testing.B) {
+func BenchmarkBrotliCompressDefault_10kb(b *testing.B) {
 	data := genText(10240)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
@@ -1352,7 +1352,7 @@ func BenchmarkBrotliCompress_10kb(b *testing.B) {
 	}
 }
 
-func BenchmarkBrotliCompress_100kb(b *testing.B) {
+func BenchmarkBrotliCompressDefault_100kb(b *testing.B) {
 	data := genText(102400)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
@@ -1364,7 +1364,7 @@ func BenchmarkBrotliCompress_100kb(b *testing.B) {
 	}
 }
 
-func BenchmarkBrotliCompress_1mb(b *testing.B) {
+func BenchmarkBrotliCompressDefault_1mb(b *testing.B) {
 	data := genText(1048576)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
@@ -1376,7 +1376,7 @@ func BenchmarkBrotliCompress_1mb(b *testing.B) {
 	}
 }
 
-func BenchmarkBrotliCompress_10mb(b *testing.B) {
+func BenchmarkBrotliCompressDefault_10mb(b *testing.B) {
 	data := genText(10485760)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
@@ -1388,7 +1388,7 @@ func BenchmarkBrotliCompress_10mb(b *testing.B) {
 	}
 }
 
-func BenchmarkBrotliCompress_100mb(b *testing.B) {
+func BenchmarkBrotliCompressDefault_100mb(b *testing.B) {
 	data := genText(104857600)
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
