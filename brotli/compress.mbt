@@ -514,157 +514,92 @@ fn brotli_code_lengths(
     }
     return bl
   }
-  let sorted = FixedArray::make(active, (0, 0))
-  let mut idx = 0
-  for i, f in freqs {
-    if f > 0 {
-      sorted[idx] = (f, i)
-      idx += 1
-    }
-  }
-  for i in 1..<active {
-    let key = sorted[i]
-    let mut j = i - 1
-    while j >= 0 && sorted[j].0 > key.0 {
-      sorted[j + 1] = sorted[j]
-      j -= 1
-    }
-    sorted[j + 1] = key
-  }
-  let leaf_freq = FixedArray::make(active, 0)
-  let leaf_sym = FixedArray::make(active, 0)
-  for i, entry in sorted {
-    leaf_freq[i] = entry.0
-    leaf_sym[i] = entry.1
-  }
-  let total = 2 * active - 1
-  let parent = FixedArray::make(total, -1)
-  let node_freq = FixedArray::make(total, 0)
-  for i, f in leaf_freq {
-    node_freq[i] = f
-  }
-  let mut lp = 0
-  let mut ip = active
-  let mut nn = active
-  for _merge_step in 0..<(active - 1) {
-    let left = if lp < active &&
-      (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
-      let r = lp
-      lp += 1
-      r
-    } else {
-      let r = ip
-      ip += 1
-      r
-    }
-    let right = if lp < active &&
-      (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
-      let r = lp
-      lp += 1
-      r
-    } else {
-      let r = ip
-      ip += 1
-      r
-    }
-    node_freq[nn] = node_freq[left] + node_freq[right]
-    parent[left] = nn
-    parent[right] = nn
-    nn += 1
-  }
-  let depths = FixedArray::make(total, 0)
-  for i = total - 1; i >= 0; i = i - 1 {
-    if parent[i] >= 0 {
-      depths[i] = depths[parent[i]] + 1
-    }
-  }
-  for i, sym in leaf_sym {
-    bl[sym] = depths[i]
-  }
-  let mut needs_limit = false
-  for _, b in bl {
-    if b > max_bits {
-      needs_limit = true
-      break
-    }
-  }
-  if needs_limit {
-    // Count code lengths
-    let counts = FixedArray::make(max_bits + 1, 0)
-    for _, b in bl {
-      if b > 0 {
-        if b > max_bits {
-          counts[max_bits] += 1
-        } else {
-          counts[b] += 1
-        }
+  // Retry with increasing count_limit until the tree fits in max_bits.
+  // This mirrors the Go/C brotli reference encoder (createHuffmanTree).
+  // When depths exceed max_bits, we inflate low frequencies and rebuild,
+  // which produces a more balanced (shallower) tree.
+  let mut count_limit = 1
+  while count_limit < 0x7FFFFFFF {
+    let sorted = FixedArray::make(active, (0, 0))
+    let mut idx = 0
+    for i, f in freqs {
+      if f > 0 {
+        let clamped = if f < count_limit { count_limit } else { f }
+        sorted[idx] = (clamped, i)
+        idx += 1
       }
     }
-    // Clamp in bl array
-    for i, b in bl {
-      if b > max_bits {
-        bl[i] = max_bits
-      }
-    }
-    // Compute overflow: how much over the Kraft budget we are
-    let target = 1 << max_bits
-    let mut kraft = 0
-    for len = 1; len <= max_bits; len = len + 1 {
-      kraft += counts[len] * (1 << (max_bits - len))
-    }
-    let mut overflow = kraft - target
-    // Remove overflow by moving symbols to longer lengths.
-    // Process from the longest lengths downward: when we move a symbol
-    // from length L to L+1, we free 2^(max_bits-L) - 2^(max_bits-L-1) =
-    // 2^(max_bits-L-1) worth of code space.
-    // But we can't go beyond max_bits, so when L = max_bits-1, we move
-    // symbols from max_bits-1 to max_bits.
-    overflow = overflow >> 1
-    for len = max_bits - 1; len >= 1 && overflow > 0; len = len - 1 {
-      // How many symbols at this length can we demote?
-      let can_move = if counts[len] < overflow { counts[len] } else { overflow }
-      if can_move > 0 {
-        counts[len] -= can_move
-        counts[len + 1] += can_move
-        overflow -= can_move
-      }
-      // Each remaining overflow at this level doubles in significance
-      // when we go to shorter lengths
-      overflow = overflow << 1
-    }
-    // Reassign bl values based on counts, longest codes first.
-    // Collect active symbols sorted by their current depth (descending)
-    // so the deepest (least frequent) symbols get the longest new codes.
-    let syms_by_depth : Array[(Int, Int)] = [] // (depth, symbol_index)
-    for i in 0..<n {
-      if bl[i] > 0 {
-        syms_by_depth.push((bl[i], i))
-      }
-    }
-    // Sort descending by depth
-    for i in 1..<syms_by_depth.length() {
-      let key = syms_by_depth[i]
+    for i in 1..<active {
+      let key = sorted[i]
       let mut j = i - 1
-      while j >= 0 && syms_by_depth[j].0 < key.0 {
-        syms_by_depth[j + 1] = syms_by_depth[j]
+      while j >= 0 && sorted[j].0 > key.0 {
+        sorted[j + 1] = sorted[j]
         j -= 1
       }
-      syms_by_depth[j + 1] = key
+      sorted[j + 1] = key
     }
-    // Assign new lengths from longest to shortest
-    let mut len = max_bits
-    let mut remaining = counts[len]
-    for k in 0..<syms_by_depth.length() {
-      while remaining == 0 {
-        len -= 1
-        if len <= 0 {
-          break
-        }
-        remaining = counts[len]
+    let leaf_freq = FixedArray::make(active, 0)
+    let leaf_sym = FixedArray::make(active, 0)
+    for i, entry in sorted {
+      leaf_freq[i] = entry.0
+      leaf_sym[i] = entry.1
+    }
+    let total = 2 * active - 1
+    let parent = FixedArray::make(total, -1)
+    let node_freq = FixedArray::make(total, 0)
+    for i, f in leaf_freq {
+      node_freq[i] = f
+    }
+    let mut lp = 0
+    let mut ip = active
+    let mut nn = active
+    for _merge_step in 0..<(active - 1) {
+      let left = if lp < active &&
+        (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
+        let r = lp
+        lp += 1
+        r
+      } else {
+        let r = ip
+        ip += 1
+        r
       }
-      bl[syms_by_depth[k].1] = len
-      remaining -= 1
+      let right = if lp < active &&
+        (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
+        let r = lp
+        lp += 1
+        r
+      } else {
+        let r = ip
+        ip += 1
+        r
+      }
+      node_freq[nn] = node_freq[left] + node_freq[right]
+      parent[left] = nn
+      parent[right] = nn
+      nn += 1
     }
+    let depths = FixedArray::make(total, 0)
+    for i = total - 1; i >= 0; i = i - 1 {
+      if parent[i] >= 0 {
+        depths[i] = depths[parent[i]] + 1
+      }
+    }
+    for i in 0..<n {
+      bl[i] = 0
+    }
+    let mut fits = true
+    for i, sym in leaf_sym {
+      bl[sym] = depths[i]
+      if depths[i] > max_bits {
+        fits = false
+      }
+    }
+    if fits {
+      break
+    }
+    // Double the count_limit and retry
+    count_limit = count_limit * 2
   }
   bl
 }
@@ -777,11 +712,12 @@ fn rebuild_simple_codes(
         0
       }
       if tree_select == 0 {
-        // All depth 2
-        codes[syms[0]] = (0 << 8) | 2
-        codes[syms[1]] = (1 << 8) | 2
-        codes[syms[2]] = (2 << 8) | 2
-        codes[syms[3]] = (3 << 8) | 2
+        // All depth 2. Code assignment must match decoder's table layout:
+        //   table[0]=syms[0], table[1]=syms[2], table[2]=syms[1], table[3]=syms[3]
+        codes[syms[0]] = (0 << 8) | 2  // code 00
+        codes[syms[1]] = (2 << 8) | 2  // code 10 (write_bits(2,2) → index 2)
+        codes[syms[2]] = (1 << 8) | 2  // code 01 (write_bits(1,2) → index 1)
+        codes[syms[3]] = (3 << 8) | 2  // code 11
       } else {
         // sym[0] depth 1, sym[1] depth 2, sym[2] depth 3, sym[3] depth 3
         codes[syms[0]] = (0 << 8) | 1        // 0, 1 bit
@@ -1010,6 +946,17 @@ fn write_complex_prefix(
       num_codes += 1
     }
   }
+  // When there is only one non-zero CL code-length, the decoder builds a
+  // Huffman table where that symbol has depth 0 (always selected, 0 bits).
+  // Match this by setting depth to 0 before building codes for RLE output.
+  if num_codes == 1 {
+    for j in 0..<18 {
+      if cl_lens[j] > 0 {
+        cl_lens[j] = 0
+        break
+      }
+    }
+  }
   let cl_codes = brotli_build_codes(cl_lens)
   for j in 0..<cl_syms.length() {
     let sym = cl_syms[j]
@@ -1122,6 +1069,7 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
         cmd_iac[ci] = iac
         cmd_iev[ci] = iev
         cmd_ieb[ci] = ieb
+        cmd_dc[ci] = -1 // No distance for insert-only commands
         ci += 1
       }
     }

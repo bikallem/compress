@@ -42,6 +42,10 @@ func main() {
 		"repeated":   bytes.Repeat([]byte("abcdefghijklmnop"), 256),  // 4KB repeated
 		"zeros_10k":  make([]byte, 10240),                            // 10KB zeros
 		"mixed_1k":   generateMixed(1024),                            // 1KB mixed content
+		"text_1kb":   genText(1024),
+		"text_10kb":  genText(10240),
+		"text_100kb": genText(102400),
+		"text_1mb":   genText(1048576),
 	}
 
 	// Write input files
@@ -244,6 +248,15 @@ func main() {
 	manifest, _ := json.MarshalIndent(entries, "", "  ")
 	os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o644)
 	fmt.Printf("Generated %d golden files in %s\n", len(entries), dir)
+}
+
+func genText(size int) []byte {
+	phrase := []byte("The quick brown fox jumps over the lazy dog. ")
+	data := make([]byte, size)
+	for i := range data {
+		data[i] = phrase[i%len(phrase)]
+	}
+	return data
 }
 
 func generateMixed(size int) []byte {

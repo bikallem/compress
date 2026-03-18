@@ -51,7 +51,19 @@ run_tests() {
     fi
 
     step "Running Go parity tests"
-    (cd "$ROOT/tools" && go test -run 'TestGoDecompressMoonBit|TestBitIdenticalOutput|TestParitySummary' -v -count=1 -timeout 120s)
+    # Run decompression and bit-identical tests quietly (show only failures)
+    local test_output
+    test_output="$(cd "$ROOT/tools" && go test -run 'TestGoDecompressMoonBit|TestBitIdenticalOutput' -count=1 -timeout 300s 2>&1)" || true
+    if echo "$test_output" | grep -q "^FAIL"; then
+        fail "Some parity tests failed:"
+        echo "$test_output" | grep -E "FAIL"
+    else
+        ok "All decompression and bit-identity checks passed"
+    fi
+
+    # Run summary test and show its formatted output
+    step "Compression ratio report"
+    (cd "$ROOT/tools" && go test -run 'TestParitySummary' -v -count=1 -timeout 300s 2>&1) | grep -vE "^(=== RUN|--- PASS|--- FAIL|PASS$|FAIL$|ok )"
 }
 
 CMD="${1:-all}"

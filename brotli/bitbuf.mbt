@@ -140,7 +140,8 @@ fn BitWriter::write_bits(self : BitWriter, val : Int, n : Int) -> Unit {
   if n == 0 {
     return
   }
-  self.bits = self.bits | (val.reinterpret_as_uint().to_uint64() << self.n_bits)
+  let mask = (1UL << n) - 1UL
+  self.bits = self.bits | ((val.reinterpret_as_uint().to_uint64() & mask) << self.n_bits)
   self.n_bits += n
   if self.n_bits >= 8 {
     self.flush()

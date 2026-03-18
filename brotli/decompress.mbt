@@ -650,12 +650,23 @@ fn decode_simple_prefix(br : BitReader, alphabet_size : Int) -> HuffTree {
       { table, max_bits: 2 }
     }
     _ => {
+      // Sort 4 symbols (needed for correct table layout)
+      for i in 0..<3 {
+        for k in (i + 1)..<4 {
+          if syms[k] < syms[i] {
+            let t = syms[k]
+            syms[k] = syms[i]
+            syms[i] = t
+          }
+        }
+      }
       let tree_select = br.read_bits(1)
       if tree_select == 0 {
         let table = FixedArray::make(4, 0)
+        // Match Go decoder layout: table[0]=s0, table[1]=s2, table[2]=s1, table[3]=s3
         table[0] = (syms[0] << 8) | 2
-        table[1] = (syms[1] << 8) | 2
-        table[2] = (syms[2] << 8) | 2
+        table[1] = (syms[2] << 8) | 2
+        table[2] = (syms[1] << 8) | 2
         table[3] = (syms[3] << 8) | 2
         { table, max_bits: 2 }
       } else {

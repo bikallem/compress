@@ -114,7 +114,10 @@ fn main {
   }
   let golden_dir = if args.length() > 2 { args[2] } else { "testdata/golden" }
   // Input names and files (must match Go generator)
-  let input_names = ["empty", "hello", "repeated", "zeros_10k", "mixed_1k"]
+  let input_names = [
+    "empty", "hello", "repeated", "zeros_10k", "mixed_1k",
+    "text_1kb", "text_10kb", "text_100kb", "text_1mb",
+  ]
   let entries : Array[Entry] = []
   // Read inputs from existing golden input files
   let inputs : Array[(String, Bytes)] = []

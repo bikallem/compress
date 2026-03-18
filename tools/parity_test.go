@@ -219,72 +219,127 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 	return result
 }
 
-// TestParitySummary prints an overview of all parity results.
+// TestParitySummary prints an overview of all parity results with compression ratio details.
 func TestParitySummary(t *testing.T) {
 	entries := loadMBManifest(t)
 	mbDir := filepath.Join("..", "testdata", "moonbit_golden")
 	goDir := filepath.Join("..", "testdata", "golden")
 
-	type Result struct {
-		identical  int
-		compatible int
-		failed     int
-		noGoGolden int
+	type CaseResult struct {
+		name       string
+		inputName  string
+		mbSize     int
+		goSize     int
+		identical  bool
+		compatible bool
+		failed     bool
+		noGoGolden bool
 	}
-	results := make(map[string]*Result)
+
+	// Group results by algorithm, preserving order
+	algoOrder := []string{}
+	algoSeen := map[string]bool{}
+	algoResults := make(map[string][]CaseResult)
 
 	for _, e := range entries {
-		r, ok := results[e.Algorithm]
-		if !ok {
-			r = &Result{}
-			results[e.Algorithm] = r
+		if !algoSeen[e.Algorithm] {
+			algoSeen[e.Algorithm] = true
+			algoOrder = append(algoOrder, e.Algorithm)
 		}
+
+		cr := CaseResult{name: e.Name, inputName: e.InputFile}
 
 		mbCompressed, err := os.ReadFile(filepath.Join(mbDir, e.OutputFile))
 		if err != nil {
-			r.failed++
+			cr.failed = true
+			algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 			continue
 		}
+		cr.mbSize = len(mbCompressed)
 
 		goCompressed, err := os.ReadFile(filepath.Join(goDir, e.OutputFile))
 		if err != nil {
-			// No Go golden (e.g., bzip2 -- Go has no compressor)
+			cr.noGoGolden = true
 			// Check if Go can decompress MoonBit output
 			input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
 			if ierr == nil {
 				decomp := goDecompressSafe(e.Algorithm, mbCompressed)
 				if decomp != nil && bytes.Equal(decomp, input) {
-					r.compatible++
+					cr.compatible = true
 				} else {
-					r.failed++
+					cr.failed = true
 				}
 			}
-			r.noGoGolden++
+			algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 			continue
 		}
+		cr.goSize = len(goCompressed)
 
 		if bytes.Equal(mbCompressed, goCompressed) {
-			r.identical++
+			cr.identical = true
 		} else {
-			// Check semantic compatibility
 			input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
 			if ierr != nil {
-				r.failed++
+				cr.failed = true
+				algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 				continue
 			}
 			mbDecomp := goDecompressSafe(e.Algorithm, mbCompressed)
 			if mbDecomp != nil && bytes.Equal(mbDecomp, input) {
-				r.compatible++
+				cr.compatible = true
 			} else {
-				r.failed++
+				cr.failed = true
+			}
+		}
+		algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
+	}
+
+	// Print per-algorithm detail report
+	totalIdentical, totalCompatible, totalFailed, totalAll := 0, 0, 0, 0
+	for _, algo := range algoOrder {
+		cases := algoResults[algo]
+		fmt.Printf("\n=== %s Parity ===\n", algo)
+		for _, c := range cases {
+			totalAll++
+			label := c.name
+			switch {
+			case c.failed:
+				totalFailed++
+				fmt.Printf("  %-40s  FAILED\n", label)
+			case c.identical:
+				totalIdentical++
+				fmt.Printf("  %-40s  MB %s vs Go %s (identical)\n",
+					label, humanSize(c.mbSize), humanSize(c.goSize))
+			case c.noGoGolden && c.compatible:
+				totalCompatible++
+				fmt.Printf("  %-40s  MB %s (no Go golden, decompresses OK)\n",
+					label, humanSize(c.mbSize))
+			case c.compatible:
+				totalCompatible++
+				ratio := float64(c.mbSize) / float64(c.goSize)
+				fmt.Printf("  %-40s  MB %s vs Go %s (%.2fx)\n",
+					label, humanSize(c.mbSize), humanSize(c.goSize), ratio)
 			}
 		}
 	}
 
-	t.Log("\n=== Parity Summary ===")
-	for algo, r := range results {
-		t.Logf("%-10s  identical: %d  compatible: %d  failed: %d  no-go-golden: %d",
-			algo, r.identical, r.compatible, r.failed, r.noGoGolden)
+	// Print totals
+	fmt.Printf("\n=== Totals ===\n")
+	fmt.Printf("  Identical:  %d/%d\n", totalIdentical, totalAll)
+	fmt.Printf("  Compatible: %d/%d\n", totalCompatible, totalAll)
+	fmt.Printf("  Failed:     %d/%d\n", totalFailed, totalAll)
+}
+
+func humanSize(n int) string {
+	switch {
+	case n >= 1048576:
+		return fmt.Sprintf("%.0fKB", float64(n)/1024)
+	case n >= 10240:
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	case n >= 1024:
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	default:
+		return fmt.Sprintf("%dB", n)
 	}
 }
 
