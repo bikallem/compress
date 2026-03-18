@@ -133,6 +133,12 @@ BENCH_PKGS=(
   bikallem/compress/benchmarks/bzip2-1mb
   bikallem/compress/benchmarks/bzip2-10mb
   bikallem/compress/benchmarks/bzip2-100mb
+  bikallem/compress/benchmarks/brotli-1kb
+  bikallem/compress/benchmarks/brotli-10kb
+  bikallem/compress/benchmarks/brotli-100kb
+  bikallem/compress/benchmarks/brotli-1mb
+  bikallem/compress/benchmarks/brotli-10mb
+  bikallem/compress/benchmarks/brotli-100mb
 )
 
 echo "=== Running MoonBit benchmarks (current) ==="
