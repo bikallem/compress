@@ -10,7 +10,7 @@ fn bench_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
 }
 
 ///|
-fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
+fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit {
   let compressed = compress_setup(size)
   b.bench(name~, fn() { b.keep(try! @br.decompress(compressed)) })
 }
