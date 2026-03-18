@@ -5,13 +5,11 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   let lvl = compression_level_to_int(level)
   let src = data[:]
   let src_len = data.length()
-  if src_len == 0 {
-    return compress_empty()
+  match src_len {
+    0 => compress_empty()
+    _ if lvl == 0 || src_len < 8 => compress_uncompressed(src, src_len)
+    _ => compress_lz77(src, src_len, lvl)
   }
-  if lvl == 0 || src_len < 8 {
-    return compress_uncompressed(src, src_len)
-  }
-  compress_lz77(src, src_len, lvl)
 }
 
 ///|
@@ -145,14 +143,12 @@ fn count_match(src : BytesView, a : Int, b : Int, max_len : Int) -> Int {
 
 ///|
 fn chain_depth(level : Int) -> Int {
-  if level <= 3 {
-    8
-  } else if level <= 5 {
-    16
-  } else if level <= 7 {
-    32
-  } else {
-    64
+  match level {
+    0 | 1 | 2 | 3 => 8
+    4 | 5 => 16
+    6 | 7 => 32
+    8 | 9 | 10 | 11 => 64
+    _ => 64 // unreachable: level is clamped to 0-11
   }
 }
 
@@ -327,7 +323,7 @@ fn lz77_find_matches_chain(
 ///|
 fn encode_insert_len(insert_len : Int) -> (Int, Int, Int) {
   let mut code = 0
-  for i = 0; i < 24; i = i + 1 {
+  for i in 0..<24 {
     if i == 23 || _insert_baselines[i + 1] > insert_len {
       code = i
       break
@@ -339,7 +335,7 @@ fn encode_insert_len(insert_len : Int) -> (Int, Int, Int) {
 ///|
 fn encode_copy_len(copy_len : Int) -> (Int, Int, Int) {
   let mut code = 0
-  for i = 0; i < 24; i = i + 1 {
+  for i in 0..<24 {
     if i == 23 || _copy_baselines[i + 1] > copy_len {
       code = i
       break
@@ -366,7 +362,7 @@ fn insert_copy_combined(insert_code : Int, copy_code : Int) -> Int {
     (1, 2) => 512
     (2, 1) => 576
     (2, 2) => 640
-    _ => 128
+    _ => 128 // unreachable: ic and cc are both 0-2
   }
   base + (ir << 3) + cr
 }
@@ -464,7 +460,7 @@ fn brotli_code_lengths(
   let mut lp = 0
   let mut ip = active
   let mut nn = active
-  for _ in 0..<(active - 1) {
+  for _merge_step in 0..<(active - 1) {
     let left = if lp < active &&
       (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
       let r = lp
@@ -756,7 +752,8 @@ fn write_cl_length(bw : BitWriter, v : Int) -> Unit {
     3 => bw.write_bits(2, 2)   // 10
     4 => bw.write_bits(1, 2)   // 01
     5 => bw.write_bits(15, 4)  // 1111
-    _ => bw.write_bits(0, 2)
+    6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 => bw.write_bits(0, 2)
+    _ => bw.write_bits(0, 2) // unreachable for valid code lengths
   }
 }
 
@@ -1285,7 +1282,7 @@ fn cluster_contexts(
       if not(alive[i]) {
         continue
       }
-      for j = i + 1; j < n; j = j + 1 {
+      for j in (i + 1)..<n {
         if not(alive[j]) {
           continue
         }
@@ -1386,7 +1383,7 @@ fn encode_wbits(bw : BitWriter, wbits : Int) -> Unit {
     22 => bw.write_bits(0b1011, 4)
     23 => bw.write_bits(0b1101, 4)
     24 => bw.write_bits(0b1111, 4)
-    _ => bw.write_bits(0, 1)
+    _ => bw.write_bits(0, 1) // unreachable for valid WBITS values
   }
 }
 

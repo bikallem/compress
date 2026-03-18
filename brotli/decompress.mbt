@@ -20,13 +20,13 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     let mnibbles_minus_4 = br.read_bits(2)
     let mnibbles = mnibbles_minus_4 + 4
     if mnibbles == 7 {
-      let _reserved = br.read_bool()
+      br.read_bits(1) |> ignore // reserved bit (must be zero per RFC 7932)
       let mskip_bytes = br.read_bits(2)
       if mskip_bytes > 0 {
         let skip_len_bits = mskip_bytes * 8
-        let _skip_len = br.read_bits(skip_len_bits)
+        br.read_bits(skip_len_bits) |> ignore
         if br.n_bits % 8 != 0 {
-          let _ = br.read_bits(br.n_bits % 8)
+          br.read_bits(br.n_bits % 8) |> ignore
         }
       }
       continue
@@ -40,9 +40,9 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     let is_uncompressed = br.read_bool()
     if is_uncompressed {
       if br.n_bits % 8 != 0 {
-        let _ = br.read_bits(br.n_bits % 8)
+        br.read_bits(br.n_bits % 8) |> ignore
       }
-      for _ in 0..<mlen {
+      for _byte_idx in 0..<mlen {
         sink.write_byte(br.read_bits(8).to_byte())
       }
       continue
@@ -242,7 +242,7 @@ fn decode_compressed_block(
     } else {
       insert_len
     }
-    for _ in 0..<ilimit {
+    for _lit_idx in 0..<ilimit {
       // Check for literal block type switch
       if nbltypesl > 1 && lit_block_remaining == 0 {
         let new_type = read_huffman_symbol(br, lit_btype_tree)
@@ -392,7 +392,7 @@ fn decode_context_map(
     } else if sym <= rlemax {
       // Run-length of zeros: (1 << sym) zeros
       let run = 1 << sym
-      for _ in 0..<run {
+      for _run_idx in 0..<run {
         if i < map_size {
           cmap[i] = 0
           i += 1
@@ -457,7 +457,8 @@ fn decode_insert_copy(
     7 => (16, 0, true)
     8 => (8, 16, true)
     9 => (16, 8, true)
-    _ => (16, 16, true)
+    10 => (16, 16, true)
+    _ => (16, 16, true) // unreachable: block is code >> 6 with code 0-703
   }
   let insert_code = ib + ir
   let copy_code = cb + cr
@@ -503,7 +504,8 @@ fn decode_distance(
       12 => (1, -2)
       13 => (1, 2)
       14 => (2, -1)
-      _ => (2, 1)
+      15 => (2, 1)
+      _ => (2, 1) // unreachable: codes 4-15 are exhaustively listed
     }
     let d = dist_rb[rb_idx] + delta
     if d < 1 { 1 } else { d }
@@ -562,7 +564,8 @@ fn decode_block_count(br : BitReader, tree : HuffTree) -> Int {
     22 => (2289, 11)
     23 => (4337, 12)
     24 => (8433, 13)
-    _ => (16625, 24)
+    25 => (16625, 24)
+    _ => (16625, 24) // unreachable: block count codes are 0-25
   }
   base + br.read_bits(extra)
 }
@@ -690,7 +693,7 @@ fn decode_complex_prefix(
   let cl_lengths = FixedArray::make(18, 0)
   let mut space = 32
   let mut num_codes = 0
-  for j = hskip; j < 18; j = j + 1 {
+  for j in hskip..<18 {
     if num_codes >= 2 && space == 0 {
       break
     }
@@ -737,7 +740,7 @@ fn decode_complex_prefix(
       }
       repeat += repeat_delta
       let delta = repeat - old_repeat
-      for _ in 0..<delta {
+      for _repeat_idx in 0..<delta {
         if i < alphabet_size {
           code_lengths[i] = repeat_code_len
           space -= 32768 >> repeat_code_len
@@ -759,7 +762,7 @@ fn decode_complex_prefix(
       }
       repeat += repeat_delta
       let delta = repeat - old_repeat
-      for _ in 0..<delta {
+      for _zero_idx in 0..<delta {
         if i < alphabet_size {
           code_lengths[i] = 0
           i += 1
@@ -781,7 +784,7 @@ fn read_cl_code_length(br : BitReader) -> Int {
     3 | 11 => (2, 3)
     7 => (1, 4)
     15 => (5, 4)
-    _ => (0, 2)
+    _ => (0, 2) // unreachable: peek is masked to 4 bits (0-15)
   }
   br.bits = br.bits >> length
   br.n_bits -= length
