@@ -92,17 +92,37 @@ fn decode_compressed_block(
   mlen : Int,
   sink : @output_sink.OutputSink,
 ) -> Unit {
-  let _nbltypesl = decode_block_type_count(br)
+  let nbltypesl = decode_block_type_count(br)
   let _nbltypesi = decode_block_type_count(br)
   let _nbltypesd = decode_block_type_count(br)
   let npostfix = br.read_bits(2)
   let ndirect_raw = br.read_bits(4)
   let ndirect = ndirect_raw << npostfix
-  let _context_mode = br.read_bits(2)
-  let _ntreesl = decode_block_type_count(br)
+  // Read context modes (one per literal block type, 2 bits each)
+  let context_modes = FixedArray::make(nbltypesl, 0)
+  for i in 0..<nbltypesl {
+    context_modes[i] = br.read_bits(2)
+  }
+  let ntreesl = decode_block_type_count(br)
+
+  // Read context map for literals (RFC 7932: comes after NTREESL, before NTREESD)
+  let cmap_size = 64 * nbltypesl
+  let cmap_l = if ntreesl > 1 {
+    decode_context_map(br, cmap_size, ntreesl)
+  } else {
+    FixedArray::make(cmap_size, 0)
+  }
+
   let _ntreesd = decode_block_type_count(br)
 
-  let lit_tree = decode_prefix_code(br, 256)
+  // Read NTREESL literal prefix codes
+  let lit_trees : FixedArray[HuffTree] = FixedArray::make(ntreesl, {
+    table: FixedArray::make(1, 0),
+    max_bits: 0,
+  })
+  for i in 0..<ntreesl {
+    lit_trees[i] = decode_prefix_code(br, 256)
+  }
   let iac_tree = decode_prefix_code(br, 704)
   let dist_alphabet = 16 + ndirect + (48 << npostfix)
   let dist_tree = decode_prefix_code(br, dist_alphabet)
@@ -126,6 +146,17 @@ fn decode_compressed_block(
       insert_len
     }
     for _ in 0..<ilimit {
+      // Compute context ID from previous 2 bytes
+      let lit_tree = if ntreesl > 1 {
+        let pos = start_pos + produced
+        let p1 = if pos > 0 { sink.get_byte(pos - 1).to_int() } else { 0 }
+        let p2 = if pos > 1 { sink.get_byte(pos - 2).to_int() } else { 0 }
+        let context_id = compute_context_id(context_modes[0], p1, p2)
+        let tree_idx = cmap_l[context_id]
+        lit_trees[tree_idx]
+      } else {
+        lit_trees[0]
+      }
       let lit = read_huffman_symbol(br, lit_tree)
       sink.write_byte(lit.to_byte())
       produced += 1
@@ -161,6 +192,84 @@ fn decode_compressed_block(
       produced += 1
     }
   }
+}
+
+///|
+/// Compute context ID from previous 2 bytes based on context mode.
+/// RFC 7932 Section 7.1.
+fn compute_context_id(mode : Int, p1 : Int, p2 : Int) -> Int {
+  match mode {
+    0 => p1 & 0x3f // LSB6
+    1 => p1 >> 2   // MSB6
+    _ => {
+      // For modes 2 (UTF8) and 3 (Signed), fall back to LSB6
+      // since we don't use these modes in the encoder.
+      let _ = p2
+      p1 & 0x3f
+    }
+  }
+}
+
+///|
+/// Decode a context map (RFC 7932 Section 7.3).
+fn decode_context_map(
+  br : BitReader,
+  map_size : Int,
+  num_trees : Int,
+) -> FixedArray[Int] {
+  let cmap = FixedArray::make(map_size, 0)
+  // Read RLEMAX
+  let rlemax_flag = br.read_bits(1)
+  let rlemax = if rlemax_flag == 1 {
+    br.read_bits(4) + 1
+  } else {
+    0
+  }
+  // Alphabet size for context map = rlemax + num_trees
+  let alphabet = rlemax + num_trees
+  let cm_tree = decode_prefix_code(br, alphabet)
+  let mut i = 0
+  while i < map_size {
+    let sym = read_huffman_symbol(br, cm_tree)
+    if sym == 0 {
+      cmap[i] = 0
+      i += 1
+    } else if sym <= rlemax {
+      // Run-length of zeros: (1 << sym) zeros
+      let run = 1 << sym
+      for _ in 0..<run {
+        if i < map_size {
+          cmap[i] = 0
+          i += 1
+        }
+      }
+    } else {
+      cmap[i] = sym - rlemax
+      i += 1
+    }
+  }
+  // Read IMTF flag
+  let imtf = br.read_bits(1)
+  if imtf == 1 {
+    // Apply inverse move-to-front transform
+    let mtf = FixedArray::make(num_trees, 0)
+    for j in 0..<num_trees {
+      mtf[j] = j
+    }
+    for j in 0..<map_size {
+      let idx = cmap[j]
+      cmap[j] = mtf[idx]
+      if idx > 0 {
+        let val = mtf[idx]
+        // Shift entries down
+        for k = idx; k > 0; k = k - 1 {
+          mtf[k] = mtf[k - 1]
+        }
+        mtf[0] = val
+      }
+    }
+  }
+  cmap
 }
 
 ///|

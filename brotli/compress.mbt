@@ -58,7 +58,7 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   } else {
     lz77_find_matches_chain(src, src_len, level)
   }
-  let compressed = encode_compressed_metablock(src, src_len, cmds)
+  let compressed = encode_compressed_metablock(src, src_len, cmds, level)
   // If compressed is larger than uncompressed, fall back
   let uncompressed_size = src_len + 16 // rough overhead estimate
   if compressed.length() > uncompressed_size {
@@ -938,6 +938,7 @@ fn encode_compressed_metablock(
   src : BytesView,
   src_len : Int,
   cmds : Array[BrotliCmd],
+  level : Int,
 ) -> Bytes {
   let bw = BitWriter::new(src_len * 2 + 256)
   encode_wbits(bw, 22)
@@ -947,16 +948,7 @@ fn encode_compressed_metablock(
   bw.write_bits(mnibbles - 4, 2)
   bw.write_bits(src_len - 1, mnibbles * 4)
 
-  bw.write_bits(0, 1) // NBLTYPESL=1
-  bw.write_bits(0, 1) // NBLTYPESI=1
-  bw.write_bits(0, 1) // NBLTYPESD=1
-  bw.write_bits(0, 2) // NPOSTFIX=0
-  bw.write_bits(0, 4) // NDIRECT=0
-  bw.write_bits(0, 2) // Context mode LSB6
-  bw.write_bits(0, 1) // NTREESL=1
-  bw.write_bits(0, 1) // NTREESD=1
-
-  let lit_freqs = FixedArray::make(256, 0)
+  // Pre-encode commands (insert/copy/distance codes)
   let mut max_iac = 0
   let mut max_dist = 0
 
@@ -970,9 +962,6 @@ fn encode_compressed_metablock(
   let cmd_deb : Array[Int] = []
 
   for cmd in cmds {
-    for j in 0..<cmd.insert_len {
-      lit_freqs[src[cmd.insert_pos + j].to_int()] += 1
-    }
     if cmd.copy_len > 0 {
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
       let (cc, cev, ceb) = encode_copy_len(cmd.copy_len)
@@ -993,13 +982,9 @@ fn encode_compressed_metablock(
       cmd_dev.push(dev)
       cmd_deb.push(deb)
     } else if cmd.insert_len > 0 {
-      // Insert-only (trailing literals): encode with copy_len=2 (minimum).
-      // The decoder will truncate the copy at the meta-block boundary.
       let (ic, iev, ieb) = encode_insert_len(cmd.insert_len)
-      let cc = 0 // copy_code=0 means copy_len=2
+      let cc = 0
       if ic < 8 {
-        // Small insert: use implicit last distance (IAC < 128, no
-        // explicit distance needed).
         let iac = insert_copy_implicit(ic, cc)
         if iac > max_iac {
           max_iac = iac
@@ -1009,12 +994,10 @@ fn encode_compressed_metablock(
         cmd_ieb.push(ieb)
         cmd_cev.push(0)
         cmd_ceb.push(0)
-        cmd_dc.push(-1) // no distance code
+        cmd_dc.push(-1)
         cmd_dev.push(0)
         cmd_deb.push(0)
       } else {
-        // Large insert: must use explicit distance.
-        // Use distance code 0 (last distance from ring buffer).
         let iac = insert_copy_combined(ic, cc)
         if iac > max_iac {
           max_iac = iac
@@ -1045,20 +1028,57 @@ fn encode_compressed_metablock(
     }
   }
 
-  let lit_lengths = brotli_code_lengths(lit_freqs, 15)
-  let lit_codes = brotli_build_codes(lit_lengths)
+  // Decide whether to use context modeling
+  let use_context = level >= 5 && src_len >= 256
+
+  // Compute context map and per-tree literal histograms
+  let (ntreesl, cmap, tree_freqs) = build_context_model(
+    src, cmds, use_context,
+  )
+
+  // ---- Write meta-block header in correct RFC 7932 order ----
+
+  bw.write_bits(0, 1) // NBLTYPESL=1
+  bw.write_bits(0, 1) // NBLTYPESI=1
+  bw.write_bits(0, 1) // NBLTYPESD=1
+  bw.write_bits(0, 2) // NPOSTFIX=0
+  bw.write_bits(0, 4) // NDIRECT=0
+  bw.write_bits(0, 2) // Context mode LSB6 (mode 0) for block type 0
+
+  // NTREESL (VarLenUint8)
+  if ntreesl == 1 {
+    bw.write_bits(0, 1)
+  } else {
+    bw.write_bits(1, 1) // nonzero flag
+    bw.write_bits(0, 3) // nbits=0 → value=1 → NTREESL=2
+  }
+
+  // Context map for literals (only if NTREESL >= 2)
+  if ntreesl >= 2 {
+    encode_context_map(bw, cmap)
+  }
+
+  // NTREESD=1
+  bw.write_bits(0, 1)
+
+  // Write prefix codes: NTREESL literal trees, then IAC, then distance
+  let lit_codes_arr : Array[FixedArray[Int]] = []
+  for t in 0..<ntreesl {
+    let lengths = brotli_code_lengths(tree_freqs[t], 15)
+    let codes = brotli_build_codes(lengths)
+    encode_prefix_code(bw, lengths, 256, codes)
+    lit_codes_arr.push(codes)
+  }
+
   let iac_lengths = brotli_code_lengths(iac_freqs, 15)
   let iac_codes = brotli_build_codes(iac_lengths)
   let dist_lengths = brotli_code_lengths(dist_freqs, 15)
   let dist_codes = brotli_build_codes(dist_lengths)
-  // Note: encode_prefix_code rebuilds the codes array for simple
-  // prefix trees to match the spec's tree structure.
-
   let dist_alphabet = 16 + 48
-  encode_prefix_code(bw, lit_lengths, 256, lit_codes)
   encode_prefix_code(bw, iac_lengths, 704, iac_codes)
   encode_prefix_code(bw, dist_lengths, dist_alphabet, dist_codes)
 
+  // Write command data
   let mut ci = 0
   for cmd in cmds {
     if ci >= cmd_iac.length() {
@@ -1072,9 +1092,16 @@ fn encode_compressed_metablock(
       bw.write_bits(cmd_cev[ci], cmd_ceb[ci])
     }
     for j in 0..<cmd.insert_len {
-      write_symbol(bw, lit_codes, src[cmd.insert_pos + j].to_int())
+      if ntreesl > 1 {
+        let pos = cmd.insert_pos + j
+        let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
+        let ctx = p1 & 0x3f
+        let tree_idx = cmap[ctx]
+        write_symbol(bw, lit_codes_arr[tree_idx], src[pos].to_int())
+      } else {
+        write_symbol(bw, lit_codes_arr[0], src[cmd.insert_pos + j].to_int())
+      }
     }
-    // Only write distance code for explicit-distance commands (cmd_dc >= 0)
     if cmd_dc[ci] >= 0 {
       write_symbol(bw, dist_codes, cmd_dc[ci])
       if cmd_deb[ci] > 0 {
@@ -1084,6 +1111,222 @@ fn encode_compressed_metablock(
     ci += 1
   }
   bw.to_bytes()
+}
+
+///|
+/// Build context model for literals. Returns (ntreesl, context_map, tree_freqs).
+fn build_context_model(
+  src : BytesView,
+  cmds : Array[BrotliCmd],
+  use_context : Bool,
+) -> (Int, FixedArray[Int], Array[FixedArray[Int]]) {
+  if not(use_context) {
+    let lit_freqs = FixedArray::make(256, 0)
+    for cmd in cmds {
+      for j in 0..<cmd.insert_len {
+        lit_freqs[src[cmd.insert_pos + j].to_int()] += 1
+      }
+    }
+    return (1, FixedArray::make(64, 0), [lit_freqs])
+  }
+
+  // Build per-context literal histograms (64 contexts for LSB6 mode)
+  let ctx_hists : FixedArray[FixedArray[Int]] = FixedArray::make(
+    64,
+    FixedArray::make(0, 0),
+  )
+  for i in 0..<64 {
+    ctx_hists[i] = FixedArray::make(256, 0)
+  }
+  for cmd in cmds {
+    for j in 0..<cmd.insert_len {
+      let pos = cmd.insert_pos + j
+      let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
+      let ctx = p1 & 0x3f
+      ctx_hists[ctx][src[pos].to_int()] += 1
+    }
+  }
+
+  // Cluster 64 contexts into 2 groups
+  let cmap = cluster_contexts(ctx_hists, 2)
+
+  // Check if clustering produced a useful split (both trees must have data)
+  let mut has_tree0 = false
+  let mut has_tree1 = false
+  for cmd in cmds {
+    for j in 0..<cmd.insert_len {
+      let pos = cmd.insert_pos + j
+      let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
+      let ctx = p1 & 0x3f
+      if cmap[ctx] == 0 {
+        has_tree0 = true
+      } else {
+        has_tree1 = true
+      }
+      if has_tree0 && has_tree1 {
+        break
+      }
+    }
+    if has_tree0 && has_tree1 {
+      break
+    }
+  }
+
+  if not(has_tree0 && has_tree1) {
+    // All contexts map to one tree; fall back to single tree
+    let lit_freqs = FixedArray::make(256, 0)
+    for cmd in cmds {
+      for j in 0..<cmd.insert_len {
+        lit_freqs[src[cmd.insert_pos + j].to_int()] += 1
+      }
+    }
+    return (1, FixedArray::make(64, 0), [lit_freqs])
+  }
+
+  // Build per-tree histograms
+  let tree_freqs : Array[FixedArray[Int]] = [
+    FixedArray::make(256, 0),
+    FixedArray::make(256, 0),
+  ]
+  for cmd in cmds {
+    for j in 0..<cmd.insert_len {
+      let pos = cmd.insert_pos + j
+      let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
+      let ctx = p1 & 0x3f
+      let tree_idx = cmap[ctx]
+      tree_freqs[tree_idx][src[pos].to_int()] += 1
+    }
+  }
+  (2, cmap, tree_freqs)
+}
+
+///|
+/// Cluster 64 context histograms into num_clusters groups.
+/// Returns a context map (64 entries, each mapping to a cluster index 0..num_clusters-1).
+fn cluster_contexts(
+  ctx_hists : FixedArray[FixedArray[Int]],
+  num_clusters : Int,
+) -> FixedArray[Int] {
+  let n = 64
+  // cluster_id[i] = which cluster context i belongs to
+  let cluster_id = FixedArray::make(n, 0)
+  for i in 0..<n {
+    cluster_id[i] = i
+  }
+  // Merged histogram per cluster
+  let merged : Array[FixedArray[Int]] = []
+  for i in 0..<n {
+    let h = FixedArray::make(256, 0)
+    for j in 0..<256 {
+      h[j] = ctx_hists[i][j]
+    }
+    merged.push(h)
+  }
+  // Total count per cluster
+  let counts = FixedArray::make(n, 0)
+  for i in 0..<n {
+    let mut total = 0
+    for j in 0..<256 {
+      total += ctx_hists[i][j]
+    }
+    counts[i] = total
+  }
+  // alive[i] = true if cluster i still exists
+  let alive = FixedArray::make(n, true)
+  let mut num_alive = n
+
+  // Greedily merge the two most similar clusters until we have num_clusters
+  while num_alive > num_clusters {
+    // Find the pair with minimum merge cost
+    let mut best_a = -1
+    let mut best_b = -1
+    let mut best_cost = 0x7fffffff // large value
+
+    // For efficiency, find the two smallest clusters to merge
+    // (simplification: merge the two clusters with smallest combined count)
+    for i in 0..<n {
+      if not(alive[i]) {
+        continue
+      }
+      for j = i + 1; j < n; j = j + 1 {
+        if not(alive[j]) {
+          continue
+        }
+        let cost = counts[i] + counts[j]
+        if cost < best_cost {
+          best_cost = cost
+          best_a = i
+          best_b = j
+        }
+      }
+    }
+    if best_a < 0 {
+      break
+    }
+    // Merge cluster best_b into best_a
+    for j in 0..<256 {
+      merged[best_a][j] += merged[best_b][j]
+    }
+    counts[best_a] += counts[best_b]
+    alive[best_b] = false
+    // Reassign all contexts from best_b to best_a
+    for i in 0..<n {
+      if cluster_id[i] == best_b {
+        cluster_id[i] = best_a
+      }
+    }
+    num_alive -= 1
+  }
+  // Renumber clusters to 0..num_clusters-1
+  let remap = FixedArray::make(n, 0)
+  let mut next_id = 0
+  for i in 0..<n {
+    if alive[i] {
+      remap[i] = next_id
+      next_id += 1
+    }
+  }
+  let result = FixedArray::make(n, 0)
+  for i in 0..<n {
+    result[i] = remap[cluster_id[i]]
+  }
+  result
+}
+
+///|
+/// Encode a context map (RFC 7932 Section 7.3).
+/// Writes the map entries using a simple prefix code without RLE.
+fn encode_context_map(bw : BitWriter, cmap : FixedArray[Int]) -> Unit {
+  let map_size = cmap.length()
+  // Find max value in map to determine num_trees
+  let mut max_val = 0
+  for _, v in cmap {
+    if v > max_val {
+      max_val = v
+    }
+  }
+  let num_trees = max_val + 1
+
+  // RLEMAX = 0 (no run-length encoding for zeros)
+  bw.write_bits(0, 1)
+
+  // Alphabet size = RLEMAX + num_trees = 0 + num_trees = num_trees
+  // Build histogram and prefix code for context map entries
+  let cm_freqs = FixedArray::make(num_trees, 0)
+  for _, v in cmap {
+    cm_freqs[v] += 1
+  }
+  let cm_lengths = brotli_code_lengths(cm_freqs, 15)
+  let cm_codes = brotli_build_codes(cm_lengths)
+  encode_prefix_code(bw, cm_lengths, num_trees, cm_codes)
+
+  // Write the context map entries
+  for i in 0..<map_size {
+    write_symbol(bw, cm_codes, cmap[i])
+  }
+
+  // IMTF = 0 (no inverse move-to-front)
+  bw.write_bits(0, 1)
 }
 
 // ─── Utility ────────────────────────────────────────────────────────
