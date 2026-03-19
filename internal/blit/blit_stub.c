@@ -74,3 +74,11 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t bikallem_compress_internal_blit_make_uninit(
     int32_t len) {
   return moonbit_make_bytes_raw(len);
 }
+
+// Allocate a FixedArray[Int] (int64) without zeroing.
+MOONBIT_EXPORT int64_t *moonbit_make_int64_array_raw(int32_t len);
+
+MOONBIT_FFI_EXPORT int64_t *bikallem_compress_internal_blit_make_uninit_int(
+    int32_t len) {
+  return moonbit_make_int64_array_raw(len);
+}

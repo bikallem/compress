@@ -74,3 +74,13 @@ pub fn match_length_bytes(
 pub fn make_uninit(len : Int) -> FixedArray[Byte] {
   FixedArray::make(len, b'\x00')
 }
+
+///|
+pub fn make_uninit_int(len : Int) -> FixedArray[Int] {
+  FixedArray::make(len, 0)
+}
+
+///|
+pub fn make_uninit_uint(len : Int) -> FixedArray[UInt] {
+  FixedArray::make(len, 0U)
+}

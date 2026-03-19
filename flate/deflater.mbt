@@ -476,8 +476,12 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     // i < safe_end guarantees i+3 < end
     let mut cur_len = 0
     let mut cur_dist = 0
-    // Inline insert_hash to avoid method call overhead
-    let h = self.hash4(i, hash_mask)
+    // Inline hash4 + insert_hash to avoid method call overhead
+    let v = window.unsafe_get(i).to_int() |
+      (window.unsafe_get(i + 1).to_int() << 8) |
+      (window.unsafe_get(i + 2).to_int() << 16) |
+      (window.unsafe_get(i + 3).to_int() << 24)
+    let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
     let match_head = head.unsafe_get(h)
     prev.unsafe_set(i & WINDOW_MASK, match_head)
     head.unsafe_set(h, i)
@@ -485,16 +489,51 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     if !(self.has_prev && self.prev_match_len >= lazy_thresh) &&
       match_head >= 0 &&
       i - match_head <= MAX_MATCH_OFFSET {
+      // Inlined find_best_match to reuse cached window/prev locals
+      let mut best_len = MIN_MATCH_LENGTH - 1
+      let mut best_offset = 0
+      let mut pos = match_head
+      let mut chain_count = 0
+      let max_len = if end - i < MAX_MATCH_LENGTH {
+        end - i
+      } else {
+        MAX_MATCH_LENGTH
+      }
       // Halve chain when existing match already >= good
       let chain_limit = if self.has_prev && self.prev_match_len >= good {
         max_chain >> 1
       } else {
         max_chain
       }
-      let (length, offset) = self.find_best_match(i, match_head, chain_limit)
-      if length >= MIN_MATCH_LENGTH {
-        cur_len = length
-        cur_dist = offset
+      while pos >= 0 && i - pos <= MAX_MATCH_OFFSET && chain_count < chain_limit {
+        if best_len > 0 &&
+          window.unsafe_get(pos + best_len) != window.unsafe_get(i + best_len) {
+          let next = prev.unsafe_get(pos & WINDOW_MASK)
+          if next >= pos {
+            break
+          }
+          pos = next
+          chain_count += 1
+          continue
+        }
+        let length = @blit.match_length(window, i, window, pos, max_len)
+        if length > best_len {
+          best_len = length
+          best_offset = i - pos
+          if best_len == max_len {
+            break
+          }
+        }
+        let next = prev.unsafe_get(pos & WINDOW_MASK)
+        if next >= pos {
+          break
+        }
+        pos = next
+        chain_count += 1
+      }
+      if best_len >= MIN_MATCH_LENGTH {
+        cur_len = best_len
+        cur_dist = best_offset
       }
     }
     if self.has_prev {

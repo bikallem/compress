@@ -60,3 +60,13 @@ pub extern "c" fn match_length_bytes(
 /// Allocate a FixedArray[Byte] without zeroing memory.
 /// The caller MUST fully initialize the buffer before reading from it.
 pub extern "c" fn make_uninit(len : Int) -> FixedArray[Byte] = "bikallem_compress_internal_blit_make_uninit"
+
+///|
+/// Allocate a FixedArray[Int] without zeroing memory.
+/// The caller MUST fully initialize all elements before reading.
+pub extern "c" fn make_uninit_int(len : Int) -> FixedArray[Int] = "bikallem_compress_internal_blit_make_uninit_int"
+
+///|
+/// Allocate a FixedArray[UInt] without zeroing memory.
+/// The caller MUST fully initialize all elements before reading.
+pub extern "c" fn make_uninit_uint(len : Int) -> FixedArray[UInt] = "bikallem_compress_internal_blit_make_uninit_int"
