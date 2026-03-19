@@ -82,10 +82,22 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
     lz77_find_matches_chain(src, src_len, level)
   }
   let compressed = encode_compressed_metablock(src, src_len, cmds, level)
-  // If compressed is larger than uncompressed, fall back
-  let uncompressed_size = src_len + 16
-  if compressed.length() > uncompressed_size {
-    return compress_uncompressed(src, src_len)
+  // For levels > 1, also try level 1 encoding (no context modeling, simpler
+  // Huffman trees) and pick the smaller result. Context modeling overhead
+  // can exceed savings on highly repetitive data.
+  let compressed = if level > 1 {
+    let fast_cmds = lz77_find_matches(src, src_len)
+    let fast = encode_compressed_metablock(src, src_len, fast_cmds, 1)
+    if fast.length() < compressed.length() { fast } else { compressed }
+  } else {
+    compressed
+  }
+  // If compressed is not smaller than uncompressed encoding, fall back.
+  // Compute actual uncompressed encoding size:
+  //   WBITS (4 bits) + per-chunk overhead + data + trailing empty block (2 bits)
+  let uncompressed = compress_uncompressed(src, src_len)
+  if compressed.length() >= uncompressed.length() {
+    return uncompressed
   }
   compressed
 }
@@ -850,6 +862,71 @@ fn write_simple_prefix(
 }
 
 ///|
+/// Encode a run of `count` zeros into cl_syms/cl_extra using code-17 with
+/// proper RFC 7932 repeat accumulation semantics.
+/// Consecutive code-17 symbols accumulate: repeat = (repeat-2)<<3 + delta.
+/// We greedily use code-17 where possible, inserting code-0 to break the
+/// chain when the accumulated formula can't represent the remaining count.
+fn encode_zero_run(
+  cl_syms : Array[Int],
+  cl_extra : Array[Int],
+  count : Int,
+) -> Unit {
+  let mut remaining = count
+  let mut repeat = 0 // accumulated repeat state (0 = fresh)
+  while remaining > 0 {
+    if remaining >= 3 {
+      if repeat == 0 {
+        // First code-17: delta is emitted directly (no accumulation)
+        let delta = if remaining > 10 { 10 } else { remaining }
+        cl_syms.push(17)
+        cl_extra.push(delta - 3)
+        repeat = delta
+        remaining -= delta
+      } else {
+        // Subsequent code-17: decoder computes repeat = (repeat-2)<<3 + delta
+        // We need new_repeat such that new_repeat - repeat == desired_zeros
+        // new_repeat = (repeat - 2) * 8 + delta, where delta in [3, 10]
+        let base = (repeat - 2) * 8
+        let min_new = base + 3
+        let max_new = base + 10
+        let min_zeros = min_new - repeat
+        let max_zeros = max_new - repeat
+        if remaining >= min_zeros && remaining <= max_zeros {
+          // Can encode the exact remaining count
+          let new_repeat = repeat + remaining
+          let delta = new_repeat - base
+          cl_syms.push(17)
+          cl_extra.push(delta - 3)
+          remaining = 0
+          repeat = new_repeat
+        } else if remaining >= min_zeros {
+          // Emit the maximum possible zeros with one code-17
+          let delta = 10
+          let new_repeat = base + delta
+          let zeros_emitted = new_repeat - repeat
+          cl_syms.push(17)
+          cl_extra.push(delta - 3)
+          remaining -= zeros_emitted
+          repeat = new_repeat
+        } else {
+          // Remaining is too small for accumulated code-17.
+          // Break the chain with individual zeros, which resets repeat state.
+          cl_syms.push(0)
+          cl_extra.push(0)
+          remaining -= 1
+          repeat = 0
+        }
+      }
+    } else {
+      cl_syms.push(0)
+      cl_extra.push(0)
+      remaining -= 1
+    }
+  }
+}
+
+///|
 fn write_complex_prefix(
   bw : BitWriter,
   code_lengths : FixedArray[Int],
@@ -884,17 +961,12 @@ fn write_complex_prefix(
         run += 1
       }
       i += run
-      if run >= 3 {
-        let count = if run > 10 { 10 } else { run }
-        cl_syms.push(17)
-        cl_extra.push(count - 3)
-        run -= count
-      }
-      while run > 0 {
-        cl_syms.push(0)
-        cl_extra.push(0)
-        run -= 1
-      }
+      // Encode zero runs using code-17 (repeat 3-10 zeros) with proper
+      // RFC 7932 Section 3.5 repeat accumulation.
+      // Consecutive code-17 symbols accumulate: repeat = (repeat-2)<<3 + delta.
+      // After each code-17, we track the accumulated repeat state to compute
+      // the correct extra value for the next code-17.
+      encode_zero_run(cl_syms, cl_extra, run)
     } else {
       cl_syms.push(cl)
       cl_extra.push(0)
@@ -931,10 +1003,23 @@ fn write_complex_prefix(
     cl_freqs[s] += 1
   }
   let cl_lens = brotli_code_lengths(cl_freqs, 5)
-  bw.write_bits(0, 2) // HSKIP=0
+  // Determine HSKIP: skip leading zero CL-CL entries to save bits.
+  // HSKIP=2 skips positions 0-1, HSKIP=3 skips positions 0-2.
+  // (HSKIP=1 means simple prefix code, not used here.)
+  let hskip = if cl_lens[brotli_cl_order[0]] == 0 &&
+    cl_lens[brotli_cl_order[1]] == 0 &&
+    cl_lens[brotli_cl_order[2]] == 0 {
+    3
+  } else if cl_lens[brotli_cl_order[0]] == 0 &&
+    cl_lens[brotli_cl_order[1]] == 0 {
+    2
+  } else {
+    0
+  }
+  bw.write_bits(hskip, 2)
   let mut space = 32
   let mut num_codes = 0
-  for j in 0..<18 {
+  for j in hskip..<18 {
     if num_codes >= 2 && space == 0 {
       break
     }

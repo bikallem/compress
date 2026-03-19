@@ -189,3 +189,19 @@ fn hex_digit(code : Int) -> Int {
     0
   }
 }
+
+///|
+test "debug repeated encoding size" {
+  let data = Bytes::makei(4096, fn(i) {
+    let phrase = b"abcdefghijklmnop"
+    phrase[i % 16]
+  })
+  let compressed = @brotli.compress(data)
+  println("repeated 4KB: \{compressed.length()} bytes")
+  // Try level 1 (fast, fewer Huffman tree symbols)
+  let c1 = @brotli.compress(data, level=@brotli.Level(1))
+  println("repeated 4KB level1: \{c1.length()} bytes")
+  // Try level 0 (uncompressed)
+  let c0 = @brotli.compress(data, level=@brotli.Level(0))
+  println("repeated 4KB level0: \{c0.length()} bytes")
+}
