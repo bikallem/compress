@@ -191,7 +191,7 @@ test "bench flate compress streaming 1mb" (b : @bench.T) {
   let input_cstr = path_cstr(input_path)
   let output_cstr = path_cstr(output_path)
   b.bench(name="flate_compress_streaming_1mb", fn() {
-    compress_file_streaming(input_cstr, output_cstr, 4096)
+    compress_file_streaming(input_cstr, output_cstr, 32768)
   })
   remove_file(input_cstr)
   remove_file(output_cstr)
@@ -206,7 +206,7 @@ test "bench flate compress streaming 10mb" (b : @bench.T) {
   let input_cstr = path_cstr(input_path)
   let output_cstr = path_cstr(output_path)
   b.bench(name="flate_compress_streaming_10mb", fn() {
-    compress_file_streaming(input_cstr, output_cstr, 4096)
+    compress_file_streaming(input_cstr, output_cstr, 32768)
   })
   remove_file(input_cstr)
   remove_file(output_cstr)
@@ -222,7 +222,7 @@ test "bench flate decompress streaming 1mb" (b : @bench.T) {
   let input_cstr = path_cstr(input_path)
   let output_cstr = path_cstr(output_path)
   b.bench(name="flate_decompress_streaming_1mb", fn() {
-    decompress_file_streaming(input_cstr, output_cstr, 4096)
+    decompress_file_streaming(input_cstr, output_cstr, 32768)
   })
   remove_file(input_cstr)
   remove_file(output_cstr)
@@ -238,7 +238,7 @@ test "bench flate decompress streaming 10mb" (b : @bench.T) {
   let input_cstr = path_cstr(input_path)
   let output_cstr = path_cstr(output_path)
   b.bench(name="flate_decompress_streaming_10mb", fn() {
-    decompress_file_streaming(input_cstr, output_cstr, 4096)
+    decompress_file_streaming(input_cstr, output_cstr, 32768)
   })
   remove_file(input_cstr)
   remove_file(output_cstr)
@@ -254,7 +254,7 @@ test "bench lzw decompress streaming 1mb" (b : @bench.T) {
   let input_cstr = path_cstr(input_path)
   let output_cstr = path_cstr(output_path)
   b.bench(name="lzw_decompress_streaming_1mb", fn() {
-    lzw_decompress_file_streaming(input_cstr, output_cstr, 4096)
+    lzw_decompress_file_streaming(input_cstr, output_cstr, 32768)
   })
   remove_file(input_cstr)
   remove_file(output_cstr)
