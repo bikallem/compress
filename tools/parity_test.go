@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/andybalholm/brotli"
@@ -272,32 +274,71 @@ func TestParitySummary(t *testing.T) {
 		algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 	}
 
-	// Print per-algorithm detail report
+	// Collect all results into a flat list with computed ratios
+	type SortEntry struct {
+		label    string
+		status   string // "identical", "compatible", "failed", "no-go-golden"
+		mbSize   int
+		goSize   int
+		ratio    float64 // mbSize / goSize, 1.0 for identical, 0 for no comparison
+		absDelta int     // |mbSize - goSize|
+	}
+
+	var all []SortEntry
 	totalIdentical, totalCompatible, totalFailed, totalAll := 0, 0, 0, 0
+
 	for _, algo := range algoOrder {
-		cases := algoResults[algo]
-		fmt.Printf("\n=== %s Parity ===\n", algo)
-		for _, c := range cases {
+		for _, c := range algoResults[algo] {
 			totalAll++
-			label := c.name
+			se := SortEntry{label: c.name, mbSize: c.mbSize, goSize: c.goSize}
 			switch {
 			case c.failed:
 				totalFailed++
-				fmt.Printf("  %-40s  FAILED\n", label)
+				se.status = "FAILED"
+				se.ratio = 0
 			case c.identical:
 				totalIdentical++
-				fmt.Printf("  %-40s  MB %s vs Go %s (identical)\n",
-					label, humanSize(c.mbSize), humanSize(c.goSize))
+				se.status = "identical"
+				se.ratio = 1.0
 			case c.noGoGolden && c.compatible:
 				totalCompatible++
-				fmt.Printf("  %-40s  MB %s (no Go golden, decompresses OK)\n",
-					label, humanSize(c.mbSize))
+				se.status = "no-go-golden"
+				se.ratio = 0
 			case c.compatible:
 				totalCompatible++
-				ratio := float64(c.mbSize) / float64(c.goSize)
-				fmt.Printf("  %-40s  MB %s vs Go %s (%.2fx)\n",
-					label, humanSize(c.mbSize), humanSize(c.goSize), ratio)
+				se.status = "compatible"
+				if c.goSize > 0 {
+					se.ratio = float64(c.mbSize) / float64(c.goSize)
+					if c.mbSize > c.goSize {
+						se.absDelta = c.mbSize - c.goSize
+					} else {
+						se.absDelta = c.goSize - c.mbSize
+					}
+				}
 			}
+			all = append(all, se)
+		}
+	}
+
+	// Sort by absolute delta descending (biggest size difference first)
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].absDelta > all[j].absDelta
+	})
+
+	// Print sorted report
+	fmt.Printf("\n=== Parity Report (sorted by size delta) ===\n")
+	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", "Name", "MoonBit", "Go", "Ratio")
+	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", strings.Repeat("-", 44), "--------", "--------", "--------")
+	for _, se := range all {
+		switch se.status {
+		case "FAILED":
+			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), "-", "FAILED")
+		case "identical":
+			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), humanSize(se.goSize), "identical")
+		case "no-go-golden":
+			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), "-", "OK (no Go ref)")
+		case "compatible":
+			fmt.Printf("  %-44s  %-8s  %-8s  %.2fx\n", se.label, humanSize(se.mbSize), humanSize(se.goSize), se.ratio)
 		}
 	}
 
