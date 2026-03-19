@@ -221,7 +221,12 @@ func TestParitySummary(t *testing.T) {
 	algoSeen := map[string]bool{}
 	algoResults := make(map[string][]CaseResult)
 
+	codecFilter := os.Getenv("PARITY_CODEC")
+
 	for _, e := range entries {
+		if codecFilter != "" && e.Algorithm != codecFilter {
+			continue
+		}
 		if !algoSeen[e.Algorithm] {
 			algoSeen[e.Algorithm] = true
 			algoOrder = append(algoOrder, e.Algorithm)

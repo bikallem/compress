@@ -2,11 +2,11 @@
 # Bit-for-bit parity test: MoonBit compress vs Go compress.
 #
 # Usage:
-#   ./tools/parity.sh                    # generate + test (grouped by algorithm)
-#   ./tools/parity.sh --sort-ratio       # generate + test (sorted by biggest size delta)
-#   ./tools/parity.sh generate           # only generate MoonBit golden files
-#   ./tools/parity.sh test               # only run Go parity tests
-#   ./tools/parity.sh test --sort-ratio  # test with sorted output
+#   ./tools/parity.sh                          # generate + test all codecs
+#   ./tools/parity.sh --codec brotli           # only test brotli
+#   ./tools/parity.sh --sort-ratio             # sort by worst compression ratio
+#   ./tools/parity.sh test --codec deflate     # test only deflate
+#   ./tools/parity.sh generate                 # only generate golden files
 #
 set -euo pipefail
 
@@ -52,10 +52,15 @@ run_tests() {
         exit 1
     fi
 
-    step "Running Go parity tests"
-    # Run decompression and bit-identical tests quietly (show only failures)
+    # Build Go test -run filter based on codec
+    local run_filter='TestGoDecompressMoonBit|TestBitIdenticalOutput'
+    if [[ -n "$CODEC" ]]; then
+        run_filter="TestGoDecompressMoonBit/${CODEC}|TestBitIdenticalOutput/${CODEC}"
+    fi
+
+    step "Running Go parity tests${CODEC:+ (codec: $CODEC)}"
     local test_output
-    test_output="$(cd "$ROOT/tools" && go test -run 'TestGoDecompressMoonBit|TestBitIdenticalOutput' -count=1 -timeout 300s 2>&1)" || true
+    test_output="$(cd "$ROOT/tools" && go test -run "$run_filter" -count=1 -timeout 300s 2>&1)" || true
     if echo "$test_output" | grep -q "^FAIL"; then
         fail "Some parity tests failed:"
         echo "$test_output" | grep -E "FAIL"
@@ -68,16 +73,19 @@ run_tests() {
     (cd "$ROOT/tools" && go test -run 'TestParitySummary' -v -count=1 -timeout 300s 2>&1) | grep -vE "^(=== RUN|--- PASS|--- FAIL|PASS$|FAIL$|ok )"
 }
 
-SORT_DELTA=""
+SORT_RATIO=""
+CODEC=""
 CMDS=()
-for arg in "$@"; do
-    case "$arg" in
-        --sort-ratio) SORT_DELTA="1" ;;
-        *) CMDS+=("$arg") ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --sort-ratio) SORT_RATIO="1"; shift ;;
+        --codec) CODEC="$2"; shift 2 ;;
+        *) CMDS+=("$1"); shift ;;
     esac
 done
 CMD="${CMDS[0]:-all}"
-export PARITY_SORT_RATIO="${SORT_DELTA}"
+export PARITY_SORT_RATIO="${SORT_RATIO}"
+export PARITY_CODEC="${CODEC}"
 
 case "$CMD" in
     generate)
@@ -92,7 +100,7 @@ case "$CMD" in
         run_tests
         ;;
     *)
-        echo "Usage: $0 [generate|test|all] [--sort-ratio]"
+        echo "Usage: $0 [generate|test|all] [--codec NAME] [--sort-ratio]"
         exit 1
         ;;
 esac
