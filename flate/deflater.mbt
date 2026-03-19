@@ -443,6 +443,18 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     8 => 512
     _ => 1024
   }
+  let good = match level {
+    4 => 4
+    5 | 6 | 7 => 8
+    _ => 32
+  }
+  let lazy_thresh = match level {
+    4 => 4
+    5 | 6 => 16
+    7 => 32
+    8 => 128
+    _ => 258
+  }
   let mi = max_insert(level)
   let end = self.window_end
   let mut i = self.index
@@ -469,8 +481,17 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     let match_head = head.unsafe_get(h)
     prev.unsafe_set(i & WINDOW_MASK, match_head)
     head.unsafe_set(h, i)
-    if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
-      let (length, offset) = self.find_best_match(i, match_head, max_chain)
+    // Skip match-finding when previous match exceeds lazy threshold
+    if !(self.has_prev && self.prev_match_len >= lazy_thresh) &&
+      match_head >= 0 &&
+      i - match_head <= MAX_MATCH_OFFSET {
+      // Halve chain when existing match already >= good
+      let chain_limit = if self.has_prev && self.prev_match_len >= good {
+        max_chain >> 1
+      } else {
+        max_chain
+      }
+      let (length, offset) = self.find_best_match(i, match_head, chain_limit)
       if length >= MIN_MATCH_LENGTH {
         cur_len = length
         cur_dist = offset

@@ -522,33 +522,175 @@ fn Inflater::decode_huffman_loop(
       self.redispatch = true
       return Await
     } else {
-      // Length/distance pair — write back locals, delegate to existing methods
-      bb.buf = buf
-      bb.count = count
-      bb.pos = pos
-      dd.wr_pos = wr_pos
+      // Length/distance pair — fully inlined for performance
       let length_code = sym - 257
       if length_code >= length_base.length() {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
         return self.fail(
           CompressError::CorruptInput("invalid length code \{sym}"),
         )
       }
-      let extra = length_extra.unsafe_get(length_code)
-      if extra > 0 {
-        if !bb.ensure(extra) {
+      let lextra = length_extra.unsafe_get(length_code)
+      // Decode length with extra bits from cached locals
+      let length = if lextra > 0 {
+        if count < lextra {
+          while count <= 56 && pos < input_len {
+            buf = buf | (input[pos].to_uint64() << count)
+            count += 8
+            pos += 1
+          }
+        }
+        if count < lextra {
+          bb.buf = buf
+          bb.count = count
+          bb.pos = pos
+          dd.wr_pos = wr_pos
           let flushed = self.emit_output()
-          self.phase = HuffmanMatchLen(lit_dec, dist_dec, length_code, extra)
+          self.phase = HuffmanMatchLen(lit_dec, dist_dec, length_code, lextra)
           if flushed.length() > 0 {
             return Data(flushed)
           }
           return Await
         }
-        let extra_val = bb.read_unchecked(extra)
-        let length = length_base.unsafe_get(length_code) + extra_val
-        return self.decode_huffman_match_dist_inline(lit_dec, dist_dec, length)
+        let ev = (buf & ((1UL << lextra) - 1UL)).to_int()
+        buf = buf >> lextra
+        count -= lextra
+        length_base.unsafe_get(length_code) + ev
       } else {
-        let length = length_base.unsafe_get(length_code)
-        return self.decode_huffman_match_dist_inline(lit_dec, dist_dec, length)
+        length_base.unsafe_get(length_code)
+      }
+      // Refill bit buffer for distance decode
+      while count <= 56 && pos < input_len {
+        buf = buf | (input[pos].to_uint64() << count)
+        count += 8
+        pos += 1
+      }
+      // Inline distance decode using dist_dec chunks
+      let dist_chunks = dist_dec.chunks
+      let dist_entry = dist_chunks.unsafe_get((buf & chunk_mask).to_int())
+      let dist_sym = if (dist_entry & 0x80U) == 0U &&
+        count >= (dist_entry & 0xFFU).reinterpret_as_int() {
+        let dn = (dist_entry & 0xFFU).reinterpret_as_int()
+        let ds = (dist_entry >> 8).reinterpret_as_int()
+        buf = buf >> dn
+        count -= dn
+        ds
+      } else if (dist_entry & 0x80U) != 0U {
+        let link_idx = (dist_entry >> 8).reinterpret_as_int()
+        let link_table = dist_dec.links.unsafe_get(link_idx)
+        let suffix = (buf >> HUFFMAN_CHUNK_BITS).to_int() &
+          ((1 << (dist_dec.max_bits - HUFFMAN_CHUNK_BITS)) - 1)
+        let link_entry = link_table.unsafe_get(suffix)
+        let dn = (link_entry & 0xFFU).reinterpret_as_int()
+        if count < dn {
+          bb.buf = buf
+          bb.count = count
+          bb.pos = pos
+          dd.wr_pos = wr_pos
+          self.phase = HuffmanMatchDist(lit_dec, dist_dec, length)
+          return Await
+        }
+        let ds = (link_entry >> 8).reinterpret_as_int()
+        buf = buf >> dn
+        count -= dn
+        ds
+      } else {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
+        match dist_dec.decode(bb) {
+          Some(s) => {
+            buf = bb.buf
+            count = bb.count
+            pos = bb.pos
+            s
+          }
+          None => {
+            self.phase = HuffmanMatchDist(lit_dec, dist_dec, length)
+            return Await
+          }
+        }
+      }
+      if dist_sym >= dist_base.length() {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
+        return self.fail(
+          CompressError::CorruptInput("invalid distance code \{dist_sym}"),
+        )
+      }
+      let dextra = dist_extra.unsafe_get(dist_sym)
+      let dist = if dextra > 0 {
+        if count < dextra {
+          while count <= 56 && pos < input_len {
+            buf = buf | (input[pos].to_uint64() << count)
+            count += 8
+            pos += 1
+          }
+        }
+        if count < dextra {
+          bb.buf = buf
+          bb.count = count
+          bb.pos = pos
+          dd.wr_pos = wr_pos
+          self.phase = HuffmanMatchDistExtra(
+            lit_dec, dist_dec, length, dist_sym, dextra,
+          )
+          return Await
+        }
+        let dev = (buf & ((1UL << dextra) - 1UL)).to_int()
+        buf = buf >> dextra
+        count -= dextra
+        dist_base.unsafe_get(dist_sym) + dev
+      } else {
+        dist_base.unsafe_get(dist_sym)
+      }
+      if dist > (if dd.full { hist_len } else { wr_pos }) {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
+        return self.fail(
+          CompressError::CorruptInput(
+            "distance \{dist} exceeds history",
+          ),
+        )
+      }
+      // Fast-path copy: no wrapping and room in buffer
+      let src_start = wr_pos - dist
+      if src_start >= 0 && wr_pos + length <= hist_len {
+        if dist >= length {
+          @blit.blit_fixed_array(hist, wr_pos, hist, src_start, length)
+          wr_pos += length
+        } else if dist == 1 {
+          @blit.fill_bytes(hist, wr_pos, hist.unsafe_get(src_start), length)
+          wr_pos += length
+        } else {
+          let mut dp = wr_pos
+          let copy_end = wr_pos + length
+          while dp + dist <= copy_end {
+            @blit.blit_fixed_array(hist, dp, hist, dp - dist, dist)
+            dp += dist
+          }
+          if dp < copy_end {
+            @blit.blit_fixed_array(
+              hist, dp, hist, dp - dist, copy_end - dp,
+            )
+          }
+          wr_pos = copy_end
+        }
+        continue
+      } else {
+        bb.buf = buf
+        bb.count = count
+        bb.pos = pos
+        dd.wr_pos = wr_pos
+        return self.do_copy(lit_dec, dist_dec, dist, length)
       }
     }
   }
