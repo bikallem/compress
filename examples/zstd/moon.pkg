@@ -1,0 +1,8 @@
+import {
+  "bikallem/compress/zstd" @zstd_codec,
+  "moonbitlang/core/buffer",
+}
+
+options(
+  "is-main": true,
+)

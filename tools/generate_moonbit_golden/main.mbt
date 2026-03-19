@@ -114,7 +114,11 @@ fn main {
   }
   let golden_dir = if args.length() > 2 { args[2] } else { "testdata/golden" }
   // Input names and files (must match Go generator)
-  let input_names = ["empty", "hello", "repeated", "zeros_10k", "mixed_1k"]
+  let input_names = [
+    "empty", "hello", "repeated", "zeros_10k", "mixed_1k",
+    "text_1kb", "text_10kb", "text_100kb", "text_1mb",
+    "text_10mb", "text_100mb",
+  ]
   let entries : Array[Entry] = []
   // Read inputs from existing golden input files
   let inputs : Array[(String, Bytes)] = []
@@ -240,6 +244,79 @@ fn main {
         output_size: compressed.length(),
       })
     }
+  }
+  // Snappy
+  for pair in inputs {
+    let (name, data) = pair
+    if data.length() == 0 {
+      continue
+    }
+    let out_name = "snappy_\{name}.bin"
+    let compressed = @snappy.compress(data)
+    write_file("\{out_dir}/\{out_name}", compressed)
+    entries.push({
+      name: "snappy/\{name}",
+      algorithm: "snappy",
+      level: 0,
+      input_file: "\{name}.bin",
+      output_file: out_name,
+      input_size: data.length(),
+      output_size: compressed.length(),
+    })
+  }
+  // LZ4
+  for pair in inputs {
+    let (name, data) = pair
+    if data.length() == 0 {
+      continue
+    }
+    let out_name = "lz4_\{name}.bin"
+    let compressed = @lz4.compress(data)
+    write_file("\{out_dir}/\{out_name}", compressed)
+    entries.push({
+      name: "lz4/\{name}",
+      algorithm: "lz4",
+      level: 0,
+      input_file: "\{name}.bin",
+      output_file: out_name,
+      input_size: data.length(),
+      output_size: compressed.length(),
+    })
+  }
+  // Zstandard
+  for pair in inputs {
+    let (name, data) = pair
+    if data.length() == 0 {
+      continue
+    }
+    let out_name = "zstd_\{name}.bin"
+    let compressed = @zstd.compress(data)
+    write_file("\{out_dir}/\{out_name}", compressed)
+    entries.push({
+      name: "zstd/\{name}",
+      algorithm: "zstd",
+      level: 0,
+      input_file: "\{name}.bin",
+      output_file: out_name,
+      input_size: data.length(),
+      output_size: compressed.length(),
+    })
+  }
+  // Brotli
+  for pair in inputs {
+    let (name, data) = pair
+    let out_name = "brotli_\{name}.bin"
+    let compressed = @brotli.compress(data)
+    write_file("\{out_dir}/\{out_name}", compressed)
+    entries.push({
+      name: "brotli/\{name}",
+      algorithm: "brotli",
+      level: 0,
+      input_file: "\{name}.bin",
+      output_file: out_name,
+      input_size: data.length(),
+      output_size: compressed.length(),
+    })
   }
   // Write manifest
   let manifest = @buffer.new()

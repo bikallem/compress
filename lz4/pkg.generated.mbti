@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/lz4"
+
+// Values
+pub fn compress(Bytes) -> Bytes
+
+pub fn decompress(Bytes) -> Bytes raise Lz4Error
+
+// Errors
+pub(all) suberror Lz4Error {
+  InvalidHeader(String)
+  CorruptData(String)
+  ChecksumMismatch(expected~ : UInt, got~ : UInt)
+  ContentSizeMismatch
+  UnexpectedEOF
+}
+pub impl Show for Lz4Error
+
+// Types and methods
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(Lz4Error)
+}
+pub impl Show for Decode
+
+type Deflater
+pub fn Deflater::encode(Self, BytesView?) -> Encode
+pub fn Deflater::new() -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(Lz4Error)
+}
+pub impl Show for Encode
+
+type Inflater
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::enable_direct_output(Self, Int) -> Unit
+pub fn Inflater::new() -> Self
+pub fn Inflater::src(Self, BytesView) -> Unit
+pub fn Inflater::take_output(Self) -> Bytes
+
+// Type aliases
+
+// Traits
+

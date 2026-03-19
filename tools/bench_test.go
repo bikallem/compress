@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 // genText generates repeated text data of the given size.
@@ -920,67 +922,73 @@ func bzip2Compress(data []byte) ([]byte, error) {
 
 func BenchmarkBzip2CompressDefault_1kb(b *testing.B) {
 	data := genText(1024)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_10kb(b *testing.B) {
 	data := genText(10240)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_100kb(b *testing.B) {
 	data := genText(102400)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_1mb(b *testing.B) {
 	data := genText(1048576)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_10mb(b *testing.B) {
 	data := genText(10485760)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
 func BenchmarkBzip2CompressDefault_100mb(b *testing.B) {
 	data := genText(104857600)
+	if _, err := bzip2Compress(data); err != nil {
+		b.Skip("bzip2 command not available")
+	}
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cmd := exec.Command("bzip2", "-c")
-		cmd.Stdin = bytes.NewReader(data)
-		cmd.Output()
+		bzip2Compress(data)
 	}
 }
 
@@ -1191,3 +1199,329 @@ func BenchmarkLzwDecompressStreaming_1mb(b *testing.B) {
 
 // Ensure genRandom and genText use same strings package for compiler
 var _ = strings.NewReader("")
+
+// --- Snappy (requires github.com/golang/snappy) ---
+// Note: Snappy Go benchmarks require adding the dependency.
+// Uncomment when github.com/golang/snappy is available in go.mod.
+
+// --- LZ4 ---
+// Uses the system lz4 command for both compress and decompress benchmarks.
+// NOTE: results include process spawn overhead (~2-5ms per iteration),
+// so these are not directly comparable to in-process library benchmarks.
+// They are still useful for tracking relative performance across sizes.
+
+func lz4Compress(data []byte) ([]byte, error) {
+	cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
+	cmd.Stdin = bytes.NewReader(data)
+	return cmd.Output()
+}
+
+func lz4DecompressBench(data []byte) ([]byte, error) {
+	cmd := exec.Command("lz4", "-d", "-c", "-f")
+	cmd.Stdin = bytes.NewReader(data)
+	return cmd.Output()
+}
+
+func BenchmarkLz4CompressDefault_1kb(b *testing.B) {
+	data := genText(1024)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4Compress(data)
+	}
+}
+
+func BenchmarkLz4CompressDefault_10kb(b *testing.B) {
+	data := genText(10240)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4Compress(data)
+	}
+}
+
+func BenchmarkLz4CompressDefault_100kb(b *testing.B) {
+	data := genText(102400)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4Compress(data)
+	}
+}
+
+func BenchmarkLz4CompressDefault_1mb(b *testing.B) {
+	data := genText(1048576)
+	if _, err := lz4Compress(data); err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4Compress(data)
+	}
+}
+
+func BenchmarkLz4Decompress_1kb(b *testing.B) {
+	data := genText(1024)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4DecompressBench(compressed)
+	}
+}
+
+func BenchmarkLz4Decompress_10kb(b *testing.B) {
+	data := genText(10240)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4DecompressBench(compressed)
+	}
+}
+
+func BenchmarkLz4Decompress_100kb(b *testing.B) {
+	data := genText(102400)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4DecompressBench(compressed)
+	}
+}
+
+func BenchmarkLz4Decompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	compressed, err := lz4Compress(data)
+	if err != nil {
+		b.Skip("lz4 command not available")
+	}
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lz4DecompressBench(compressed)
+	}
+}
+
+// --- Zstandard (requires github.com/klauspost/compress/zstd) ---
+// Note: Zstd Go benchmarks require adding the dependency.
+// Uncomment when github.com/klauspost/compress/zstd is available in go.mod.
+
+// --- Brotli (github.com/andybalholm/brotli) ---
+
+func BenchmarkBrotliCompressDefault_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressDefault_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressDefault_100kb(b *testing.B) {
+	data := genText(102400)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressDefault_1mb(b *testing.B) {
+	data := genText(1048576)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressDefault_10mb(b *testing.B) {
+	data := genText(10485760)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressDefault_100mb(b *testing.B) {
+	data := genText(104857600)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 6)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliDecompress_1kb(b *testing.B) {
+	data := genText(1024)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_10kb(b *testing.B) {
+	data := genText(10240)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_100kb(b *testing.B) {
+	data := genText(102400)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_1mb(b *testing.B) {
+	data := genText(1048576)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_10mb(b *testing.B) {
+	data := genText(10485760)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliDecompress_100mb(b *testing.B) {
+	data := genText(104857600)
+	var cbuf bytes.Buffer
+	w := brotli.NewWriterLevel(&cbuf, 6)
+	w.Write(data)
+	w.Close()
+	compressed := cbuf.Bytes()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r := brotli.NewReader(bytes.NewReader(compressed))
+		io.ReadAll(r)
+	}
+}
+
+func BenchmarkBrotliCompressSpeed_1kb(b *testing.B) {
+	data := genText(1024)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 1)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressSpeed_10kb(b *testing.B) {
+	data := genText(10240)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 1)
+		w.Write(data)
+		w.Close()
+	}
+}
+
+func BenchmarkBrotliCompressSpeed_100kb(b *testing.B) {
+	data := genText(102400)
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var buf bytes.Buffer
+		w := brotli.NewWriterLevel(&buf, 1)
+		w.Write(data)
+		w.Close()
+	}
+}

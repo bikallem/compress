@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/snappy"
+
+// Values
+pub fn compress(Bytes) -> Bytes
+
+pub fn decompress(Bytes) -> Bytes raise SnappyError
+
+// Errors
+pub(all) suberror SnappyError {
+  CorruptInput(String)
+  UnexpectedEOF
+}
+pub impl Show for SnappyError
+
+// Types and methods
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(SnappyError)
+}
+pub impl Show for Decode
+
+type Deflater
+pub fn Deflater::encode(Self, BytesView?) -> Encode
+pub fn Deflater::new() -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(SnappyError)
+}
+pub impl Show for Encode
+
+type Inflater
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::new() -> Self
+pub fn Inflater::src(Self, BytesView) -> Unit
+
+// Type aliases
+
+// Traits
+

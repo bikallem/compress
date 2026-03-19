@@ -1,0 +1,58 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/brotli"
+
+// Values
+pub fn compress(Bytes, level? : CompressionLevel) -> Bytes
+
+pub fn decompress(Bytes) -> Bytes raise BrotliError
+
+// Errors
+pub(all) suberror BrotliError {
+  InvalidHeader(String)
+  CorruptData(String)
+  InvalidDistance(String)
+  WindowTooLarge
+  UnexpectedEOF
+}
+pub impl Show for BrotliError
+
+// Types and methods
+pub(all) enum CompressionLevel {
+  Level(Int)
+  Default
+  Best
+}
+pub impl Eq for CompressionLevel
+pub impl Show for CompressionLevel
+
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(BrotliError)
+}
+pub impl Show for Decode
+
+type Deflater
+pub fn Deflater::encode(Self, BytesView?) -> Encode
+pub fn Deflater::new(level? : CompressionLevel) -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(BrotliError)
+}
+pub impl Show for Encode
+
+type Inflater
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::enable_direct_output(Self, Int) -> Unit
+pub fn Inflater::new() -> Self
+pub fn Inflater::src(Self, BytesView) -> Unit
+pub fn Inflater::take_output(Self) -> Bytes
+
+// Type aliases
+
+// Traits
+

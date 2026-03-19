@@ -30,56 +30,26 @@ fn Deflater::insert_hash(self : Deflater, pos : Int, hash_mask : Int) -> Int {
 }
 
 ///|
-/// Check if 4 bytes match at positions a and b in the window.
-/// SAFETY: caller must ensure a+3 and b+3 are within window bounds.
-fn Deflater::match4(self : Deflater, a : Int, b : Int) -> Bool {
-  let w = self.window
-  w.unsafe_get(a) == w.unsafe_get(b) &&
-    w.unsafe_get(a + 1) == w.unsafe_get(b + 1) &&
-    w.unsafe_get(a + 2) == w.unsafe_get(b + 2) &&
-    w.unsafe_get(a + 3) == w.unsafe_get(b + 3)
-}
-
-///|
-/// Collect literal tokens for window[from..<to] and flush if block is full.
-fn Deflater::emit_literals(self : Deflater, from : Int, to : Int) -> Unit {
-  let window = self.window
-  for j in from..<to {
-    self.tokens.push(Token::literal(window.unsafe_get(j)))
-    if self.tokens.length() >= MAX_BLOCK_TOKENS {
-      self.w.write_dynamic_block(self.tokens, false)
-      self.tokens.clear()
-    }
-  }
-}
-
-///|
-/// Flush token buffer as a dynamic block if it has reached the block size limit.
-fn Deflater::maybe_flush_tokens(self : Deflater) -> Unit {
-  if self.tokens.length() >= MAX_BLOCK_TOKENS {
-    self.w.write_dynamic_block(self.tokens, false)
-    self.tokens.clear()
-  }
-}
-
-///|
 const WINDOW_SIZE : Int = 1 << 15 // 32KB
 
 ///|
 const WINDOW_MASK : Int = WINDOW_SIZE - 1
 
 ///|
-const MAX_BLOCK_TOKENS : Int = 16384
+const MAX_BLOCK_TOKENS : Int = 32768
 
 ///|
-/// Maximum number of intermediate positions to rehash after a match.
-/// At low levels, capped at 32 for speed (hash4 + insert_hash dominates
-/// CPU cost). At higher levels, rehash all positions for better ratio.
+/// Level-dependent maximum number of intermediate positions to rehash after
+/// a match. Lower levels use smaller values since their short hash chains
+/// don't benefit from rehashing distant positions.
 fn max_insert(level : Int) -> Int {
-  if level <= 3 {
-    32
-  } else {
-    MAX_MATCH_LENGTH
+  match level {
+    0 | 1 => 4
+    2 | 3 => 32
+    4 | 5 => 64
+    6 | 7 => 128
+    8 | 9 => 258
+    _ => 258
   }
 }
 
@@ -270,12 +240,8 @@ fn Deflater::step_stored(self : Deflater) -> Unit {
 }
 
 ///|
-/// Snappy-style fast compressor (level 1). Matches Go's deflateFast algorithm:
-/// adaptive skip on miss, immediate re-probe after match for chaining.
-/// Uses dynamic Huffman blocks for optimal encoding.
 fn Deflater::step_fast(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
-  let head = self.head
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -283,79 +249,146 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     self.index = i
     return
   }
-  let mut next_emit = i // start of pending literal run
-  // Outer loop: find matches via adaptive skip, then chain
+  // Quick check: if first 32 bytes are all the same, use uniform encoder
+  if self.encode_uniform_run() {
+    return
+  }
+  let head = self.head
   while i < safe_end {
-    // --- Skip loop: find a 4-byte match with adaptive skipping ---
-    // After 32 bytes without a match, start skipping bytes (like Snappy).
-    let mut skip = 32
-    let mut candidate = -1
-    let mut found = false
-    while true {
-      let step = skip >> 5
-      let next_i = i + step
-      skip += step
-      if next_i > safe_end {
-        break
-      }
-      let h = self.hash4(i, hash_mask)
-      candidate = head.unsafe_get(h)
-      head.unsafe_set(h, i)
-      if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
-        self.match4(i, candidate) {
-        found = true
-        break
-      }
-      i = next_i
-    }
-    if not(found) {
-      break // no more matches possible
-    }
-    self.emit_literals(next_emit, i)
-    // --- Match loop: extend match, emit, then try to chain ---
-    while true {
+    // i < safe_end guarantees i+3 < end, safe for hash4/unsafe_get
+    let h = self.hash4(i, hash_mask)
+    let match_pos = head.unsafe_get(h)
+    head.unsafe_set(h, i)
+    if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
       let max_len = if end - i < MAX_MATCH_LENGTH {
         end - i
       } else {
         MAX_MATCH_LENGTH
       }
-      let length = self.match_len(i, candidate, max_len)
-      self.tokens.push(Token::match_(length, i - candidate))
-      i += length
-      next_emit = i
-      self.maybe_flush_tokens()
-      if i >= safe_end {
-        break
+      let length = self.match_len(i, match_pos, max_len)
+      if length >= MIN_MATCH_LENGTH {
+        self.tokens.push(Token::match_(length, i - match_pos))
+        // After a match, hash positions at the end of the match
+        // so future lookups can find overlapping matches.
+        let match_end = i + length
+        if match_end - 2 > i && match_end + 2 < end {
+          for j in (match_end - 3)..<match_end {
+            head.unsafe_set(self.hash4(j, hash_mask), j)
+          }
+        }
+        i = match_end
+        if self.tokens.length() >= MAX_BLOCK_TOKENS {
+          self.w.write_dynamic_block(self.tokens, false)
+          self.tokens.clear()
+        }
+        continue
       }
-      // Hash i-1, then hash i and check for a chained match.
-      // i-1 is always valid (length >= MIN_MATCH_LENGTH = 3).
-      head.unsafe_set(self.hash4(i - 1, hash_mask), i - 1)
-      let h = self.hash4(i, hash_mask)
-      candidate = head.unsafe_get(h)
-      head.unsafe_set(h, i)
-      if candidate >= 0 && i - candidate <= MAX_MATCH_OFFSET &&
-        self.match4(i, candidate) {
-        continue // chain: another match starts here
-      }
-      // No chain, advance past current position and resume skip loop
-      i += 1
-      break
+    }
+    self.tokens.push(Token::literal(self.window.unsafe_get(i)))
+    i += 1
+    if self.tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(self.tokens, false)
+      self.tokens.clear()
     }
   }
-  self.emit_literals(next_emit, end)
+  self.index = i
+}
+
+///|
+/// Detect and optimally encode uniform data (all same byte).
+/// Returns true if data was uniform and has been encoded.
+fn Deflater::encode_uniform_run(self : Deflater) -> Bool {
+  let start = self.index
+  let end = self.window_end
+  if end - start < 32 {
+    return false
+  }
+  let b = self.window[start]
+  for i in (start + 1)..<(start + 32) {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  // Verify remaining bytes are also uniform
+  for i in (start + 32)..<end {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  // All same byte — emit one literal + repeated distance-1 matches.
+  // Trailing bytes shorter than MIN_MATCH_LENGTH are emitted as literals.
+  self.emit_uniform_tokens(b, start, end)
+  self.w.write_dynamic_block(self.tokens, false)
+  self.tokens.clear()
   self.index = end
+  true
+}
+
+///|
+/// Emit tokens for a uniform byte run: 1 literal + max-length distance-1 matches.
+/// Trailing bytes shorter than MIN_MATCH_LENGTH are emitted as literals.
+fn Deflater::emit_uniform_tokens(
+  self : Deflater,
+  b : Byte,
+  start : Int,
+  end : Int,
+) -> Unit {
+  self.tokens.push(Token::literal(b))
+  let mut pos = start + 1
+  while pos < end {
+    let remaining = end - pos
+    if remaining < MIN_MATCH_LENGTH {
+      while pos < end {
+        self.tokens.push(Token::literal(b))
+        pos += 1
+      }
+      break
+    }
+    let len = if remaining < MAX_MATCH_LENGTH { remaining } else { MAX_MATCH_LENGTH }
+    self.tokens.push(Token::match_(len, 1))
+    pos += len
+  }
+}
+
+///|
+/// Detect and optimally encode uniform data via tokens (for levels 2+).
+fn Deflater::encode_uniform_tokens(self : Deflater) -> Bool {
+  let start = self.index
+  let end = self.window_end
+  if end - start < 32 {
+    return false
+  }
+  let b = self.window[start]
+  for i in (start + 1)..<(start + 32) {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  for i in (start + 32)..<end {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  self.emit_uniform_tokens(b, start, end)
+  self.w.write_dynamic_block(self.tokens, false)
+  self.tokens.clear()
+  self.index = end
+  true
 }
 
 ///|
 fn Deflater::step_greedy(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
   let max_chain = if self.level == 2 { 8 } else { 16 }
-  let max_ins = max_insert(self.level)
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
   if i >= safe_end {
     self.index = i
+    return
+  }
+  // Quick check: if data is uniform, encode optimally via tokens
+  if self.encode_uniform_tokens() {
     return
   }
   while i < safe_end {
@@ -365,11 +398,12 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
       let (length, offset) = self.find_best_match(i, match_head, max_chain)
       if length >= MIN_MATCH_LENGTH {
         self.tokens.push(Token::match_(length, offset))
-        // Rehash intermediate positions (capped at low levels for speed).
-        let n_insert = if length - 1 < max_ins {
+        // Rehash a capped number of intermediate positions.
+        let mi = max_insert(self.level)
+        let n_insert = if length - 1 < mi {
           length - 1
         } else {
-          max_ins
+          mi
         }
         let rehash_end = if i + n_insert + 4 < end {
           i + 1 + n_insert
@@ -380,13 +414,19 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
           ignore(self.insert_hash(pos, hash_mask))
         }
         i += length
-        self.maybe_flush_tokens()
+        if self.tokens.length() >= MAX_BLOCK_TOKENS {
+          self.w.write_dynamic_block(self.tokens, false)
+          self.tokens.clear()
+        }
         continue
       }
     }
     self.tokens.push(Token::literal(self.window.unsafe_get(i)))
     i += 1
-    self.maybe_flush_tokens()
+    if self.tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(self.tokens, false)
+      self.tokens.clear()
+    }
   }
   self.index = i
 }
@@ -394,7 +434,8 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
 ///|
 fn Deflater::step_lazy(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
-  let max_chain = match self.level {
+  let level = self.level
+  let max_chain = match level {
     4 => 32
     5 => 64
     6 => 128
@@ -402,7 +443,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     8 => 512
     _ => 1024
   }
-  let max_ins = max_insert(self.level)
+  let mi = max_insert(level)
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -410,11 +451,24 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     self.index = i
     return
   }
+  // Quick check: if data is uniform, encode optimally via tokens
+  if self.encode_uniform_tokens() {
+    return
+  }
+  // Cache frequently-accessed fields in locals
+  let window = self.window
+  let head = self.head
+  let prev = self.prev
+  let tokens = self.tokens
   while i < safe_end {
     // i < safe_end guarantees i+3 < end
     let mut cur_len = 0
     let mut cur_dist = 0
-    let match_head = self.insert_hash(i, hash_mask)
+    // Inline insert_hash to avoid method call overhead
+    let h = self.hash4(i, hash_mask)
+    let match_head = head.unsafe_get(h)
+    prev.unsafe_set(i & WINDOW_MASK, match_head)
+    head.unsafe_set(h, i)
     if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
       let (length, offset) = self.find_best_match(i, match_head, max_chain)
       if length >= MIN_MATCH_LENGTH {
@@ -424,22 +478,22 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     }
     if self.has_prev {
       if cur_len > self.prev_match_len + 1 {
-        self.tokens.push(Token::literal(self.prev_literal))
+        tokens.push(Token::literal(self.prev_literal))
         self.prev_match_len = cur_len
         self.prev_match_dist = cur_dist
-        self.prev_literal = self.window.unsafe_get(i)
+        self.prev_literal = window.unsafe_get(i)
         i += 1
       } else {
-        self.tokens.push(
+        tokens.push(
           Token::match_(self.prev_match_len, self.prev_match_dist),
         )
         let start = i
         let skip_end = start + self.prev_match_len - 1
-        // Rehash intermediate positions (capped at low levels for speed).
-        let n_insert = if self.prev_match_len - 1 < max_ins {
+        // Rehash a capped number of intermediate positions.
+        let n_insert = if self.prev_match_len - 1 < mi {
           self.prev_match_len - 1
         } else {
-          max_ins
+          mi
         }
         let rehash_end = if start + n_insert + 3 < end {
           start + n_insert
@@ -456,13 +510,16 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       self.has_prev = true
       self.prev_match_len = cur_len
       self.prev_match_dist = cur_dist
-      self.prev_literal = self.window.unsafe_get(i)
+      self.prev_literal = window.unsafe_get(i)
       i += 1
     } else {
-      self.tokens.push(Token::literal(self.window.unsafe_get(i)))
+      tokens.push(Token::literal(window.unsafe_get(i)))
       i += 1
     }
-    self.maybe_flush_tokens()
+    if tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(tokens, false)
+      tokens.clear()
+    }
   }
   self.index = i
 }
@@ -500,20 +557,9 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
     self.has_prev = false
   }
   if self.index < self.window_end {
-    match self.level {
-      0 | 1 => {
-        self.w.start_fixed_block(false)
-        while self.index < self.window_end {
-          self.w.write_literal_fast(self.window[self.index])
-          self.index += 1
-        }
-        self.w.write_fixed_symbol(END_BLOCK_MARKER)
-      }
-      _ =>
-        while self.index < self.window_end {
-          self.tokens.push(Token::literal(self.window[self.index]))
-          self.index += 1
-        }
+    while self.index < self.window_end {
+      self.tokens.push(Token::literal(self.window[self.index]))
+      self.index += 1
     }
   }
   self.flush_tokens()

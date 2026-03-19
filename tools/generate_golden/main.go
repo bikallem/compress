@@ -13,6 +13,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/andybalholm/brotli"
+	dbzip2 "github.com/dsnet/compress/bzip2"
+	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	lz4 "github.com/pierrec/lz4/v4"
 )
 
 type GoldenEntry struct {
@@ -27,7 +33,7 @@ type GoldenEntry struct {
 }
 
 func main() {
-	dir := filepath.Join("..", "testdata", "golden")
+	dir := filepath.Join("..", "..", "testdata", "golden")
 	os.MkdirAll(dir, 0o755)
 
 	// Test inputs
@@ -37,6 +43,12 @@ func main() {
 		"repeated":   bytes.Repeat([]byte("abcdefghijklmnop"), 256),  // 4KB repeated
 		"zeros_10k":  make([]byte, 10240),                            // 10KB zeros
 		"mixed_1k":   generateMixed(1024),                            // 1KB mixed content
+		"text_1kb":   genText(1024),
+		"text_10kb":  genText(10240),
+		"text_100kb": genText(102400),
+		"text_1mb":   genText(1048576),
+		"text_10mb":  genText(10485760),
+		"text_100mb": genText(104857600),
 	}
 
 	// Write input files
@@ -118,6 +130,99 @@ func main() {
 		})
 	}
 
+	// Generate Snappy compressed files
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue
+		}
+		outName := fmt.Sprintf("snappy_%s.bin", name)
+		compressed := snappy.Encode(nil, data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("snappy/%s", name),
+			Algorithm:  "snappy",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate bzip2 compressed files
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue // bzip2 requires non-empty input
+		}
+		for _, level := range []int{1, 9} {
+			outName := fmt.Sprintf("bzip2_%s_level%d.bin", name, level)
+			compressed := bzip2Compress(data, level)
+			os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+			entries = append(entries, GoldenEntry{
+				Name:       fmt.Sprintf("bzip2/%s/level%d", name, level),
+				Algorithm:  "bzip2",
+				Level:      level,
+				InputFile:  name + ".bin",
+				OutputFile: outName,
+				InputSize:  len(data),
+				OutputSize: len(compressed),
+			})
+		}
+	}
+
+	// Generate LZ4 compressed files (frame format)
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue
+		}
+		outName := fmt.Sprintf("lz4_%s.bin", name)
+		compressed := lz4Compress(data)
+		if compressed == nil {
+			continue
+		}
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("lz4/%s", name),
+			Algorithm:  "lz4",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate Zstandard compressed files
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue
+		}
+		outName := fmt.Sprintf("zstd_%s.bin", name)
+		compressed := zstdCompress(data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("zstd/%s", name),
+			Algorithm:  "zstd",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
+	// Generate Brotli compressed files
+	for name, data := range inputs {
+		outName := fmt.Sprintf("brotli_%s.bin", name)
+		compressed := brotliCompress(data)
+		os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+		entries = append(entries, GoldenEntry{
+			Name:       fmt.Sprintf("brotli/%s", name),
+			Algorithm:  "brotli",
+			InputFile:  name + ".bin",
+			OutputFile: outName,
+			InputSize:  len(data),
+			OutputSize: len(compressed),
+		})
+	}
+
 	// Generate DEFLATE with dictionary compressed files
 	dict := []byte("the quick brown fox jumps over the lazy dog abcdefghijklmnop")
 	os.WriteFile(filepath.Join(dir, "dict.bin"), dict, 0o644)
@@ -167,6 +272,15 @@ func main() {
 	manifest, _ := json.MarshalIndent(entries, "", "  ")
 	os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o644)
 	fmt.Printf("Generated %d golden files in %s\n", len(entries), dir)
+}
+
+func genText(size int) []byte {
+	phrase := []byte("The quick brown fox jumps over the lazy dog. ")
+	data := make([]byte, size)
+	for i := range data {
+		data[i] = phrase[i%len(phrase)]
+	}
+	return data
 }
 
 func generateMixed(size int) []byte {
@@ -223,6 +337,35 @@ func zlibDictCompress(data, dict []byte, level int) []byte {
 func lzwCompress(data []byte) []byte {
 	var buf bytes.Buffer
 	w := lzw.NewWriter(&buf, lzw.LSB, 8)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func lz4Compress(data []byte) []byte {
+	var buf bytes.Buffer
+	w := lz4.NewWriter(&buf)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func bzip2Compress(data []byte, level int) []byte {
+	var buf bytes.Buffer
+	w, _ := dbzip2.NewWriter(&buf, &dbzip2.WriterConfig{Level: level})
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func zstdCompress(data []byte) []byte {
+	enc, _ := zstd.NewWriter(nil)
+	return enc.EncodeAll(data, nil)
+}
+
+func brotliCompress(data []byte) []byte {
+	var buf bytes.Buffer
+	w := brotli.NewWriter(&buf)
 	w.Write(data)
 	w.Close()
 	return buf.Bytes()

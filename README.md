@@ -1,6 +1,6 @@
 # bikallem/compress
 
-A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, and bzip2. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
+A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, and Brotli. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
 
 ## Features
 
@@ -37,6 +37,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, and bzip
 | `bikallem/compress/gzip` | gzip format (RFC 1952) |
 | `bikallem/compress/zlib` | zlib format (RFC 1950) |
 | `bikallem/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
+| `bikallem/compress/brotli` | Brotli compression/decompression (RFC 7932) |
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
 
@@ -69,6 +70,11 @@ let decompressed = @zlib.decompress(compressed)
 // LZW
 let compressed = @lzw.compress(data, LSB, 8)
 let decompressed = @lzw.decompress(compressed, LSB, 8)
+
+// Brotli (level 0-11)
+let compressed = @brotli.compress(data)
+let compressed = @brotli.compress(data, level=Level(1))
+let decompressed = @brotli.decompress(compressed)
 
 // bzip2 (level 1-9, controls block size)
 let compressed = @bzip2.compress(data)
@@ -136,6 +142,10 @@ let i = @zlib.Inflater::new(dict=my_dict)
 let d = @lzw.Deflater::new(MSB, 8)
 let i = @lzw.Inflater::new(MSB, 8)
 
+// Brotli
+let d = @brotli.Deflater::new(level=Level(6))
+let i = @brotli.Inflater::new()
+
 // bzip2
 let d = @bzip2.Deflater::new(level=9)
 let i = @bzip2.Inflater::new()
@@ -158,6 +168,10 @@ DEFLATE, gzip, and zlib support compression levels via `@flate.CompressionLevel`
 | `HuffmanOnly` | Huffman encoding, no LZ77 matching |
 
 bzip2 uses its own level parameter (1-9), controlling block size (N x 100KB).
+
+Brotli uses `@brotli.CompressionLevel`: `Level(0)` through `Level(11)`, `Default` (level 6), or `Best` (level 11). Higher levels use longer hash chains for better compression ratios.
+
+**Brotli features:** The decoder is fully RFC 7932 compliant, including the 122KB static dictionary with 121 word transforms. The encoder supports context modeling (level 5+), which uses the previous byte to select among multiple literal Huffman trees for better compression of structured text. Block splitting and static dictionary compression by the encoder are not yet implemented. Quality levels 10-11 use the same hash-chain algorithm as level 9. Output is verified against Go's `andybalholm/brotli` reference decoder.
 
 ## Checksums
 

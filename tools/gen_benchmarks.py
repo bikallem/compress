@@ -476,12 +476,213 @@ def bzip2_benches():
 # Codecs to generate (streaming and checksum are hand-written)
 # ---------------------------------------------------------------------------
 
+def snappy_benches():
+    pkg_import = textwrap.dedent("""\
+        import {
+          "bikallem/compress/benchmarks",
+          "bikallem/compress/snappy" @snap,
+          "moonbitlang/core/bench",
+        }
+    """)
+
+    helpers = textwrap.dedent("""\
+        ///|
+        fn compress_setup(size : Int) -> Bytes {
+          @snap.compress(@benchmarks.gen_text(size))
+        }
+
+        ///|
+        fn bench_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
+          let data = @benchmarks.gen_text(size)
+          b.bench(name~, fn() { b.keep(@snap.compress(data)) })
+        }
+
+        ///|
+        fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit {
+          let compressed = compress_setup(size)
+          b.bench(name~, fn() { b.keep(try! @snap.decompress(compressed)) })
+        }
+    """)
+
+    standard = {}
+    for label, size in SIZES:
+        standard[label] = []
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench snappy compress text_{label}" (b : @bench.T) {{
+              bench_compress(b, name="snappy_compress_{label}", {size})
+            }}
+        """))
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench snappy decompress text_{label}" (b : @bench.T) {{
+              bench_decompress(b, name="snappy_decompress_{label}", {size})
+            }}
+        """))
+
+    return pkg_import, helpers, standard
+
+
+def lz4_benches():
+    pkg_import = textwrap.dedent("""\
+        import {
+          "bikallem/compress/benchmarks",
+          "bikallem/compress/lz4" @l4,
+          "moonbitlang/core/bench",
+        }
+    """)
+
+    helpers = textwrap.dedent("""\
+        ///|
+        fn compress_setup(size : Int) -> Bytes {
+          @l4.compress(@benchmarks.gen_text(size))
+        }
+
+        ///|
+        fn bench_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
+          let data = @benchmarks.gen_text(size)
+          b.bench(name~, fn() { b.keep(@l4.compress(data)) })
+        }
+
+        ///|
+        fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
+          let compressed = compress_setup(size)
+          b.bench(name~, fn() { b.keep(try! @l4.decompress(compressed)) })
+        }
+    """)
+
+    standard = {}
+    for label, size in SIZES:
+        standard[label] = []
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench lz4 compress text_{label}" (b : @bench.T) {{
+              bench_compress(b, name="lz4_compress_default_{label}", {size})
+            }}
+        """))
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench lz4 decompress text_{label}" (b : @bench.T) {{
+              bench_decompress(b, name="lz4_decompress_{label}", {size})
+            }}
+        """))
+
+    return pkg_import, helpers, standard
+
+
+def zstd_benches():
+    pkg_import = textwrap.dedent("""\
+        import {
+          "bikallem/compress/benchmarks",
+          "bikallem/compress/zstd" @zs,
+          "moonbitlang/core/bench",
+        }
+    """)
+
+    helpers = textwrap.dedent("""\
+        ///|
+        fn compress_setup(size : Int) -> Bytes {
+          @zs.compress(@benchmarks.gen_text(size))
+        }
+
+        ///|
+        fn bench_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
+          let data = @benchmarks.gen_text(size)
+          b.bench(name~, fn() { b.keep(@zs.compress(data)) })
+        }
+
+        ///|
+        fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
+          let compressed = compress_setup(size)
+          b.bench(name~, fn() { b.keep(try! @zs.decompress(compressed)) })
+        }
+    """)
+
+    standard = {}
+    for label, size in SIZES:
+        standard[label] = []
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench zstd compress default text_{label}" (b : @bench.T) {{
+              bench_compress(b, name="zstd_compress_default_{label}", {size})
+            }}
+        """))
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench zstd decompress text_{label}" (b : @bench.T) {{
+              bench_decompress(b, name="zstd_decompress_{label}", {size})
+            }}
+        """))
+
+    return pkg_import, helpers, standard
+
+
+def brotli_benches():
+    pkg_import = textwrap.dedent("""\
+        import {
+          "bikallem/compress/benchmarks",
+          "bikallem/compress/brotli" @br,
+          "moonbitlang/core/bench",
+        }
+    """)
+
+    helpers = textwrap.dedent("""\
+        ///|
+        fn compress_setup(size : Int) -> Bytes {
+          @br.compress(@benchmarks.gen_text(size))
+        }
+
+        ///|
+        fn bench_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
+          let data = @benchmarks.gen_text(size)
+          b.bench(name~, fn() { b.keep(@br.compress(data)) })
+        }
+
+        ///|
+        fn bench_decompress(b : @bench.T, name~ : String, size : Int) -> Unit raise {
+          let compressed = compress_setup(size)
+          b.bench(name~, fn() { b.keep(try! @br.decompress(compressed)) })
+        }
+    """)
+
+    standard = {}
+    speed_sizes = {"1kb", "10kb", "100kb"}
+    for label, size in SIZES:
+        standard[label] = []
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench brotli compress default text_{label}" (b : @bench.T) {{
+              bench_compress(b, name="brotli_compress_default_{label}", {size})
+            }}
+        """))
+        standard[label].append(textwrap.dedent(f"""\
+            ///|
+            test "bench brotli decompress text_{label}" (b : @bench.T) {{
+              bench_decompress(b, name="brotli_decompress_{label}", {size})
+            }}
+        """))
+        if label in speed_sizes:
+            standard[label].append(textwrap.dedent(f"""\
+                ///|
+                test "bench brotli compress speed text_{label}" (b : @bench.T) {{
+                  let data = @benchmarks.gen_text({size})
+                  b.bench(name="brotli_compress_speed_{label}", fn() {{ b.keep(@br.compress(data, level=@br.Level(1))) }})
+                }}
+            """))
+
+    return pkg_import, helpers, standard
+
+
 CODECS = {
     "flate": flate_benches,
     "gzip":  gzip_benches,
     "zlib":  zlib_benches,
     "lzw":   lzw_benches,
     "bzip2": bzip2_benches,
+    "snappy": snappy_benches,
+    "lz4":   lz4_benches,
+    "zstd":  zstd_benches,
+    "brotli": brotli_benches,
 }
 
 # Hand-written packages that should not be touched

@@ -40,12 +40,82 @@ pub fn OutputSink::write_fixed(
 }
 
 ///|
+/// Write bytes from a BytesView region into the sink.
+pub fn OutputSink::write_bytesview(
+  self : OutputSink,
+  src : BytesView,
+  offset : Int,
+  len : Int,
+) -> Unit {
+  self.ensure_capacity(len)
+  @blit.blit_bytesview(self.buf, self.pos, src, offset, len)
+  self.pos += len
+}
+
+///|
 /// Write all bytes from a Bytes value into the sink.
 pub fn OutputSink::write_bytes(self : OutputSink, src : Bytes) -> Unit {
   let len = src.length()
   self.ensure_capacity(len)
   @blit.blit_bytes(self.buf, self.pos, src, 0, len)
   self.pos += len
+}
+
+///|
+/// Write a single byte.
+pub fn OutputSink::write_byte(self : OutputSink, b : Byte) -> Unit {
+  self.ensure_capacity(1)
+  self.buf[self.pos] = b
+  self.pos += 1
+}
+
+///|
+/// Get a byte at absolute position in the output.
+pub fn OutputSink::get_byte(self : OutputSink, pos : Int) -> Byte {
+  self.buf[pos]
+}
+
+///|
+/// Copy `len` bytes from position `src_pos` in the output buffer to the
+/// current write position. Handles overlapping regions correctly (when
+/// distance < len, the pattern repeats). This replaces per-byte
+/// get_byte + write_byte loops in the decoder's copy path.
+pub fn OutputSink::copy_from_self(
+  self : OutputSink,
+  src_pos : Int,
+  len : Int,
+) -> Unit {
+  self.ensure_capacity(len)
+  let buf = self.buf
+  let mut dst = self.pos
+  let distance = dst - src_pos
+  if distance >= len {
+    // Non-overlapping: use bulk blit
+    @blit.blit_fixed_array(buf, dst, buf, src_pos, len)
+    self.pos += len
+  } else {
+    // Overlapping: byte-by-byte (pattern repeats)
+    let mut src = src_pos
+    for _ in 0..<len {
+      buf[dst] = buf[src]
+      dst += 1
+      src += 1
+    }
+    self.pos = dst
+  }
+}
+
+///|
+/// Write a single byte without capacity check (caller must ensure capacity).
+pub fn OutputSink::write_byte_unchecked(self : OutputSink, b : Byte) -> Unit {
+  self.buf[self.pos] = b
+  self.pos += 1
+}
+
+///|
+/// Current number of bytes written.
+pub fn OutputSink::length(self : OutputSink) -> Int {
+  self.pos
 }
 
 ///|

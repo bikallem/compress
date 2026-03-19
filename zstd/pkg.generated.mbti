@@ -1,0 +1,59 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bikallem/compress/zstd"
+
+// Values
+pub fn compress(Bytes, level? : CompressionLevel) -> Bytes
+
+pub fn decompress(Bytes) -> Bytes raise ZstdError
+
+// Errors
+pub(all) suberror ZstdError {
+  InvalidHeader(String)
+  CorruptData(String)
+  ChecksumMismatch(expected~ : UInt, got~ : UInt)
+  WindowTooLarge(String)
+  UnexpectedEOF
+}
+pub impl Show for ZstdError
+
+// Types and methods
+pub(all) enum CompressionLevel {
+  Fast
+  Default
+  Best
+  Level(Int)
+}
+pub impl Eq for CompressionLevel
+pub impl Show for CompressionLevel
+
+pub(all) enum Decode {
+  Await
+  Data(Bytes)
+  End
+  Error(ZstdError)
+}
+pub impl Show for Decode
+
+type Deflater
+pub fn Deflater::encode(Self, BytesView?) -> Encode
+pub fn Deflater::new(level? : CompressionLevel) -> Self
+
+pub(all) enum Encode {
+  Ok
+  Data(Bytes)
+  End
+  Error(ZstdError)
+}
+pub impl Show for Encode
+
+type Inflater
+pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::enable_direct_output(Self, Int) -> Unit
+pub fn Inflater::new() -> Self
+pub fn Inflater::src(Self, BytesView) -> Unit
+pub fn Inflater::take_output(Self) -> Bytes
+
+// Type aliases
+
+// Traits
+

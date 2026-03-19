@@ -12,7 +12,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
+	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
+	lz4 "github.com/pierrec/lz4/v4"
 )
 
 // MoonBit golden manifest entry (same schema as Go golden).
@@ -57,41 +64,7 @@ func TestGoDecompressMoonBit(t *testing.T) {
 				t.Fatalf("Failed to read MoonBit compressed %s: %v", e.OutputFile, err)
 			}
 
-			var decompressed []byte
-			switch e.Algorithm {
-			case "deflate":
-				r := flate.NewReader(bytes.NewReader(compressed))
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "gzip":
-				r, gerr := gzip.NewReader(bytes.NewReader(compressed))
-				if gerr != nil {
-					t.Fatalf("gzip.NewReader failed: %v", gerr)
-				}
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "zlib":
-				r, zerr := zlib.NewReader(bytes.NewReader(compressed))
-				if zerr != nil {
-					t.Fatalf("zlib.NewReader failed: %v", zerr)
-				}
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "lzw":
-				r := lzw.NewReader(bytes.NewReader(compressed), lzw.LSB, 8)
-				decompressed, err = io.ReadAll(r)
-				r.Close()
-			case "bzip2":
-				r := bzip2.NewReader(bytes.NewReader(compressed))
-				decompressed, err = io.ReadAll(r)
-			default:
-				t.Skipf("Unknown algorithm: %s", e.Algorithm)
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("Go decompression of MoonBit output failed: %v", err)
-			}
+			decompressed := goDecompress(t, e.Algorithm, compressed)
 			if !bytes.Equal(decompressed, input) {
 				t.Errorf("Round-trip mismatch: MoonBit compressed → Go decompressed\n"+
 					"  input: %d bytes, got: %d bytes", len(input), len(decompressed))
@@ -121,9 +94,8 @@ func TestBitIdenticalOutput(t *testing.T) {
 	total := 0
 
 	for _, e := range entries {
-		// Skip algorithms where Go golden files don't exist (bzip2)
-		// Go stdlib has bzip2 decompressor only, no compressor
-		if e.Algorithm == "bzip2" {
+		// Skip dictionary-based algorithms
+		if e.Algorithm == "deflate_dict" || e.Algorithm == "zlib_dict" {
 			continue
 		}
 
@@ -200,6 +172,24 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 		r := lzw.NewReader(bytes.NewReader(data), lzw.LSB, 8)
 		result, err = io.ReadAll(r)
 		r.Close()
+	case "bzip2":
+		r := bzip2.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "snappy":
+		result, err = snappy.Decode(nil, data)
+	case "lz4":
+		r := lz4.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "zstd":
+		dec, derr := zstd.NewReader(bytes.NewReader(data))
+		if derr != nil {
+			t.Fatalf("zstd.NewReader: %v", derr)
+		}
+		result, err = io.ReadAll(dec)
+		dec.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	default:
 		t.Fatalf("Unknown algorithm: %s", algorithm)
 	}
@@ -209,77 +199,211 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 	return result
 }
 
-// TestParitySummary prints an overview of all parity results.
+// TestParitySummary prints an overview of all parity results with compression ratio details.
 func TestParitySummary(t *testing.T) {
 	entries := loadMBManifest(t)
 	mbDir := filepath.Join("..", "testdata", "moonbit_golden")
 	goDir := filepath.Join("..", "testdata", "golden")
 
-	type Result struct {
-		identical   int
-		compatible  int
-		failed      int
-		noGoGolden  int
+	type CaseResult struct {
+		name       string
+		inputName  string
+		mbSize     int
+		goSize     int
+		identical  bool
+		compatible bool
+		failed     bool
+		noGoGolden bool
 	}
-	results := make(map[string]*Result)
+
+	// Group results by algorithm, preserving order
+	algoOrder := []string{}
+	algoSeen := map[string]bool{}
+	algoResults := make(map[string][]CaseResult)
+
+	codecFilter := os.Getenv("PARITY_CODEC")
 
 	for _, e := range entries {
-		r, ok := results[e.Algorithm]
-		if !ok {
-			r = &Result{}
-			results[e.Algorithm] = r
+		if codecFilter != "" && e.Algorithm != codecFilter {
+			continue
 		}
+		if !algoSeen[e.Algorithm] {
+			algoSeen[e.Algorithm] = true
+			algoOrder = append(algoOrder, e.Algorithm)
+		}
+
+		cr := CaseResult{name: e.Name, inputName: e.InputFile}
 
 		mbCompressed, err := os.ReadFile(filepath.Join(mbDir, e.OutputFile))
 		if err != nil {
-			r.failed++
+			cr.failed = true
+			algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 			continue
 		}
+		cr.mbSize = len(mbCompressed)
 
 		goCompressed, err := os.ReadFile(filepath.Join(goDir, e.OutputFile))
 		if err != nil {
-			// No Go golden (e.g., bzip2 — Go has no compressor)
+			cr.noGoGolden = true
 			// Check if Go can decompress MoonBit output
-			if e.Algorithm == "bzip2" {
-				input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
-				if ierr != nil {
-					r.failed++
-					continue
-				}
-				br := bzip2.NewReader(bytes.NewReader(mbCompressed))
-				decomp, derr := io.ReadAll(br)
-				if derr != nil || !bytes.Equal(decomp, input) {
-					r.failed++
+			input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
+			if ierr == nil {
+				decomp := goDecompressSafe(e.Algorithm, mbCompressed)
+				if decomp != nil && bytes.Equal(decomp, input) {
+					cr.compatible = true
 				} else {
-					r.compatible++
+					cr.failed = true
 				}
 			}
-			r.noGoGolden++
+			algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 			continue
 		}
+		cr.goSize = len(goCompressed)
 
 		if bytes.Equal(mbCompressed, goCompressed) {
-			r.identical++
+			cr.identical = true
 		} else {
-			// Check semantic compatibility
 			input, ierr := os.ReadFile(filepath.Join(goDir, e.InputFile))
 			if ierr != nil {
-				r.failed++
+				cr.failed = true
+				algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
 				continue
 			}
 			mbDecomp := goDecompressSafe(e.Algorithm, mbCompressed)
 			if mbDecomp != nil && bytes.Equal(mbDecomp, input) {
-				r.compatible++
+				cr.compatible = true
 			} else {
-				r.failed++
+				cr.failed = true
+			}
+		}
+		algoResults[e.Algorithm] = append(algoResults[e.Algorithm], cr)
+	}
+
+	// Collect all results into a flat list with computed ratios
+	type SortEntry struct {
+		label    string
+		status   string // "identical", "compatible", "failed", "no-go-golden"
+		mbSize   int
+		goSize   int
+		ratio    float64 // mbSize / goSize, 1.0 for identical, 0 for no comparison
+		absDelta int     // |mbSize - goSize|
+	}
+
+	var all []SortEntry
+	totalIdentical, totalCompatible, totalFailed, totalAll := 0, 0, 0, 0
+
+	for _, algo := range algoOrder {
+		for _, c := range algoResults[algo] {
+			totalAll++
+			se := SortEntry{label: c.name, mbSize: c.mbSize, goSize: c.goSize}
+			switch {
+			case c.failed:
+				totalFailed++
+				se.status = "FAILED"
+				se.ratio = 0
+			case c.identical:
+				totalIdentical++
+				se.status = "identical"
+				se.ratio = 1.0
+			case c.noGoGolden && c.compatible:
+				totalCompatible++
+				se.status = "no-go-golden"
+				se.ratio = 0
+			case c.compatible:
+				totalCompatible++
+				se.status = "compatible"
+				if c.goSize > 0 {
+					se.ratio = float64(c.mbSize) / float64(c.goSize)
+					if c.mbSize > c.goSize {
+						se.absDelta = c.mbSize - c.goSize
+					} else {
+						se.absDelta = c.goSize - c.mbSize
+					}
+				}
+			}
+			all = append(all, se)
+		}
+	}
+
+	sortByDelta := os.Getenv("PARITY_SORT_RATIO") != ""
+
+	if sortByDelta {
+		sort.Slice(all, func(i, j int) bool {
+			// Sort: worst ratio first (MoonBit larger than Go),
+			// then best ratio last (MoonBit smaller than Go).
+			// Within each group, sort by magnitude.
+			ri := all[i].ratio
+			rj := all[j].ratio
+			// Entries with ratio 0 (no comparison) go last
+			if ri == 0 && rj != 0 { return false }
+			if ri != 0 && rj == 0 { return true }
+			if ri == 0 && rj == 0 { return false }
+			// Both > 1.0: higher ratio first (worse)
+			// Both < 1.0: lower ratio first (more notable)
+			// Mixed: ratio > 1.0 comes before ratio < 1.0
+			iAbove := ri >= 1.0
+			jAbove := rj >= 1.0
+			if iAbove && !jAbove { return true }
+			if !iAbove && jAbove { return false }
+			if iAbove {
+				return ri > rj // both above 1.0: bigger ratio = worse
+			}
+			return ri < rj // both below 1.0: smaller ratio = more notable
+		})
+		fmt.Printf("\n=== Parity Report (sorted by worst ratio) ===\n")
+	} else {
+		// Default: grouped by algorithm (already in insertion order)
+		fmt.Printf("\n=== Parity Report ===\n")
+	}
+
+	printEntry := func(se SortEntry) {
+		switch se.status {
+		case "FAILED":
+			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), "-", "FAILED")
+		case "identical":
+			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), humanSize(se.goSize), "identical")
+		case "no-go-golden":
+			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), "-", "OK (no Go ref)")
+		case "compatible":
+			fmt.Printf("  %-44s  %-8s  %-8s  %.2fx\n", se.label, humanSize(se.mbSize), humanSize(se.goSize), se.ratio)
+		}
+	}
+
+	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", "Name", "MoonBit", "Go", "Ratio")
+	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", strings.Repeat("-", 44), "--------", "--------", "--------")
+
+	if sortByDelta {
+		for _, se := range all {
+			printEntry(se)
+		}
+	} else {
+		for _, algo := range algoOrder {
+			fmt.Printf("\n  --- %s ---\n", algo)
+			for _, se := range all {
+				if strings.HasPrefix(se.label, algo+"/") {
+					printEntry(se)
+				}
 			}
 		}
 	}
 
-	t.Log("\n=== Parity Summary ===")
-	for algo, r := range results {
-		t.Logf("%-10s  identical: %d  compatible: %d  failed: %d  no-go-golden: %d",
-			algo, r.identical, r.compatible, r.failed, r.noGoGolden)
+	// Print totals
+	fmt.Printf("\n=== Totals ===\n")
+	fmt.Printf("  Identical:  %d/%d\n", totalIdentical, totalAll)
+	fmt.Printf("  Compatible: %d/%d\n", totalCompatible, totalAll)
+	fmt.Printf("  Failed:     %d/%d\n", totalFailed, totalAll)
+}
+
+func humanSize(n int) string {
+	switch {
+	case n >= 1048576:
+		return fmt.Sprintf("%.0fKB", float64(n)/1024)
+	case n >= 10240:
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	case n >= 1024:
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	default:
+		return fmt.Sprintf("%dB", n)
 	}
 }
 
@@ -311,6 +435,21 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 		r.Close()
 	case "bzip2":
 		r := bzip2.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "snappy":
+		result, err = snappy.Decode(nil, data)
+	case "lz4":
+		r := lz4.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
+	case "zstd":
+		dec, derr := zstd.NewReader(bytes.NewReader(data))
+		if derr != nil {
+			return nil
+		}
+		result, err = io.ReadAll(dec)
+		dec.Close()
+	case "brotli":
+		r := brotli.NewReader(bytes.NewReader(data))
 		result, err = io.ReadAll(r)
 	default:
 		return nil

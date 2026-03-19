@@ -45,6 +45,18 @@ pub extern "c" fn match_length(
 ) -> Int = "bikallem_compress_internal_blit_match_length"
 
 ///|
+/// Word-at-a-time match length comparison on Bytes (same layout as FixedArray[Byte] in native).
+/// Returns the number of matching bytes between a[a_off..] and b[b_off..], up to max_len.
+#borrow(a, b)
+pub extern "c" fn match_length_bytes(
+  a : Bytes,
+  a_offset : Int,
+  b : Bytes,
+  b_offset : Int,
+  max_len : Int,
+) -> Int = "bikallem_compress_internal_blit_match_length"
+
+///|
 /// Allocate a FixedArray[Byte] without zeroing memory.
 /// The caller MUST fully initialize the buffer before reading from it.
 pub extern "c" fn make_uninit(len : Int) -> FixedArray[Byte] = "bikallem_compress_internal_blit_make_uninit"

@@ -13,3 +13,15 @@ pub fn blit_bytesview(
 ) -> Unit {
   blit_bytes(dst, dst_offset, src.bytes(), src_offset, length)
 }
+
+///|
+/// Word-at-a-time match length comparison on BytesView.
+/// Returns the number of matching bytes between src[a..] and src[b..], up to max_len.
+pub fn match_length_bv(
+  src : BytesView,
+  a : Int,
+  b : Int,
+  max_len : Int,
+) -> Int {
+  match_length_bytes(src.bytes(), a, src.bytes(), b, max_len)
+}
