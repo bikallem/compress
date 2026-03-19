@@ -60,9 +60,10 @@ const BROTLI_HASH_SIZE : Int = 1 << 14
 const MAX_BACKWARD_DISTANCE : Int = 1 << 22
 
 ///|
-/// Maximum LZ77 match length. Brotli supports up to ~16M via copy code 23,
-/// but we cap at a practical limit that covers common repetitive data well.
-const MAX_MATCH_LENGTH : Int = 65536
+/// Maximum LZ77 match length. Brotli copy code 23 supports up to
+/// 2118 + 2^24 - 1 = 16,779,333 bytes. We use the full range so that
+/// highly repetitive data can be covered by a single copy command.
+const MAX_MATCH_LENGTH : Int = 16779333
 
 ///|
 /// Minimum LZ77 match length.

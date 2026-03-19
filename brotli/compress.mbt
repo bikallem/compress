@@ -76,18 +76,19 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   if src_len > MAX_METABLOCK_SIZE {
     return compress_uncompressed(src, src_len)
   }
+  let wbits = optimal_wbits(src_len)
   let cmds = if level <= 1 {
     lz77_find_matches(src, src_len)
   } else {
     lz77_find_matches_chain(src, src_len, level)
   }
-  let compressed = encode_compressed_metablock(src, src_len, cmds, level)
+  let compressed = encode_compressed_metablock(src, src_len, cmds, level, wbits)
   // For levels > 1, also try level 1 encoding (no context modeling, simpler
   // Huffman trees) and pick the smaller result. Context modeling overhead
   // can exceed savings on highly repetitive data.
   let compressed = if level > 1 {
     let fast_cmds = lz77_find_matches(src, src_len)
-    let fast = encode_compressed_metablock(src, src_len, fast_cmds, 1)
+    let fast = encode_compressed_metablock(src, src_len, fast_cmds, 1, wbits)
     if fast.length() < compressed.length() { fast } else { compressed }
   } else {
     compressed
@@ -1180,9 +1181,10 @@ fn encode_compressed_metablock(
   src_len : Int,
   cmds : Array[BrotliCmd],
   level : Int,
+  wbits : Int,
 ) -> Bytes {
   let bw = BitWriter::new(if src_len < 1048576 { src_len * 2 + 256 } else { 1048576 })
-  encode_wbits(bw, 22)
+  encode_wbits(bw, wbits)
   encode_metablock_into(bw, src, src_len, cmds, level, true)
   bw.to_bytes()
 }
@@ -1522,6 +1524,34 @@ fn encode_context_map(bw : BitWriter, cmap : FixedArray[Int]) -> Unit {
 }
 
 // ─── Utility ────────────────────────────────────────────────────────
+
+///|
+/// Choose the smallest WBITS value that can represent the input size,
+/// preferring encodings with shorter headers. WBITS=16 uses 1 bit,
+/// WBITS 18-24 use 4 bits, WBITS 10-15/17 use 7 bits.
+fn optimal_wbits(src_len : Int) -> Int {
+  // WBITS=16 (1 bit header, 64KB window) — best for small inputs
+  if src_len <= (1 << 16) {
+    16
+  } else if src_len <= (1 << 17) {
+    // WBITS=17 costs 7 bits; WBITS=18 costs 4 bits — use 18 to save 3 header bits
+    18
+  } else if src_len <= (1 << 18) {
+    18
+  } else if src_len <= (1 << 19) {
+    19
+  } else if src_len <= (1 << 20) {
+    20
+  } else if src_len <= (1 << 21) {
+    21
+  } else if src_len <= (1 << 22) {
+    22
+  } else if src_len <= (1 << 23) {
+    23
+  } else {
+    24
+  }
+}
 
 ///|
 fn encode_wbits(bw : BitWriter, wbits : Int) -> Unit {

@@ -205,3 +205,15 @@ test "debug repeated encoding size" {
   let c0 = @brotli.compress(data, level=@brotli.Level(0))
   println("repeated 4KB level0: \{c0.length()} bytes")
 }
+
+///|
+test "debug text_1mb levels" {
+  let phrase = b"The quick brown fox jumps over the lazy dog. "
+  let data = Bytes::makei(1048576, fn(i) { phrase[i % phrase.length()] })
+  for lvl in [0, 1, 2, 4, 6, 9] {
+    let compressed = @brotli.compress(data, level=@brotli.Level(lvl))
+    println("MB Q\{lvl}: \{compressed.length()} bytes")
+  }
+  let default_compressed = @brotli.compress(data)
+  println("MB default: \{default_compressed.length()} bytes")
+}
