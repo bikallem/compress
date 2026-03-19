@@ -232,12 +232,32 @@ if $RUN_GO; then
   echo ""
 fi
 
-# --- Collect all benchmark names ---
+# --- Collect all benchmark names and compute ratios ---
 
 declare -A ALL_KEYS
 for key in "${!CURRENT[@]}"; do ALL_KEYS["$key"]=1; done
 for key in "${!GO[@]}"; do ALL_KEYS["$key"]=1; done
-SORTED_KEYS=$(printf '%s\n' "${!ALL_KEYS[@]}" | sort)
+
+# Build rows with ratio for sorting. Format: "codec|ratio|key"
+ROW_DATA=$(mktemp)
+for key in "${!ALL_KEYS[@]}"; do
+  [[ -z "$key" ]] && continue
+  if [[ -n "$FILTER" ]] && ! echo "$key" | grep -qi "$FILTER"; then
+    continue
+  fi
+  # Extract codec from benchmark name (first component before _)
+  codec=$(echo "$key" | sed 's/_.*//')
+  cur=${CURRENT[$key]:-""}
+  go_val=${GO[$key]:-""}
+  ratio="0"
+  if [[ -n "$cur" && -n "$go_val" ]] && $RUN_GO; then
+    ratio=$(awk "BEGIN {printf \"%.6f\", $cur / $go_val}")
+  fi
+  echo "${codec}|${ratio}|${key}" >> "$ROW_DATA"
+done
+
+# Get unique codecs in order
+CODECS=$(cut -d'|' -f1 "$ROW_DATA" | sort -u)
 
 # --- Report ---
 
@@ -245,13 +265,12 @@ echo ""
 echo "================================================================================"
 echo "  BENCHMARK REPORT"
 echo "================================================================================"
-echo ""
 
 # Build header
-HDR="%-44s %12s"
-DIV="%-44s %12s"
+HDR="  %-42s %12s"
+DIV="  %-42s %12s"
 hdr_args=("Benchmark" "Current(µs)")
-div_args=("$(printf -- '-%.0s' {1..44})" "$(printf -- '-%.0s' {1..12})")
+div_args=("$(printf -- '-%.0s' {1..42})" "$(printf -- '-%.0s' {1..12})")
 
 if $RUN_PREV; then
   HDR="$HDR %12s %12s"
@@ -266,66 +285,65 @@ if $RUN_GO; then
   div_args+=("$(printf -- '-%.0s' {1..12})" "$(printf -- '-%.0s' {1..12})")
 fi
 
-printf "$HDR\n" "${hdr_args[@]}"
-printf "$DIV\n" "${div_args[@]}"
+# Print rows grouped by codec, sorted by ratio (slowest first) within each group
+for codec in $CODECS; do
+  echo ""
+  echo "--- $codec ---"
+  printf "$HDR\n" "${hdr_args[@]}"
+  printf "$DIV\n" "${div_args[@]}"
 
-# Print rows
-while IFS= read -r key; do
-  [[ -z "$key" ]] && continue
-  if [[ -n "$FILTER" ]] && ! echo "$key" | grep -qi "$FILTER"; then
-    continue
-  fi
+  # Get rows for this codec, sorted by ratio descending (slowest first)
+  grep "^${codec}|" "$ROW_DATA" | sort -t'|' -k2 -rn | while IFS='|' read -r _codec _ratio key; do
+    cur=${CURRENT[$key]:-""}
+    row_fmt="  %-42s"
+    row_args=("$key")
 
-  cur=${CURRENT[$key]:-""}
-  row_fmt="%-44s"
-  row_args=("$key")
-
-  # Current
-  if [[ -n "$cur" ]]; then
-    row_fmt="$row_fmt %12.2f"
-    row_args+=("$cur")
-  else
-    row_fmt="$row_fmt %12s"
-    row_args+=("-")
-  fi
-
-  # Previous
-  if $RUN_PREV; then
-    prev_val=${PREV[$key]:-""}
-    if [[ -n "$prev_val" ]]; then
+    if [[ -n "$cur" ]]; then
       row_fmt="$row_fmt %12.2f"
-      row_args+=("$prev_val")
+      row_args+=("$cur")
     else
       row_fmt="$row_fmt %12s"
       row_args+=("-")
     fi
-    change=$(fmt_change "$prev_val" "$cur")
-    row_fmt="$row_fmt %12s"
-    row_args+=("$change")
-  fi
 
-  # Go
-  if $RUN_GO; then
-    go_val=${GO[$key]:-""}
-    if [[ -n "$go_val" ]]; then
-      row_fmt="$row_fmt %12.2f"
-      row_args+=("$go_val")
-    else
+    if $RUN_PREV; then
+      prev_val=${PREV[$key]:-""}
+      if [[ -n "$prev_val" ]]; then
+        row_fmt="$row_fmt %12.2f"
+        row_args+=("$prev_val")
+      else
+        row_fmt="$row_fmt %12s"
+        row_args+=("-")
+      fi
+      change=$(fmt_change "$prev_val" "$cur")
       row_fmt="$row_fmt %12s"
-      row_args+=("-")
+      row_args+=("$change")
     fi
-    if [[ -n "$cur" && -n "$go_val" ]]; then
-      ratio=$(awk "BEGIN {printf \"%.2f\", $cur / $go_val}")
-      row_fmt="$row_fmt %11sx"
-      row_args+=("$ratio")
-    else
-      row_fmt="$row_fmt %12s"
-      row_args+=("-")
-    fi
-  fi
 
-  printf "$row_fmt\n" "${row_args[@]}"
-done <<< "$SORTED_KEYS"
+    if $RUN_GO; then
+      go_val=${GO[$key]:-""}
+      if [[ -n "$go_val" ]]; then
+        row_fmt="$row_fmt %12.2f"
+        row_args+=("$go_val")
+      else
+        row_fmt="$row_fmt %12s"
+        row_args+=("-")
+      fi
+      if [[ -n "$cur" && -n "$go_val" ]]; then
+        ratio=$(awk "BEGIN {printf \"%.2f\", $cur / $go_val}")
+        row_fmt="$row_fmt %11sx"
+        row_args+=("$ratio")
+      else
+        row_fmt="$row_fmt %12s"
+        row_args+=("-")
+      fi
+    fi
+
+    printf "$row_fmt\n" "${row_args[@]}"
+  done
+done
+
+rm -f "$ROW_DATA"
 
 echo ""
 if $RUN_PREV; then
@@ -362,7 +380,7 @@ if $SAVE_JSON; then
         printf ", \"go_us\": %s" "$go_val"
       fi
       printf "}"
-    done <<< "$SORTED_KEYS"
+    done <<< "$(printf '%s\n' "${!ALL_KEYS[@]}" | sort)"
     echo ""
     echo "  }"
     echo "}"
