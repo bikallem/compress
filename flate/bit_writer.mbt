@@ -22,7 +22,7 @@ fn BitWriter::ensure_capacity(self : BitWriter, needed : Int) -> Unit {
     } else {
       self.pos + needed
     }
-    let new_buf = FixedArray::make(new_cap, b'\x00')
+    let new_buf = @blit.make_uninit(new_cap)
     @blit.blit_fixed_array(new_buf, 0, self.buf, 0, self.pos)
     self.buf = new_buf
   }
@@ -202,6 +202,9 @@ fn BitWriter::write_dynamic_block(
     self.write_dynamic_header_precomputed(
       lit_bl, dist_bl, cl_codes, cl_bl, hlit, hdist, hclen, is_final,
     )
+    // Cache codes arrays in locals to avoid method call overhead
+    let lit_c = dyn_lit_codes.codes
+    let dist_c = dyn_dist_codes.codes
     for t in tokens {
       if t.is_match() {
         let length = t.get_length()
@@ -210,7 +213,7 @@ fn BitWriter::write_dynamic_block(
         let length_code = length_encode_table[lidx]
         let length_extra_bits = length_encode_table[lidx + 1]
         let length_extra_val = length_encode_table[lidx + 2]
-        let lentry = dyn_lit_codes.get(length_code)
+        let lentry = lit_c.unsafe_get(length_code)
         self.write_bits_lsb(lentry >> 5, (lentry & 0x1FU).reinterpret_as_int())
         if length_extra_bits > 0 {
           self.write_bits_lsb(
@@ -222,7 +225,7 @@ fn BitWriter::write_dynamic_block(
         let dist_code = dist_encode_table[didx]
         let dist_extra_bits = dist_encode_table[didx + 1]
         let dist_extra_val = dist - dist_base[dist_code]
-        let dentry = dyn_dist_codes.get(dist_code)
+        let dentry = dist_c.unsafe_get(dist_code)
         self.write_bits_lsb(dentry >> 5, (dentry & 0x1FU).reinterpret_as_int())
         if dist_extra_bits > 0 {
           self.write_bits_lsb(
@@ -231,11 +234,11 @@ fn BitWriter::write_dynamic_block(
           )
         }
       } else {
-        let entry = dyn_lit_codes.get(t.get_literal().to_int())
+        let entry = lit_c.unsafe_get(t.get_literal().to_int())
         self.write_bits_lsb(entry >> 5, (entry & 0x1FU).reinterpret_as_int())
       }
     }
-    let eob = dyn_lit_codes.get(END_BLOCK_MARKER)
+    let eob = lit_c.unsafe_get(END_BLOCK_MARKER)
     self.write_bits_lsb(eob >> 5, (eob & 0x1FU).reinterpret_as_int())
   }
 }
@@ -262,7 +265,7 @@ fn BitWriter::write_dynamic_header_precomputed(
     self.write_bits_lsb(cl_bl[code_order[i]].reinterpret_as_uint(), 3)
   }
   let total = hlit + hdist
-  let all = FixedArray::make(total, 0)
+  let all = @blit.make_uninit_int(total)
   for i in 0..<hlit {
     all[i] = lit_bl[i]
   }

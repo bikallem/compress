@@ -511,9 +511,11 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       } else {
         max_chain
       }
+      // Cache the comparison byte to avoid repeated array lookup
+      let mut w_end = window.unsafe_get(i + best_len)
       while pos >= 0 && i - pos <= MAX_MATCH_OFFSET && chain_count < chain_limit {
-        if best_len > 0 &&
-          window.unsafe_get(pos + best_len) != window.unsafe_get(i + best_len) {
+        // Skip check: compare byte at best_len position first
+        if window.unsafe_get(pos + best_len) != w_end {
           let next = prev.unsafe_get(pos & WINDOW_MASK)
           if next >= pos {
             break
@@ -529,6 +531,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
           if best_len >= nice || best_len == max_len {
             break
           }
+          w_end = window.unsafe_get(i + best_len)
         }
         let next = prev.unsafe_get(pos & WINDOW_MASK)
         if next >= pos {

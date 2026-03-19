@@ -74,34 +74,35 @@ fn compute_bit_lengths(
     }
     return bit_lengths
   }
-  let sorted = FixedArray::make(active, (0, 0))
+  // Use parallel arrays instead of tuple array for better cache locality
+  let leaf_freq = @blit.make_uninit_int(active)
+  let leaf_sym = @blit.make_uninit_int(active)
   for i = 0, idx = 0; i < n; {
     if freqs[i] > 0 {
-      sorted[idx] = (freqs[i], i)
+      leaf_freq[idx] = freqs[i]
+      leaf_sym[idx] = i
       continue i + 1, idx + 1
     }
     continue i + 1, idx
   }
+  // Insertion sort by frequency (parallel arrays)
   for i in 1..<active {
-    let key = sorted[i]
+    let kf = leaf_freq[i]
+    let ks = leaf_sym[i]
     let mut j = i - 1
-    while j >= 0 && sorted[j].0 > key.0 {
-      sorted[j + 1] = sorted[j]
+    while j >= 0 && leaf_freq[j] > kf {
+      leaf_freq[j + 1] = leaf_freq[j]
+      leaf_sym[j + 1] = leaf_sym[j]
       j -= 1
     }
-    sorted[j + 1] = key
-  }
-  let leaf_freq = FixedArray::make(active, 0)
-  let leaf_sym = FixedArray::make(active, 0)
-  for i, entry in sorted {
-    leaf_freq[i] = entry.0
-    leaf_sym[i] = entry.1
+    leaf_freq[j + 1] = kf
+    leaf_sym[j + 1] = ks
   }
   let total_nodes = 2 * active - 1
   let parent = FixedArray::make(total_nodes, -1)
-  let node_freq = FixedArray::make(total_nodes, 0)
-  for i, f in leaf_freq {
-    node_freq[i] = f
+  let node_freq = @blit.make_uninit_int(total_nodes)
+  for i in 0..<active {
+    node_freq[i] = leaf_freq[i]
   }
   let mut leaf_ptr = 0
   let mut int_ptr = active
@@ -308,7 +309,7 @@ fn rle_count_freqs(
   cl_freqs : FixedArray[Int],
 ) -> Unit {
   let total = hlit + hdist
-  let all = FixedArray::make(total, 0)
+  let all = @blit.make_uninit_int(total)
   for i in 0..<hlit {
     all[i] = lit_bl[i]
   }
