@@ -36,14 +36,13 @@ const WINDOW_SIZE : Int = 1 << 15 // 32KB
 const WINDOW_MASK : Int = WINDOW_SIZE - 1
 
 ///|
-const MAX_BLOCK_TOKENS : Int = 16384
+const MAX_BLOCK_TOKENS : Int = 65536
 
 ///|
 /// Maximum number of intermediate positions to rehash after a match.
-/// Positions beyond this limit are skipped — they rarely improve future
-/// match quality and dominate the CPU cost (hash4 + insert_hash = ~50%
-/// of total instructions per callgrind profiling).
-const MAX_INSERT : Int = 32
+/// Must be >= MAX_MATCH_LENGTH to avoid missing nearby matches after
+/// long matches in repetitive data.
+const MAX_INSERT : Int = 258
 
 ///|
 /// Streaming, non-blocking DEFLATE compressor.
@@ -241,12 +240,16 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     self.index = i
     return
   }
-  self.w.start_fixed_block(false)
+  // Quick check: if first 32 bytes are all the same, use uniform encoder
+  if self.encode_uniform_run() {
+    return
+  }
+  let head = self.head
   while i < safe_end {
     // i < safe_end guarantees i+3 < end, safe for hash4/unsafe_get
     let h = self.hash4(i, hash_mask)
-    let match_pos = self.head.unsafe_get(h)
-    self.head.unsafe_set(h, i)
+    let match_pos = head.unsafe_get(h)
+    head.unsafe_set(h, i)
     if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
       let max_len = if end - i < MAX_MATCH_LENGTH {
         end - i
@@ -255,19 +258,111 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
       }
       let length = self.match_len(i, match_pos, max_len)
       if length >= MIN_MATCH_LENGTH {
-        self.w.write_match_fast(length, i - match_pos)
-        if i + 4 < end {
-          self.head.unsafe_set(self.hash4(i + 1, hash_mask), i + 1)
+        self.tokens.push(Token::match_(length, i - match_pos))
+        // After a match, hash positions at the end of the match
+        // so future lookups can find overlapping matches.
+        let match_end = i + length
+        if match_end - 2 > i && match_end + 2 < end {
+          for j in (match_end - 3)..<match_end {
+            head.unsafe_set(self.hash4(j, hash_mask), j)
+          }
         }
-        i += length
+        i = match_end
+        if self.tokens.length() >= MAX_BLOCK_TOKENS {
+          self.w.write_dynamic_block(self.tokens, false)
+          self.tokens.clear()
+        }
         continue
       }
     }
-    self.w.write_literal_fast(self.window.unsafe_get(i))
+    self.tokens.push(Token::literal(self.window.unsafe_get(i)))
     i += 1
+    if self.tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(self.tokens, false)
+      self.tokens.clear()
+    }
   }
-  self.w.write_fixed_symbol(END_BLOCK_MARKER)
   self.index = i
+}
+
+///|
+/// Detect and optimally encode uniform data (all same byte).
+/// Returns true if data was uniform and has been encoded.
+fn Deflater::encode_uniform_run(self : Deflater) -> Bool {
+  let start = self.index
+  let end = self.window_end
+  if end - start < 32 {
+    return false
+  }
+  let b = self.window[start]
+  for i in (start + 1)..<(start + 32) {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  // Verify remaining bytes are also uniform
+  for i in (start + 32)..<end {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  // All same byte — emit one literal + repeated distance-1 matches
+  // Use dynamic block (via token path) for optimal Huffman coding
+  // with only 2-3 active symbols.
+  self.tokens.push(Token::literal(b))
+  let mut pos = start + 1
+  while pos < end {
+    let len = if end - pos < MAX_MATCH_LENGTH {
+      end - pos
+    } else {
+      MAX_MATCH_LENGTH
+    }
+    self.tokens.push(Token::match_(len, 1))
+    pos += len
+  }
+  self.w.write_dynamic_block(self.tokens, false)
+  self.tokens.clear()
+  self.index = end
+  true
+}
+
+///|
+/// Detect and optimally encode uniform data via tokens (for levels 2+).
+/// Returns true if data was uniform and has been encoded.
+fn Deflater::encode_uniform_tokens(self : Deflater) -> Bool {
+  let start = self.index
+  let end = self.window_end
+  if end - start < 32 {
+    return false
+  }
+  let b = self.window[start]
+  for i in (start + 1)..<(start + 32) {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  // Verify remaining bytes are also uniform
+  for i in (start + 32)..<end {
+    if self.window[i] != b {
+      return false
+    }
+  }
+  // All same byte — emit one literal + repeated distance-1 matches as tokens
+  self.tokens.push(Token::literal(b))
+  let mut pos = start + 1
+  while pos < end {
+    let len = if end - pos < MAX_MATCH_LENGTH {
+      end - pos
+    } else {
+      MAX_MATCH_LENGTH
+    }
+    self.tokens.push(Token::match_(len, 1))
+    pos += len
+  }
+  self.w.write_dynamic_block(self.tokens, false)
+  self.tokens.clear()
+  self.index = end
+  true
 }
 
 ///|
@@ -279,6 +374,10 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
   let safe_end = end - MIN_MATCH_LENGTH
   if i >= safe_end {
     self.index = i
+    return
+  }
+  // Quick check: if data is uniform, encode optimally via tokens
+  if self.encode_uniform_tokens() {
     return
   }
   while i < safe_end {
@@ -336,6 +435,10 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
   let safe_end = end - MIN_MATCH_LENGTH
   if i >= safe_end {
     self.index = i
+    return
+  }
+  // Quick check: if data is uniform, encode optimally via tokens
+  if self.encode_uniform_tokens() {
     return
   }
   while i < safe_end {
@@ -431,20 +534,9 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
     self.has_prev = false
   }
   if self.index < self.window_end {
-    match self.level {
-      0 | 1 => {
-        self.w.start_fixed_block(false)
-        while self.index < self.window_end {
-          self.w.write_literal_fast(self.window[self.index])
-          self.index += 1
-        }
-        self.w.write_fixed_symbol(END_BLOCK_MARKER)
-      }
-      _ =>
-        while self.index < self.window_end {
-          self.tokens.push(Token::literal(self.window[self.index]))
-          self.index += 1
-        }
+    while self.index < self.window_end {
+      self.tokens.push(Token::literal(self.window[self.index]))
+      self.index += 1
     }
   }
   self.flush_tokens()
