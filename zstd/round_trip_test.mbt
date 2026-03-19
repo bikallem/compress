@@ -72,6 +72,29 @@ test "round-trip: all byte values" {
 }
 
 ///|
+test "round-trip: 1MB repeating text" {
+  let pattern = "The quick brown fox jumps over the lazy dog. "
+  let plen = pattern.to_bytes().length()
+  let buf = @buffer.new()
+  let mut written = 0
+  while written + plen <= 1048576 {
+    buf.write_string(pattern)
+    written += plen
+  }
+  let remaining = 1048576 - written
+  for i in 0..<remaining {
+    buf.write_byte(pattern.to_bytes()[i])
+  }
+  let data = buf.to_bytes()
+  let compressed = @zstd.compress(data)
+  let decompressed = @zstd.decompress(compressed)
+  assert_eq(data.length(), decompressed.length())
+  assert_eq(data, decompressed)
+  // Should compress very well
+  assert_true(compressed.length() < 300)
+}
+
+///|
 test "signal protocol: chunked input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @zstd.compress(data)

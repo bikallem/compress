@@ -94,6 +94,8 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   }
   let sink = @output_sink.OutputSink::new(capacity)
   let xxh = @checksum.XXH64::new()
+  // Repeat offsets persist across blocks within a frame
+  let rep = [1, 4, 8]
   while pos < src_len {
     guard pos + 3 <= src_len else { raise ZstdError::UnexpectedEOF }
     let bh = src[pos].to_int() |
@@ -118,7 +120,7 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
       xxh.update(block_data[:])
     } else if block_type == BLOCK_TYPE_COMPRESSED {
       guard pos + block_size <= src_len else { raise ZstdError::UnexpectedEOF }
-      let block_data = decompress_block(src, pos, block_size, window_size)
+      let block_data = decompress_block(src, pos, block_size, window_size, sink, rep)
       sink.write_bytes(block_data)
       xxh.update(block_data[:])
       pos += block_size
@@ -146,11 +148,15 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
 
 ///|
 /// Decompresses a single compressed block.
+/// `prev_output` is the accumulated output from previous blocks (for cross-block back-references).
+/// `rep` is the repeat offset state, modified in place.
 fn decompress_block(
   src : BytesView,
   block_start : Int,
   block_size : Int,
   _window_size : Int,
+  prev_output : @output_sink.OutputSink,
+  rep : Array[Int],
 ) -> Bytes raise ZstdError {
   let mut pos = block_start
   let block_end = block_start + block_size
@@ -243,9 +249,12 @@ fn decompress_block(
   // For now: decode using predefined tables and the bitstream
   // The remaining bytes [pos..block_end) contain the sequence bitstream (backward)
   let seq_data = Bytes::makei(block_end - pos, fn(i) { src[pos + i] })
-  // Execute sequences
-  let out = @buffer.new()
+  // Execute sequences using a local output sink for this block
+  let block_out = @output_sink.OutputSink::new(
+    if num_sequences > 0 { 65536 } else { lit_data.length() },
+  )
   let mut lit_pos = 0
+  let prev_len = prev_output.length()
   // Simple sequence decoding: read sequences from the backward bitstream
   let br = BackwardBitReader::new(seq_data[:])
   // Initialize FSE states (read initial states from bitstream)
@@ -256,19 +265,13 @@ fn decompress_block(
   let mut of_state = br.read_bits(OF_DEFAULT_ACCURACY).reinterpret_as_int()
   let mut ml_state = br.read_bits(ML_DEFAULT_ACCURACY).reinterpret_as_int()
   for i in 0..<num_sequences {
-    // Decode offset: per RFC 8878, offset_value > 3 means actual offset = value - 3
-    // offset_value 1/2/3 are repeat offsets (not implemented, treated as offset 1)
+    // Decode offset_value from FSE + extra bits
     let (of_sym, of_nb, of_base) = fse_decode_symbol(of_table, of_state)
     let of_code = of_sym.to_int()
     let offset_value = if of_code > 0 {
       (1 << of_code) + br.read_bits(of_code).reinterpret_as_int()
     } else {
       1
-    }
-    let offset = if offset_value > 3 {
-      offset_value - 3
-    } else {
-      offset_value // repeat offsets: treat as small offset for compatibility
     }
     // Decode match length
     let (ml_sym, ml_nb, ml_base_state) = fse_decode_symbol(ml_table, ml_state)
@@ -296,27 +299,77 @@ fn decompress_block(
       ml_state = ml_base_state + br.read_bits(ml_nb).reinterpret_as_int()
       of_state = of_base + br.read_bits(of_nb).reinterpret_as_int()
     }
+    // Resolve repeat offsets per RFC 8878 section 3.1.1.5
+    let offset = if offset_value > 3 {
+      // New offset
+      let actual = offset_value - 3
+      rep[2] = rep[1]
+      rep[1] = rep[0]
+      rep[0] = actual
+      actual
+    } else if offset_value == 1 {
+      if lit_len == 0 {
+        let tmp = rep[0]
+        rep[0] = rep[1]
+        rep[1] = tmp
+        rep[0]
+      } else {
+        rep[0]
+      }
+    } else if offset_value == 2 {
+      if lit_len == 0 {
+        let tmp = rep[2]
+        rep[2] = rep[1]
+        rep[1] = rep[0]
+        rep[0] = tmp
+        rep[0]
+      } else {
+        let tmp = rep[1]
+        rep[1] = rep[0]
+        rep[0] = tmp
+        rep[0]
+      }
+    } else {
+      // offset_value == 3
+      if lit_len == 0 {
+        let actual = rep[0] - 1
+        rep[2] = rep[1]
+        rep[1] = rep[0]
+        rep[0] = actual
+        actual
+      } else {
+        let tmp = rep[2]
+        rep[2] = rep[1]
+        rep[1] = rep[0]
+        rep[0] = tmp
+        rep[0]
+      }
+    }
     // Copy literals
     for j in 0..<lit_len {
       if lit_pos + j < lit_data.length() {
-        out.write_byte(lit_data[lit_pos + j])
+        block_out.write_byte(lit_data[lit_pos + j])
       }
     }
     lit_pos += lit_len
-    // Copy match (from already-decoded output)
-    let out_bytes = out.to_bytes()
-    let out_len = out_bytes.length()
+    // Copy match (from accumulated output including previous blocks)
+    let total_len = prev_len + block_out.length()
     for j in 0..<match_len {
-      let src_idx = out_len - offset + j % offset
-      if src_idx >= 0 && src_idx < out_bytes.length() {
-        out.write_byte(out_bytes[src_idx])
+      let src_idx = total_len - offset + j % offset
+      if src_idx >= 0 {
+        let byte = if src_idx < prev_len {
+          prev_output.get_byte(src_idx)
+        } else {
+          block_out.get_byte(src_idx - prev_len)
+        }
+        block_out.write_byte(byte)
       }
     }
   }
   // Copy remaining literals
   while lit_pos < lit_data.length() {
-    out.write_byte(lit_data[lit_pos])
+    block_out.write_byte(lit_data[lit_pos])
     lit_pos += 1
   }
-  out.to_bytes()
+  block_out.to_bytes()
 }

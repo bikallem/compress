@@ -26,32 +26,20 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
     out[pos] = src[0]
     pos += 1
   } else {
-    let mut src_pos = 0
-    while src_pos < src_len {
-      let block_end = if src_pos + MAX_BLOCK_SIZE < src_len {
-        src_pos + MAX_BLOCK_SIZE
-      } else {
-        src_len
-      }
-      let block_len = block_end - src_pos
-      let is_last = block_end == src_len
-      let last_flag = if is_last { 1 } else { 0 }
-      let block_data = src[src_pos:block_end]
-      let comp_buf = FixedArray::make(block_len + 256, b'\x00')
-      let comp_size = compress_block(block_data, comp_buf)
-      if comp_size > 0 && comp_size < block_len {
-        let block_header = last_flag |
-          (BLOCK_TYPE_COMPRESSED << 1) |
-          (comp_size << 3)
-        out[pos] = (block_header & 0xFF).to_byte()
-        out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-        out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
-        pos += 3
-        for i in 0..<comp_size {
-          out[pos + i] = comp_buf[i]
+    // Find sequences across the entire input
+    let (sequences, literals, lit_count) = find_sequences(src)
+    if sequences.length() == 0 {
+      // No sequences found, emit as raw blocks
+      let mut src_pos = 0
+      while src_pos < src_len {
+        let block_end = if src_pos + MAX_BLOCK_SIZE < src_len {
+          src_pos + MAX_BLOCK_SIZE
+        } else {
+          src_len
         }
-        pos += comp_size
-      } else {
+        let block_len = block_end - src_pos
+        let is_last = block_end == src_len
+        let last_flag = if is_last { 1 } else { 0 }
         let block_header = last_flag |
           (BLOCK_TYPE_RAW << 1) |
           (block_len << 3)
@@ -63,8 +51,122 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
           out[pos + i] = src[src_pos + i]
         }
         pos += block_len
+        src_pos = block_end
       }
-      src_pos = block_end
+    } else {
+      // Split sequences into blocks of MAX_BLOCK_SIZE decoded bytes.
+      // First, split any sequence whose decoded size exceeds MAX_BLOCK_SIZE.
+      let split_seqs : Array[ZstdSequence] = []
+      for i in 0..<sequences.length() {
+        let seq = sequences[i]
+        let seq_decoded = seq.lit_len + seq.match_len
+        if seq_decoded <= MAX_BLOCK_SIZE {
+          split_seqs.push(seq)
+        } else {
+          // Need to split this sequence.
+          let actual_off = seq.actual_offset
+          let mut remaining_match = seq.match_len
+          let mut first = true
+          while remaining_match > 0 {
+            let lit_len = if first { seq.lit_len } else { 0 }
+            let max_match = MAX_BLOCK_SIZE - lit_len
+            let match_chunk = if remaining_match > max_match {
+              max_match
+            } else {
+              remaining_match
+            }
+            let offset = if first {
+              seq.offset
+            } else {
+              // Continuation: emit as new offset to avoid lit_len=0 repeat offset ambiguity
+              actual_off + 3
+            }
+            split_seqs.push(
+              {
+                lit_len,
+                offset,
+                match_len: match_chunk,
+                actual_offset: actual_off,
+              },
+            )
+            remaining_match -= match_chunk
+            first = false
+          }
+        }
+      }
+      let num_seq = split_seqs.length()
+      let mut seq_idx = 0
+      let mut lit_offset = 0
+      let mut decoded_total = 0
+      while seq_idx < num_seq {
+        // Collect sequences for this block (up to MAX_BLOCK_SIZE decoded bytes)
+        let block_seqs : Array[ZstdSequence] = []
+        let mut block_decoded = 0
+        let block_lit_start = lit_offset
+        let mut block_lit_count = 0
+        while seq_idx < num_seq {
+          let seq = split_seqs[seq_idx]
+          let seq_decoded = seq.lit_len + seq.match_len
+          if block_decoded + seq_decoded > MAX_BLOCK_SIZE && block_seqs.length() > 0 {
+            break
+          }
+          block_seqs.push(seq)
+          block_decoded += seq_decoded
+          block_lit_count += seq.lit_len
+          lit_offset += seq.lit_len
+          seq_idx += 1
+        }
+        // Check if there are trailing literals (only for the last block)
+        let mut trailing_lit_count = 0
+        if seq_idx >= num_seq {
+          // Last block gets trailing literals
+          trailing_lit_count = lit_count - lit_offset
+        }
+        let total_block_lits = block_lit_count + trailing_lit_count
+        let block_content_size = block_decoded + trailing_lit_count
+        decoded_total += block_content_size
+        let is_last = seq_idx >= num_seq
+        let last_flag = if is_last { 1 } else { 0 }
+        // Encode this block
+        let comp_buf = FixedArray::make(block_content_size + 256, b'\x00')
+        let comp_size = compress_block_from_sequences(
+          block_seqs,
+          literals,
+          block_lit_start,
+          total_block_lits,
+          comp_buf,
+        )
+        if comp_size > 0 && comp_size < block_content_size {
+          let block_header = last_flag |
+            (BLOCK_TYPE_COMPRESSED << 1) |
+            (comp_size << 3)
+          out[pos] = (block_header & 0xFF).to_byte()
+          out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
+          out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+          pos += 3
+          for i in 0..<comp_size {
+            out[pos + i] = comp_buf[i]
+          }
+          pos += comp_size
+        } else {
+          // Fall back to raw block - need the original source bytes
+          let raw_start = decoded_total - block_content_size
+          let block_header = last_flag |
+            (BLOCK_TYPE_RAW << 1) |
+            (block_content_size << 3)
+          out[pos] = (block_header & 0xFF).to_byte()
+          out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
+          out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+          pos += 3
+          for i in 0..<block_content_size {
+            out[pos + i] = src[raw_start + i]
+          }
+          pos += block_content_size
+        }
+        if trailing_lit_count > 0 {
+          lit_offset += trailing_lit_count
+        }
+      }
     }
   }
   let cs = xxh.checksum64()
@@ -164,8 +266,9 @@ fn zstd_hash(data : BytesView, pos : Int) -> Int {
 ///|
 priv struct ZstdSequence {
   lit_len : Int
-  offset : Int
+  offset : Int // offset_value for encoding (1/2/3 for repeat, actual+3 for new)
   match_len : Int
+  actual_offset : Int // the real match offset in bytes (for splitting)
 }
 
 ///|
@@ -184,6 +287,8 @@ fn find_sequences(
     return (sequences, literals, lit_pos)
   }
   let hash_table = FixedArray::make(ZSTD_HASH_SIZE, -1)
+  // Repeat offsets (zstd spec initial values)
+  let rep = [1, 4, 8]
   let mut ip = 0
   let mut anchor = 0
   let mf_limit = src_len - ZSTD_MIN_MATCH
@@ -191,6 +296,31 @@ fn find_sequences(
     let hash = zstd_hash(src, ip)
     let ref_pos = hash_table[hash]
     hash_table[hash] = ip
+    // Try repeat offsets first
+    let mut best_offset = 0
+    let mut best_match_len = 0
+    let mut best_rep_idx = -1
+    for r in 0..<3 {
+      let rep_off = rep[r]
+      if ip >= rep_off &&
+        ip + ZSTD_MIN_MATCH <= src_len &&
+        src[ip - rep_off] == src[ip] &&
+        src[ip - rep_off + 1] == src[ip + 1] &&
+        src[ip - rep_off + 2] == src[ip + 2] &&
+        src[ip - rep_off + 3] == src[ip + 3] {
+        let mut mlen = ZSTD_MIN_MATCH
+        while ip + mlen < src_len &&
+              src[ip - rep_off + mlen] == src[ip + mlen] {
+          mlen += 1
+        }
+        if mlen > best_match_len {
+          best_match_len = mlen
+          best_offset = rep_off
+          best_rep_idx = r
+        }
+      }
+    }
+    // Try hash match
     if ref_pos >= 0 &&
       ip - ref_pos <= 65535 &&
       src[ref_pos] == src[ip] &&
@@ -202,14 +332,112 @@ fn find_sequences(
             src[ref_pos + match_len] == src[ip + match_len] {
         match_len += 1
       }
+      let hash_offset = ip - ref_pos
+      // Prefer hash match only if significantly longer than rep match
+      if match_len > best_match_len + 1 || best_rep_idx < 0 {
+        if match_len > best_match_len || best_rep_idx < 0 {
+          best_match_len = match_len
+          best_offset = hash_offset
+          best_rep_idx = -1
+        }
+      }
+    }
+    if best_match_len >= ZSTD_MIN_MATCH {
       let lit_len = ip - anchor
       for i in 0..<lit_len {
         literals[lit_pos] = src[anchor + i]
         lit_pos += 1
       }
-      let offset = ip - ref_pos
-      sequences.push({ lit_len, offset, match_len })
-      ip += match_len
+      // Determine offset_value for zstd encoding, accounting for lit_len==0 special cases.
+      // The decoder interprets offset_value based on lit_len:
+      //   lit_len > 0: val 1 => rep[0], val 2 => rep[1], val 3 => rep[2]
+      //   lit_len == 0: val 1 => rep[1], val 2 => rep[2], val 3 => rep[0]-1
+      let offset_value = if best_rep_idx >= 0 {
+        if lit_len > 0 {
+          best_rep_idx + 1
+        } else {
+          // lit_len == 0: shift the mapping
+          if best_rep_idx == 0 {
+            // Want rep[0], but val 1 means rep[1] when lit_len==0
+            // Need to check if rep[0] == rep[1]; if so val 1 works
+            // Otherwise emit as new offset to be safe
+            if rep[0] == rep[1] {
+              1
+            } else {
+              rep[0] + 3 // emit as new offset
+            }
+          } else if best_rep_idx == 1 {
+            1 // val 1 with lit_len==0 => rep[1], which is what we want
+          } else {
+            2 // val 2 with lit_len==0 => rep[2], which is what we want
+          }
+        }
+      } else {
+        best_offset + 3 // actual offset + 3 for new offsets
+      }
+      // Compute the actual offset (not the encoded offset_value)
+      let actual_off = if offset_value > 3 {
+        offset_value - 3
+      } else {
+        rep[0] // after rep update, rep[0] is the actual offset used
+      }
+      sequences.push(
+        {
+          lit_len,
+          offset: offset_value,
+          match_len: best_match_len,
+          actual_offset: actual_off,
+        },
+      )
+      // Update repeat offsets same way as decoder
+      if offset_value > 3 {
+        let actual = offset_value - 3
+        rep[2] = rep[1]
+        rep[1] = rep[0]
+        rep[0] = actual
+      } else if offset_value == 1 {
+        if lit_len == 0 {
+          let tmp = rep[0]
+          rep[0] = rep[1]
+          rep[1] = tmp
+        }
+        // else rep[0] stays
+      } else if offset_value == 2 {
+        if lit_len == 0 {
+          let tmp = rep[2]
+          rep[2] = rep[1]
+          rep[1] = rep[0]
+          rep[0] = tmp
+        } else {
+          let tmp = rep[1]
+          rep[1] = rep[0]
+          rep[0] = tmp
+        }
+      } else {
+        // offset_value == 3
+        if lit_len == 0 {
+          let actual = rep[0] - 1
+          rep[2] = rep[1]
+          rep[1] = rep[0]
+          rep[0] = actual
+        } else {
+          let tmp = rep[2]
+          rep[2] = rep[1]
+          rep[1] = rep[0]
+          rep[0] = tmp
+        }
+      }
+      // Update hash table for positions within the match for better future matches
+      let hash_end = if ip + best_match_len < mf_limit {
+        ip + best_match_len
+      } else {
+        mf_limit
+      }
+      for j = ip + 1; j < hash_end; j = j + 1 {
+        let h = zstd_hash(src, j)
+        hash_table[h] = j
+      }
+      ip += best_match_len
       anchor = ip
       continue
     }
@@ -433,9 +661,9 @@ fn FseBitWriter::copy_to(
 // ── Offset/LL/ML code computation ───────────────────────────────────
 
 ///|
-/// Offset encoding: offset_value = actual_offset + 3 (skip repeat offset codes).
-fn get_offset_code(offset : Int) -> (Int, Int, Int) {
-  let offset_value = offset + 3
+/// Offset encoding: offset field is already the offset_value
+/// (1/2/3 for repeat offsets, actual_offset+3 for new offsets).
+fn get_offset_code(offset_value : Int) -> (Int, Int, Int) {
   let code = highest_bit(offset_value) - 1
   let extra = offset_value - (1 << code)
   (code, code, extra)
@@ -470,12 +698,14 @@ fn get_ml_code(ml : Int) -> (Int, Int, Int) {
 // ── Compressed block encoding ───────────────────────────────────────
 
 ///|
-fn compress_block(src : BytesView, dst : FixedArray[Byte]) -> Int {
-  let src_len = src.length()
-  if src_len < 16 {
-    return 0
-  }
-  let (sequences, literals, lit_count) = find_sequences(src)
+/// Encode a block from pre-computed sequences and literals.
+fn compress_block_from_sequences(
+  sequences : Array[ZstdSequence],
+  literals : FixedArray[Byte],
+  lit_start : Int,
+  lit_count : Int,
+  dst : FixedArray[Byte],
+) -> Int {
   if sequences.length() == 0 {
     return 0
   }
@@ -497,7 +727,7 @@ fn compress_block(src : BytesView, dst : FixedArray[Byte]) -> Int {
     pos += 3
   }
   for i in 0..<lit_count {
-    dst[pos + i] = literals[i]
+    dst[pos + i] = literals[lit_start + i]
   }
   pos += lit_count
   // Write sequences section header
