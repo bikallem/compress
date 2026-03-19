@@ -81,7 +81,17 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   } else {
     lz77_find_matches_chain(src, src_len, level)
   }
-  let compressed = encode_compressed_metablock(src, src_len, cmds, level)
+  // Try to replace literal runs with static dictionary matches
+  let cmds_with_dict = dict_enhance_commands(src, src_len, cmds)
+  // Try both: with and without dictionary matches. Use whichever is smaller.
+  let compressed_orig = encode_compressed_metablock(src, src_len, cmds, level)
+  let compressed_dict = encode_compressed_metablock(src, src_len, cmds_with_dict, level)
+  let compressed = if cmds_with_dict.length() != cmds.length() &&
+    compressed_dict.length() < compressed_orig.length() {
+    compressed_dict
+  } else {
+    compressed_orig
+  }
   // If compressed is larger than uncompressed, fall back
   let uncompressed_size = src_len + 16
   if compressed.length() > uncompressed_size {
@@ -90,6 +100,204 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   compressed
 }
 
+
+// ─── Static dictionary lookup ───────────────────────────────────────
+
+///|
+/// Dictionary hash table size per word length (power of 2).
+const DICT_HASH_SIZE : Int = 1 << 14
+
+///|
+/// Per-word-length hash tables. Index 0-3 unused, indices 4-24 are the tables.
+/// Each entry is a word index, or -1 if empty.
+let dict_hash_tables : FixedArray[FixedArray[Int]] = {
+  let arr = FixedArray::make(25, FixedArray::make(0, 0))
+  arr
+}
+
+///|
+/// Whether the dictionary hash tables have been initialized.
+let dict_hash_initialized : FixedArray[Bool] = [false]
+
+///|
+/// Hash 4 bytes from a FixedArray[Byte] for dictionary lookup.
+fn dict_hash4_fixed(data : FixedArray[Byte], offset : Int) -> Int {
+  let v = data[offset].to_int() |
+    (data[offset + 1].to_int() << 8) |
+    (data[offset + 2].to_int() << 16) |
+    (data[offset + 3].to_int() << 24)
+  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) &
+  (DICT_HASH_SIZE - 1)
+}
+
+///|
+/// Hash 4 bytes from a BytesView for dictionary lookup.
+fn dict_hash4_bv(src : BytesView, pos : Int) -> Int {
+  let v = src[pos].to_int() |
+    (src[pos + 1].to_int() << 8) |
+    (src[pos + 2].to_int() << 16) |
+    (src[pos + 3].to_int() << 24)
+  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) &
+  (DICT_HASH_SIZE - 1)
+}
+
+///|
+/// Initialize per-word-length dictionary hash tables lazily on first use.
+fn ensure_dict_hash() -> Unit {
+  if dict_hash_initialized[0] {
+    return
+  }
+  dict_hash_initialized[0] = true
+  for wlen = dict_min_word_length; wlen <= dict_max_word_length; wlen = wlen + 1 {
+    let size_bits = dict_size_bits_by_length[wlen]
+    if size_bits == 0 {
+      continue
+    }
+    let table = FixedArray::make(DICT_HASH_SIZE, -1)
+    dict_hash_tables[wlen] = table
+    let num_words = 1 << size_bits
+    for widx = 0; widx < num_words; widx = widx + 1 {
+      let offset = dict_offsets_by_length[wlen] + widx * wlen
+      if offset + 3 >= brotli_dictionary_data.length() {
+        continue
+      }
+      let h = dict_hash4_fixed(brotli_dictionary_data, offset)
+      if table[h] == -1 {
+        table[h] = widx
+      }
+      // On collision, keep the first entry
+    }
+  }
+}
+
+///|
+/// Minimum dictionary match length based on the resulting distance.
+/// Longer distances require longer matches to be worthwhile because the
+/// distance encoding cost grows with the distance value.
+fn dict_min_match_for_distance(distance : Int) -> Int {
+  if distance <= 1024 {
+    4
+  } else if distance <= 16384 {
+    5
+  } else if distance <= 131072 {
+    6
+  } else {
+    8
+  }
+}
+
+///|
+/// Try to find a static dictionary match at position `pos` in `src`.
+/// Returns `(copy_len, distance)` if a match is found, `(0, 0)` otherwise.
+/// Only uses transform 0 (identity).
+/// Tries all word lengths 4-24 via per-length hash tables for the longest match.
+fn try_dict_match(src : BytesView, pos : Int, src_len : Int) -> (Int, Int) {
+  if pos + 3 >= src_len {
+    return (0, 0)
+  }
+  ensure_dict_hash()
+  let max_dist = if pos < MAX_BACKWARD_DISTANCE {
+    pos
+  } else {
+    MAX_BACKWARD_DISTANCE
+  }
+  let h = dict_hash4_bv(src, pos)
+  let mut best_len = 0
+  let mut best_dist = 0
+  let max_wlen = if src_len - pos < dict_max_word_length {
+    src_len - pos
+  } else {
+    dict_max_word_length
+  }
+  // Try each word length from longest to shortest
+  for wlen = max_wlen; wlen >= dict_min_word_length; wlen = wlen - 1 {
+    let table = dict_hash_tables[wlen]
+    if table.length() == 0 {
+      continue
+    }
+    let widx = table[h]
+    if widx == -1 {
+      continue
+    }
+    // Check minimum match length for the distance
+    let distance = max_dist + 1 + widx
+    if wlen < dict_min_match_for_distance(distance) {
+      continue
+    }
+    // Verify the full word matches
+    let word_off = dict_offsets_by_length[wlen] + widx * wlen
+    let mut matches = true
+    for i = 0; i < wlen; i = i + 1 {
+      if src[pos + i] != brotli_dictionary_data[word_off + i] {
+        matches = false
+        break
+      }
+    }
+    if matches {
+      best_len = wlen
+      best_dist = distance
+      break // Found the longest match, stop
+    }
+  }
+  (best_len, best_dist)
+}
+
+///|
+/// Post-process LZ77 commands to insert static dictionary matches where
+/// literal runs can be replaced. Scans each command's insert region for
+/// dictionary words and splits the command if a match is found.
+fn dict_enhance_commands(
+  src : BytesView,
+  src_len : Int,
+  cmds : Array[BrotliCmd],
+) -> Array[BrotliCmd] {
+  let result : Array[BrotliCmd] = []
+  for cmd in cmds {
+    if cmd.insert_len < MIN_MATCH_LENGTH {
+      // Insert too short for any dictionary match
+      result.push(cmd)
+      continue
+    }
+    // Scan the insert region for dictionary matches
+    let insert_end = cmd.insert_pos + cmd.insert_len
+    let mut scan_pos = cmd.insert_pos
+    let mut current_insert_start = cmd.insert_pos
+    let mut found_dict = false
+    while scan_pos + 3 < insert_end {
+      let (dict_len, dict_dist) = try_dict_match(src, scan_pos, src_len)
+      if dict_len >= MIN_MATCH_LENGTH && scan_pos + dict_len <= insert_end {
+        found_dict = true
+        // Emit insert for bytes before the dict match
+        let pre_insert = scan_pos - current_insert_start
+        if pre_insert > 0 || dict_len > 0 {
+          result.push({
+            insert_pos: current_insert_start,
+            insert_len: pre_insert,
+            copy_len: dict_len,
+            distance: dict_dist,
+          })
+        }
+        scan_pos += dict_len
+        current_insert_start = scan_pos
+      } else {
+        scan_pos += 1
+      }
+    }
+    if found_dict {
+      // Emit remaining insert + original copy
+      let remaining_insert = insert_end - current_insert_start
+      result.push({
+        insert_pos: current_insert_start,
+        insert_len: remaining_insert,
+        copy_len: cmd.copy_len,
+        distance: cmd.distance,
+      })
+    } else {
+      result.push(cmd)
+    }
+  }
+  result
+}
 
 // ─── LZ77 match finder ──────────────────────────────────────────────
 
