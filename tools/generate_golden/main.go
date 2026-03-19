@@ -12,12 +12,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/andybalholm/brotli"
+	dbzip2 "github.com/dsnet/compress/bzip2"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
+	lz4 "github.com/pierrec/lz4/v4"
 )
 
 type GoldenEntry struct {
@@ -143,6 +144,27 @@ func main() {
 			InputSize:  len(data),
 			OutputSize: len(compressed),
 		})
+	}
+
+	// Generate bzip2 compressed files
+	for name, data := range inputs {
+		if len(data) == 0 {
+			continue // bzip2 requires non-empty input
+		}
+		for _, level := range []int{1, 9} {
+			outName := fmt.Sprintf("bzip2_%s_level%d.bin", name, level)
+			compressed := bzip2Compress(data, level)
+			os.WriteFile(filepath.Join(dir, outName), compressed, 0o644)
+			entries = append(entries, GoldenEntry{
+				Name:       fmt.Sprintf("bzip2/%s/level%d", name, level),
+				Algorithm:  "bzip2",
+				Level:      level,
+				InputFile:  name + ".bin",
+				OutputFile: outName,
+				InputSize:  len(data),
+				OutputSize: len(compressed),
+			})
+		}
 	}
 
 	// Generate LZ4 compressed files (frame format)
@@ -319,14 +341,19 @@ func lzwCompress(data []byte) []byte {
 }
 
 func lz4Compress(data []byte) []byte {
-	cmd := exec.Command("lz4", "-c", "-f", "--no-frame-crc")
-	cmd.Stdin = bytes.NewReader(data)
-	out, err := cmd.Output()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "lz4 command failed (is lz4 installed?): %v\n", err)
-		return nil
-	}
-	return out
+	var buf bytes.Buffer
+	w := lz4.NewWriter(&buf)
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
+}
+
+func bzip2Compress(data []byte, level int) []byte {
+	var buf bytes.Buffer
+	w, _ := dbzip2.NewWriter(&buf, &dbzip2.WriterConfig{Level: level})
+	w.Write(data)
+	w.Close()
+	return buf.Bytes()
 }
 
 func zstdCompress(data []byte) []byte {

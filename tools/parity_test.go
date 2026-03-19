@@ -8,32 +8,17 @@ import (
 	"compress/lzw"
 	"compress/zlib"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/andybalholm/brotli"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
+	lz4 "github.com/pierrec/lz4/v4"
 )
-
-// lz4Decompress shells out to the system lz4 command to decompress data.
-// Returns an *exec.Error wrapping exec.ErrNotFound if the lz4 binary is not installed.
-func lz4Decompress(data []byte) ([]byte, error) {
-	cmd := exec.Command("lz4", "-d", "-c", "-f")
-	cmd.Stdin = bytes.NewReader(data)
-	return cmd.Output()
-}
-
-// isLz4NotFound reports whether err indicates the lz4 command is not installed.
-func isLz4NotFound(err error) bool {
-	var execErr *exec.Error
-	return errors.As(err, &execErr)
-}
 
 // MoonBit golden manifest entry (same schema as Go golden).
 type MBGoldenEntry struct {
@@ -107,11 +92,6 @@ func TestBitIdenticalOutput(t *testing.T) {
 	total := 0
 
 	for _, e := range entries {
-		// Skip algorithms where Go golden files don't exist (bzip2)
-		// Go stdlib has bzip2 decompressor only, no compressor in generate_golden
-		if e.Algorithm == "bzip2" {
-			continue
-		}
 		// Skip dictionary-based algorithms
 		if e.Algorithm == "deflate_dict" || e.Algorithm == "zlib_dict" {
 			continue
@@ -196,10 +176,8 @@ func goDecompress(t *testing.T, algorithm string, data []byte) []byte {
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
-		result, err = lz4Decompress(data)
-		if isLz4NotFound(err) {
-			t.Skip("lz4 command not available")
-		}
+		r := lz4.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	case "zstd":
 		dec, derr := zstd.NewReader(bytes.NewReader(data))
 		if derr != nil {
@@ -375,7 +353,8 @@ func goDecompressSafe(algorithm string, data []byte) []byte {
 	case "snappy":
 		result, err = snappy.Decode(nil, data)
 	case "lz4":
-		result, err = lz4Decompress(data)
+		r := lz4.NewReader(bytes.NewReader(data))
+		result, err = io.ReadAll(r)
 	case "zstd":
 		dec, derr := zstd.NewReader(bytes.NewReader(data))
 		if derr != nil {
