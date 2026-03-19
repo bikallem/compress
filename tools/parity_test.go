@@ -320,16 +320,19 @@ func TestParitySummary(t *testing.T) {
 		}
 	}
 
-	// Sort by absolute delta descending (biggest size difference first)
-	sort.Slice(all, func(i, j int) bool {
-		return all[i].absDelta > all[j].absDelta
-	})
+	sortByDelta := os.Getenv("PARITY_SORT_DELTA") != ""
 
-	// Print sorted report
-	fmt.Printf("\n=== Parity Report (sorted by size delta) ===\n")
-	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", "Name", "MoonBit", "Go", "Ratio")
-	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", strings.Repeat("-", 44), "--------", "--------", "--------")
-	for _, se := range all {
+	if sortByDelta {
+		sort.Slice(all, func(i, j int) bool {
+			return all[i].absDelta > all[j].absDelta
+		})
+		fmt.Printf("\n=== Parity Report (sorted by size delta) ===\n")
+	} else {
+		// Default: grouped by algorithm (already in insertion order)
+		fmt.Printf("\n=== Parity Report ===\n")
+	}
+
+	printEntry := func(se SortEntry) {
 		switch se.status {
 		case "FAILED":
 			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), "-", "FAILED")
@@ -339,6 +342,24 @@ func TestParitySummary(t *testing.T) {
 			fmt.Printf("  %-44s  %-8s  %-8s  %s\n", se.label, humanSize(se.mbSize), "-", "OK (no Go ref)")
 		case "compatible":
 			fmt.Printf("  %-44s  %-8s  %-8s  %.2fx\n", se.label, humanSize(se.mbSize), humanSize(se.goSize), se.ratio)
+		}
+	}
+
+	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", "Name", "MoonBit", "Go", "Ratio")
+	fmt.Printf("  %-44s  %-8s  %-8s  %s\n", strings.Repeat("-", 44), "--------", "--------", "--------")
+
+	if sortByDelta {
+		for _, se := range all {
+			printEntry(se)
+		}
+	} else {
+		for _, algo := range algoOrder {
+			fmt.Printf("\n  --- %s ---\n", algo)
+			for _, se := range all {
+				if strings.HasPrefix(se.label, algo+"/") {
+					printEntry(se)
+				}
+			}
 		}
 	}
 

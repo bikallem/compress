@@ -2,9 +2,11 @@
 # Bit-for-bit parity test: MoonBit compress vs Go compress.
 #
 # Usage:
-#   ./tools/parity.sh           # generate + test
-#   ./tools/parity.sh generate  # only generate MoonBit golden files
-#   ./tools/parity.sh test      # only run Go parity tests (assumes files exist)
+#   ./tools/parity.sh                    # generate + test (grouped by algorithm)
+#   ./tools/parity.sh --sort-delta       # generate + test (sorted by biggest size delta)
+#   ./tools/parity.sh generate           # only generate MoonBit golden files
+#   ./tools/parity.sh test               # only run Go parity tests
+#   ./tools/parity.sh test --sort-delta  # test with sorted output
 #
 set -euo pipefail
 
@@ -66,7 +68,17 @@ run_tests() {
     (cd "$ROOT/tools" && go test -run 'TestParitySummary' -v -count=1 -timeout 300s 2>&1) | grep -vE "^(=== RUN|--- PASS|--- FAIL|PASS$|FAIL$|ok )"
 }
 
-CMD="${1:-all}"
+SORT_DELTA=""
+CMDS=()
+for arg in "$@"; do
+    case "$arg" in
+        --sort-delta) SORT_DELTA="1" ;;
+        *) CMDS+=("$arg") ;;
+    esac
+done
+CMD="${CMDS[0]:-all}"
+export PARITY_SORT_DELTA="${SORT_DELTA}"
+
 case "$CMD" in
     generate)
         generate
@@ -74,13 +86,13 @@ case "$CMD" in
     test)
         run_tests
         ;;
-    all|"")
+    all)
         generate
         echo
         run_tests
         ;;
     *)
-        echo "Usage: $0 [generate|test|all]"
+        echo "Usage: $0 [generate|test|all] [--sort-delta]"
         exit 1
         ;;
 esac
