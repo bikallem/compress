@@ -329,13 +329,26 @@ func TestParitySummary(t *testing.T) {
 
 	if sortByDelta {
 		sort.Slice(all, func(i, j int) bool {
-			// Sort by ratio distance from 1.0, descending (worst ratio first)
-			di := all[i].ratio - 1.0
-			if di < 0 { di = -di }
-			dj := all[j].ratio - 1.0
-			if dj < 0 { dj = -dj }
-			if di != dj { return di > dj }
-			return all[i].absDelta > all[j].absDelta
+			// Sort: worst ratio first (MoonBit larger than Go),
+			// then best ratio last (MoonBit smaller than Go).
+			// Within each group, sort by magnitude.
+			ri := all[i].ratio
+			rj := all[j].ratio
+			// Entries with ratio 0 (no comparison) go last
+			if ri == 0 && rj != 0 { return false }
+			if ri != 0 && rj == 0 { return true }
+			if ri == 0 && rj == 0 { return false }
+			// Both > 1.0: higher ratio first (worse)
+			// Both < 1.0: lower ratio first (more notable)
+			// Mixed: ratio > 1.0 comes before ratio < 1.0
+			iAbove := ri >= 1.0
+			jAbove := rj >= 1.0
+			if iAbove && !jAbove { return true }
+			if !iAbove && jAbove { return false }
+			if iAbove {
+				return ri > rj // both above 1.0: bigger ratio = worse
+			}
+			return ri < rj // both below 1.0: smaller ratio = more notable
 		})
 		fmt.Printf("\n=== Parity Report (sorted by worst ratio) ===\n")
 	} else {
