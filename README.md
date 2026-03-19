@@ -1,6 +1,6 @@
 # bikallem/compress
 
-A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, and Brotli. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
+A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, Brotli, Zstandard, and LZ4. Targets native (Linux, Windows, macOS), JavaScript, and WebAssembly.
 
 ## Features
 
@@ -13,6 +13,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, a
 - Two-level Huffman table decompression with zero-copy direct output
 - BytesView-based streaming API — zero-copy input slicing
 - Signal protocol streaming — no callbacks, no trait objects, explicit control flow
+- Async streaming for DEFLATE via MoonBit's `async/io`
 - Cross-validated against Go's `compress/*` stdlib
 
 ## Table of Contents
@@ -24,6 +25,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, a
   - [Compression](#compression)
   - [Decompression](#decompression)
   - [Format Wrappers](#format-wrappers)
+  - [Async Streaming](#async-streaming)
 - [Compression Levels](#compression-levels)
 - [Checksums](#checksums)
 - [Performance](#performance)
@@ -34,11 +36,14 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, a
 | Package | Description |
 |---------|-------------|
 | `bikallem/compress/flate` | DEFLATE compression/decompression (RFC 1951) |
+| `bikallem/compress/flate/async` | Async DEFLATE streaming via `@io.Reader`/`@io.Writer` |
 | `bikallem/compress/gzip` | gzip format (RFC 1952) |
 | `bikallem/compress/zlib` | zlib format (RFC 1950) |
 | `bikallem/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
 | `bikallem/compress/brotli` | Brotli compression/decompression (RFC 7932) |
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
+| `bikallem/compress/zstd` | Zstandard compression/decompression (RFC 8878) |
+| `bikallem/compress/lz4` | LZ4 frame compression/decompression |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
 
 ## Installation
@@ -80,6 +85,15 @@ let decompressed = @brotli.decompress(compressed)
 let compressed = @bzip2.compress(data)
 let compressed = @bzip2.compress(data, level=9)
 let decompressed = @bzip2.decompress(compressed)
+
+// Zstandard
+let compressed = @zstd.compress(data)
+let compressed = @zstd.compress(data, level=Fast)
+let decompressed = @zstd.decompress(compressed)
+
+// LZ4
+let compressed = @lz4.compress(data)
+let decompressed = @lz4.decompress(compressed)
 
 // Checksums
 let crc = @checksum.crc32(data[:])
@@ -150,8 +164,32 @@ let i = @brotli.Inflater::new()
 let d = @bzip2.Deflater::new(level=9)
 let i = @bzip2.Inflater::new()
 
+// Zstandard
+let d = @zstd.Deflater::new(level=Fast)
+let i = @zstd.Inflater::new()
+
+// LZ4
+let d = @lz4.Deflater::new()
+let i = @lz4.Inflater::new()
+
 // Get remaining unprocessed input after decompression
 let leftover = inflater.remaining()
+```
+
+### Async Streaming
+
+The `flate/async` package provides async wrappers that work with MoonBit's `@io.Reader` and `@io.Writer` interfaces:
+
+```moonbit
+// Async DEFLATE compression
+async fn compress_stream(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
+  @flate.async.compress(reader, writer, level=BestSpeed)
+}
+
+// Async DEFLATE decompression
+async fn decompress_stream(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
+  @flate.async.decompress(reader, writer)
+}
 ```
 
 ## Compression Levels
@@ -170,6 +208,8 @@ DEFLATE, gzip, and zlib support compression levels via `@flate.CompressionLevel`
 bzip2 uses its own level parameter (1-9), controlling block size (N x 100KB).
 
 Brotli uses `@brotli.CompressionLevel`: `Level(0)` through `Level(11)`, `Default` (level 6), or `Best` (level 11). Higher levels use longer hash chains for better compression ratios.
+
+Zstandard uses `@zstd.CompressionLevel`: `Fast`, `Default`, `Best`, or `Level(Int)`.
 
 **Brotli features:** The decoder is fully RFC 7932 compliant, including the 122KB static dictionary with 121 word transforms. The encoder supports context modeling (level 5+), which uses the previous byte to select among multiple literal Huffman trees for better compression of structured text. Block splitting and static dictionary compression by the encoder are not yet implemented. Quality levels 10-11 use the same hash-chain algorithm as level 9. Output is verified against Go's `andybalholm/brotli` reference decoder.
 
