@@ -30,6 +30,7 @@ struct Inflater {
   mut final_block : Bool
   mut pending_output : Bytes // buffered Data to emit before resuming
   mut sink : @output_sink.OutputSink? // None = streaming, Some = direct output
+  mut redispatch : Bool // trampoline flag: phase changed, re-dispatch in decode() loop
 }
 
 ///|
@@ -46,6 +47,7 @@ pub fn Inflater::new(dict? : Bytes) -> Inflater {
     final_block: false,
     pending_output: Bytes::default(),
     sink: None,
+    redispatch: false,
   }
 }
 
@@ -58,31 +60,38 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
 ///|
 /// Advance the decoder one step.
 pub fn Inflater::decode(self : Inflater) -> Decode {
-  // Emit pending output first
-  if self.pending_output.length() > 0 {
-    let out = self.pending_output
-    self.pending_output = Bytes::default()
-    return Data(out)
-  }
-  match self.phase {
-    Done => End
-    Failed(e) => Error(e)
-    BlockHeader => self.decode_block_header()
-    StoredInit => self.decode_stored_init()
-    StoredCopy(remaining) => self.decode_stored_copy(remaining)
-    DynamicHeader => self.decode_dynamic_header()
-    HuffmanLoop(lit_dec, dist_dec) =>
-      self.decode_huffman_loop(lit_dec, dist_dec)
-    HuffmanMatchLen(lit_dec, dist_dec, length_code, extra_bits) =>
-      self.decode_huffman_match_len(lit_dec, dist_dec, length_code, extra_bits)
-    HuffmanMatchDist(lit_dec, dist_dec, length) =>
-      self.decode_huffman_match_dist(lit_dec, dist_dec, length)
-    HuffmanMatchDistExtra(lit_dec, dist_dec, length, dist_sym, dextra) =>
-      self.decode_huffman_match_dist_extra(
-        lit_dec, dist_dec, length, dist_sym, dextra,
-      )
-    HuffmanMatchCopy(lit_dec, dist_dec, dist, remaining) =>
-      self.decode_huffman_match_copy(lit_dec, dist_dec, dist, remaining)
+  for ;; {
+    // Emit pending output first
+    if self.pending_output.length() > 0 {
+      let out = self.pending_output
+      self.pending_output = Bytes::default()
+      return Data(out)
+    }
+    self.redispatch = false
+    let result : Decode = match self.phase {
+      Done => End
+      Failed(e) => Error(e)
+      BlockHeader => self.decode_block_header()
+      StoredInit => self.decode_stored_init()
+      StoredCopy(remaining) => self.decode_stored_copy(remaining)
+      DynamicHeader => self.decode_dynamic_header()
+      HuffmanLoop(lit_dec, dist_dec) =>
+        self.decode_huffman_loop(lit_dec, dist_dec)
+      HuffmanMatchLen(lit_dec, dist_dec, length_code, extra_bits) =>
+        self.decode_huffman_match_len(lit_dec, dist_dec, length_code, extra_bits)
+      HuffmanMatchDist(lit_dec, dist_dec, length) =>
+        self.decode_huffman_match_dist(lit_dec, dist_dec, length)
+      HuffmanMatchDistExtra(lit_dec, dist_dec, length, dist_sym, dextra) =>
+        self.decode_huffman_match_dist_extra(
+          lit_dec, dist_dec, length, dist_sym, dextra,
+        )
+      HuffmanMatchCopy(lit_dec, dist_dec, dist, remaining) =>
+        self.decode_huffman_match_copy(lit_dec, dist_dec, dist, remaining)
+    }
+    if self.redispatch {
+      continue
+    }
+    return result
   }
 }
 
@@ -136,15 +145,18 @@ fn Inflater::decode_block_header(self : Inflater) -> Decode {
   match btype {
     0 => {
       self.phase = StoredInit
-      self.decode_stored_init()
+      self.redispatch = true
+      Await
     }
     1 => {
       self.phase = HuffmanLoop(fixed_lit_decoder, fixed_dist_decoder)
-      self.decode_huffman_loop(fixed_lit_decoder, fixed_dist_decoder)
+      self.redispatch = true
+      Await
     }
     2 => {
       self.phase = DynamicHeader
-      self.decode_dynamic_header()
+      self.redispatch = true
+      Await
     }
     _ => self.fail(CompressError::CorruptInput("invalid block type \{btype}"))
   }
@@ -164,7 +176,8 @@ fn Inflater::decode_stored_init(self : Inflater) -> Decode {
     )
   }
   self.phase = StoredCopy(len)
-  self.decode_stored_copy(len)
+  self.redispatch = true
+  Await
 }
 
 ///|
@@ -183,7 +196,8 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
     if flushed.length() > 0 {
       return Data(flushed)
     }
-    return self.decode_block_header()
+    self.redispatch = true
+    return Await
   }
   // First drain any whole bytes from bit buffer
   let bb = self.bb
@@ -251,7 +265,8 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
   if flushed.length() > 0 {
     return Data(flushed)
   }
-  self.decode_block_header()
+  self.redispatch = true
+  Await
 }
 
 ///|
@@ -367,7 +382,8 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
   }
   self.phase = HuffmanLoop(lit_dec, dist_dec)
-  self.decode_huffman_loop(lit_dec, dist_dec)
+  self.redispatch = true
+  Await
 }
 
 ///|
@@ -503,7 +519,8 @@ fn Inflater::decode_huffman_loop(
       if flushed.length() > 0 {
         return Data(flushed)
       }
-      return self.decode_block_header()
+      self.redispatch = true
+      return Await
     } else {
       // Length/distance pair — write back locals, delegate to existing methods
       bb.buf = buf
@@ -702,7 +719,9 @@ fn Inflater::do_copy(
     }
   }
   // Copy complete without filling window, continue Huffman loop
-  self.decode_huffman_loop(lit_dec, dist_dec)
+  self.phase = HuffmanLoop(lit_dec, dist_dec)
+  self.redispatch = true
+  Await
 }
 
 ///|

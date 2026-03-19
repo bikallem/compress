@@ -78,6 +78,15 @@ test "round-trip: 100KB data" {
 }
 
 ///|
+test "round-trip: 200KB data (issue #4 stack overflow regression)" {
+  let data = Bytes::make(200_000, b'\x41')
+  let compressed = @zlib.compress(data)
+  let decompressed = @zlib.decompress(compressed)
+  inspect(decompressed.length(), content="200000")
+  inspect(decompressed == data, content="true")
+}
+
+///|
 test "round-trip: with dictionary" {
   let dict : Bytes = b"the quick brown fox jumps over the lazy dog abcdefghijklmnop"
   let test_data : Array[Bytes] = [

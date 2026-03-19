@@ -315,20 +315,9 @@ fn Deflater::encode_uniform_run(self : Deflater) -> Bool {
       return false
     }
   }
-  // All same byte — emit one literal + repeated distance-1 matches
-  // Use dynamic block (via token path) for optimal Huffman coding
-  // with only 2-3 active symbols.
-  self.tokens.push(Token::literal(b))
-  let mut pos = start + 1
-  while pos < end {
-    let len = if end - pos < MAX_MATCH_LENGTH {
-      end - pos
-    } else {
-      MAX_MATCH_LENGTH
-    }
-    self.tokens.push(Token::match_(len, 1))
-    pos += len
-  }
+  // All same byte — emit one literal + repeated distance-1 matches.
+  // Trailing bytes shorter than MIN_MATCH_LENGTH are emitted as literals.
+  self.emit_uniform_tokens(b, start, end)
   self.w.write_dynamic_block(self.tokens, false)
   self.tokens.clear()
   self.index = end
@@ -336,8 +325,33 @@ fn Deflater::encode_uniform_run(self : Deflater) -> Bool {
 }
 
 ///|
+/// Emit tokens for a uniform byte run: 1 literal + max-length distance-1 matches.
+/// Trailing bytes shorter than MIN_MATCH_LENGTH are emitted as literals.
+fn Deflater::emit_uniform_tokens(
+  self : Deflater,
+  b : Byte,
+  start : Int,
+  end : Int,
+) -> Unit {
+  self.tokens.push(Token::literal(b))
+  let mut pos = start + 1
+  while pos < end {
+    let remaining = end - pos
+    if remaining < MIN_MATCH_LENGTH {
+      while pos < end {
+        self.tokens.push(Token::literal(b))
+        pos += 1
+      }
+      break
+    }
+    let len = if remaining < MAX_MATCH_LENGTH { remaining } else { MAX_MATCH_LENGTH }
+    self.tokens.push(Token::match_(len, 1))
+    pos += len
+  }
+}
+
+///|
 /// Detect and optimally encode uniform data via tokens (for levels 2+).
-/// Returns true if data was uniform and has been encoded.
 fn Deflater::encode_uniform_tokens(self : Deflater) -> Bool {
   let start = self.index
   let end = self.window_end
@@ -350,24 +364,12 @@ fn Deflater::encode_uniform_tokens(self : Deflater) -> Bool {
       return false
     }
   }
-  // Verify remaining bytes are also uniform
   for i in (start + 32)..<end {
     if self.window[i] != b {
       return false
     }
   }
-  // All same byte — emit one literal + repeated distance-1 matches as tokens
-  self.tokens.push(Token::literal(b))
-  let mut pos = start + 1
-  while pos < end {
-    let len = if end - pos < MAX_MATCH_LENGTH {
-      end - pos
-    } else {
-      MAX_MATCH_LENGTH
-    }
-    self.tokens.push(Token::match_(len, 1))
-    pos += len
-  }
+  self.emit_uniform_tokens(b, start, end)
   self.w.write_dynamic_block(self.tokens, false)
   self.tokens.clear()
   self.index = end
