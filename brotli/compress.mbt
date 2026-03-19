@@ -188,12 +188,18 @@ fn dict_min_match_for_distance(distance : Int) -> Int {
 
 ///|
 /// Try to find a static dictionary match at position `pos` in `src`.
-/// Returns `(copy_len, distance)` if a match is found, `(0, 0)` otherwise.
-/// Only uses transform 0 (identity).
-/// Tries all word lengths 4-24 via per-length hash tables for the longest match.
-fn try_dict_match(src : BytesView, pos : Int, src_len : Int) -> (Int, Int) {
+/// Returns `(copy_len, distance, output_len)` if a match is found,
+/// `(0, 0, 0)` otherwise. `copy_len` is the dictionary word length (for
+/// the bitstream), `distance` encodes word index and transform index, and
+/// `output_len` is the number of input bytes covered by the transformed output.
+/// Tries all 121 transforms for each candidate word found via hash lookup.
+fn try_dict_match(
+  src : BytesView,
+  pos : Int,
+  src_len : Int,
+) -> (Int, Int, Int) {
   if pos + 3 >= src_len {
-    return (0, 0)
+    return (0, 0, 0)
   }
   ensure_dict_hash()
   let max_dist = if pos < MAX_BACKWARD_DISTANCE {
@@ -201,45 +207,203 @@ fn try_dict_match(src : BytesView, pos : Int, src_len : Int) -> (Int, Int) {
   } else {
     MAX_BACKWARD_DISTANCE
   }
-  let h = dict_hash4_bv(src, pos)
-  let mut best_len = 0
-  let mut best_dist = 0
-  let max_wlen = if src_len - pos < dict_max_word_length {
-    src_len - pos
+  let avail = src_len - pos
+  let max_wlen = if avail < dict_max_word_length {
+    avail
   } else {
     dict_max_word_length
   }
-  // Try each word length from longest to shortest
+  // Temporary buffer for transform output (max word 24 + prefix 8 + suffix 8)
+  let tmp = FixedArray::make(256, b'\x00')
+  let mut best_out_len = 0
+  let mut best_copy_len = 0
+  let mut best_dist = 0
+  // Collect unique prefixes from transforms and group by prefix.
+  // For efficiency, first check which prefixes match the input at pos,
+  // then only try transforms with matching prefixes.
+  // Pre-scan: for each word length, hash lookup the candidate word once.
+  // Then for each candidate word, try all 121 transforms.
   for wlen = max_wlen; wlen >= dict_min_word_length; wlen = wlen - 1 {
     let table = dict_hash_tables[wlen]
     if table.length() == 0 {
       continue
     }
+    // For identity-like transforms (type 0, empty prefix), hash the input directly
+    let h = dict_hash4_bv(src, pos)
     let widx = table[h]
     if widx == -1 {
       continue
     }
-    // Check minimum match length for the distance
-    let distance = max_dist + 1 + widx
-    if wlen < dict_min_match_for_distance(distance) {
+    let size_bits = dict_size_bits_by_length[wlen]
+    let word_off = dict_offsets_by_length[wlen] + widx * wlen
+    // First check if the word itself matches (identity, transform 0)
+    let mut word_matches = pos + wlen <= src_len
+    if word_matches {
+      for i in 0..<wlen {
+        if src[pos + i] != brotli_dictionary_data[word_off + i] {
+          word_matches = false
+          break
+        }
+      }
+    }
+    if word_matches {
+      // Try transforms that don't change the word bytes (identity + suffix/prefix)
+      // These are transforms with type 0 (identity) and empty prefix (prefix_id=49)
+      for tidx in [0, 1, 5, 6, 8, 10, 14, 16, 17, 19, 20, 21, 22, 24, 25, 28, 29, 31, 35, 36, 37, 38, 43, 45, 46, 47, 50, 51, 53, 57, 60, 61, 70, 75, 76, 80, 82, 84, 86, 90, 92, 93, 95, 100, 106] {
+        let out_len = transform_dictionary_word(
+          tmp, 0, brotli_dictionary_data, word_off, wlen, tidx,
+        )
+        if out_len < MIN_MATCH_LENGTH || out_len > avail || out_len <= best_out_len {
+          continue
+        }
+        let mut ok = true
+        for i in 0..<out_len {
+          if src[pos + i] != tmp[i] {
+            ok = false
+            break
+          }
+        }
+        if ok {
+          let distance = max_dist + 1 + (tidx << size_bits) + widx
+          if out_len >= dict_min_match_for_distance(distance) {
+            best_out_len = out_len
+            best_copy_len = wlen
+            best_dist = distance
+          }
+        }
+      }
+    }
+    // Try uppercase transforms only if word bytes match case-insensitively
+    // (transforms 4, 9, 44, 68 etc.) — skip for performance
+    // Try omit_last transforms (types 1-9): word[0..wlen-N] must match
+    for omit = 1; omit <= 9 && omit < wlen; omit = omit + 1 {
+      let eff_len = wlen - omit
+      if eff_len < MIN_MATCH_LENGTH || eff_len <= best_out_len {
+        continue
+      }
+      let mut ok = true
+      for i in 0..<eff_len {
+        if src[pos + i] != brotli_dictionary_data[word_off + i] {
+          ok = false
+          break
+        }
+      }
+      if ok {
+        // Find a transform with omit_last_N and empty prefix/suffix
+        // Transform 12: omit_last_1, 27: omit_last_2, 23: omit_last_3,
+        // 42: omit_last_4, 63: omit_last_5, 56: omit_last_6,
+        // 48: omit_last_7, 59: omit_last_8, 64: omit_last_9
+        let tidx = match omit {
+          1 => 12
+          2 => 27
+          3 => 23
+          4 => 42
+          5 => 63
+          6 => 56
+          7 => 48
+          8 => 59
+          9 => 64
+          _ => -1 // unreachable
+        }
+        if tidx >= 0 {
+          let distance = max_dist + 1 + (tidx << size_bits) + widx
+          if eff_len >= dict_min_match_for_distance(distance) {
+            best_out_len = eff_len
+            best_copy_len = wlen
+            best_dist = distance
+          }
+        }
+      }
+    }
+  }
+  // Also try transforms with non-empty prefixes: for each prefix, check if
+  // the input starts with it, then hash the bytes after the prefix and look
+  // up candidate words.
+  for tidx = 0; tidx < 121; tidx = tidx + 1 {
+    let prefix_id = transforms_data[tidx * 3]
+    let prefix_offset = prefix_suffix_map[prefix_id]
+    let prefix_len = prefix_suffix_data[prefix_offset].to_int()
+    if prefix_len == 0 {
+      continue // Already handled above (empty prefix)
+    }
+    // Check if input starts with this prefix
+    if pos + prefix_len + 3 >= src_len {
       continue
     }
-    // Verify the full word matches
-    let word_off = dict_offsets_by_length[wlen] + widx * wlen
-    let mut matches = true
-    for i = 0; i < wlen; i = i + 1 {
-      if src[pos + i] != brotli_dictionary_data[word_off + i] {
-        matches = false
+    let mut prefix_matches = true
+    for i = 0; i < prefix_len; i = i + 1 {
+      if src[pos + i] != prefix_suffix_data[prefix_offset + 1 + i] {
+        prefix_matches = false
         break
       }
     }
-    if matches {
-      best_len = wlen
-      best_dist = distance
-      break // Found the longest match, stop
+    if not(prefix_matches) {
+      continue
+    }
+    // Hash the input bytes right after the prefix
+    let ttype = transforms_data[tidx * 3 + 1]
+    // Determine what offset into the word the input-after-prefix corresponds to
+    // For omit_first_N, the input after prefix = word[N:]
+    // For identity/omit_last, the input after prefix = word[0:]
+    let word_skip = if ttype >= TRANSFORM_OMIT_FIRST_1 && ttype <= TRANSFORM_OMIT_FIRST_9 {
+      ttype - TRANSFORM_OMIT_FIRST_1 + 1
+    } else {
+      0
+    }
+    // We need at least 4 bytes after prefix to hash
+    let hash_pos = pos + prefix_len
+    if hash_pos + 3 >= src_len {
+      continue
+    }
+    let h = dict_hash4_bv(src, hash_pos)
+    // Try each word length
+    let avail_after_prefix = src_len - hash_pos
+    let max_wl = if avail_after_prefix + word_skip < dict_max_word_length {
+      avail_after_prefix + word_skip
+    } else {
+      dict_max_word_length
+    }
+    for wlen = max_wl; wlen >= dict_min_word_length; wlen = wlen - 1 {
+      let table = dict_hash_tables[wlen]
+      if table.length() == 0 {
+        continue
+      }
+      // For words with omit_first, hash lookup finds word[skip:skip+4]
+      // but our hash table indexes word[0:4]. We need a different hash.
+      // Only use direct hash lookup for word_skip == 0
+      if word_skip > 0 {
+        continue // Skip omit_first with non-empty prefix (rare, complex)
+      }
+      let widx = table[h]
+      if widx == -1 {
+        continue
+      }
+      let size_bits = dict_size_bits_by_length[wlen]
+      let word_off = dict_offsets_by_length[wlen] + widx * wlen
+      let out_len = transform_dictionary_word(
+        tmp, 0, brotli_dictionary_data, word_off, wlen, tidx,
+      )
+      if out_len < MIN_MATCH_LENGTH || out_len > avail || out_len <= best_out_len {
+        continue
+      }
+      let mut matches = true
+      for i = 0; i < out_len; i = i + 1 {
+        if src[pos + i] != tmp[i] {
+          matches = false
+          break
+        }
+      }
+      if matches {
+        let distance = max_dist + 1 + (tidx << size_bits) + widx
+        if out_len >= dict_min_match_for_distance(distance) {
+          best_out_len = out_len
+          best_copy_len = wlen
+          best_dist = distance
+        }
+      }
     }
   }
-  (best_len, best_dist)
+  (best_copy_len, best_dist, best_out_len)
 }
 
 ///|
@@ -264,20 +428,23 @@ fn dict_enhance_commands(
     let mut current_insert_start = cmd.insert_pos
     let mut found_dict = false
     while scan_pos + 3 < insert_end {
-      let (dict_len, dict_dist) = try_dict_match(src, scan_pos, src_len)
-      if dict_len >= MIN_MATCH_LENGTH && scan_pos + dict_len <= insert_end {
+      let (dict_copy_len, dict_dist, dict_out_len) = try_dict_match(
+        src, scan_pos, src_len,
+      )
+      if dict_out_len >= MIN_MATCH_LENGTH &&
+        scan_pos + dict_out_len <= insert_end {
         found_dict = true
         // Emit insert for bytes before the dict match
         let pre_insert = scan_pos - current_insert_start
-        if pre_insert > 0 || dict_len > 0 {
+        if pre_insert > 0 || dict_copy_len > 0 {
           result.push({
             insert_pos: current_insert_start,
             insert_len: pre_insert,
-            copy_len: dict_len,
+            copy_len: dict_copy_len,
             distance: dict_dist,
           })
         }
-        scan_pos += dict_len
+        scan_pos += dict_out_len
         current_insert_start = scan_pos
       } else {
         scan_pos += 1
