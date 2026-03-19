@@ -340,15 +340,14 @@ fn decode_compressed_block(
       let word_idx = address & mask
       let transform_idx = address >> shift
       let word_off = dict_word_offset(copy_len, word_idx)
-      // Apply transform to get the output bytes.
-      // The transform may produce more or fewer bytes than copy_len
-      // (e.g., prefix/suffix additions or omit transforms).
+      // Apply transform to get the output bytes
       let tmp = FixedArray::make(copy_len + 128, b'\x00')
       let out_len = transform_dictionary_word(
         tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
       )
-      sink.write_fixed(tmp, 0, out_len)
-      produced += out_len
+      let write_len = if out_len < climit { out_len } else { climit }
+      sink.write_fixed(tmp, 0, write_len)
+      produced += write_len
     } else {
       let copy_src = start_pos + produced - distance
       if copy_src >= 0 {
