@@ -36,13 +36,22 @@ const WINDOW_SIZE : Int = 1 << 15 // 32KB
 const WINDOW_MASK : Int = WINDOW_SIZE - 1
 
 ///|
-const MAX_BLOCK_TOKENS : Int = 65536
+const MAX_BLOCK_TOKENS : Int = 32768
 
 ///|
-/// Maximum number of intermediate positions to rehash after a match.
-/// Must be >= MAX_MATCH_LENGTH to avoid missing nearby matches after
-/// long matches in repetitive data.
-const MAX_INSERT : Int = 258
+/// Level-dependent maximum number of intermediate positions to rehash after
+/// a match. Lower levels use smaller values since their short hash chains
+/// don't benefit from rehashing distant positions.
+fn max_insert(level : Int) -> Int {
+  match level {
+    0 | 1 => 4
+    2 | 3 => 32
+    4 | 5 => 64
+    6 | 7 => 128
+    8 | 9 => 258
+    _ => 258
+  }
+}
 
 ///|
 /// Streaming, non-blocking DEFLATE compressor.
@@ -388,10 +397,11 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
       if length >= MIN_MATCH_LENGTH {
         self.tokens.push(Token::match_(length, offset))
         // Rehash a capped number of intermediate positions.
-        let n_insert = if length - 1 < MAX_INSERT {
+        let mi = max_insert(self.level)
+        let n_insert = if length - 1 < mi {
           length - 1
         } else {
-          MAX_INSERT
+          mi
         }
         let rehash_end = if i + n_insert + 4 < end {
           i + 1 + n_insert
@@ -422,7 +432,8 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
 ///|
 fn Deflater::step_lazy(self : Deflater) -> Unit {
   let hash_mask = self.head.length() - 1
-  let max_chain = match self.level {
+  let level = self.level
+  let max_chain = match level {
     4 => 32
     5 => 64
     6 => 128
@@ -430,6 +441,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     8 => 512
     _ => 1024
   }
+  let mi = max_insert(level)
   let end = self.window_end
   let mut i = self.index
   let safe_end = end - MIN_MATCH_LENGTH
@@ -441,11 +453,20 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
   if self.encode_uniform_tokens() {
     return
   }
+  // Cache frequently-accessed fields in locals
+  let window = self.window
+  let head = self.head
+  let prev = self.prev
+  let tokens = self.tokens
   while i < safe_end {
     // i < safe_end guarantees i+3 < end
     let mut cur_len = 0
     let mut cur_dist = 0
-    let match_head = self.insert_hash(i, hash_mask)
+    // Inline insert_hash to avoid method call overhead
+    let h = self.hash4(i, hash_mask)
+    let match_head = head.unsafe_get(h)
+    prev.unsafe_set(i & WINDOW_MASK, match_head)
+    head.unsafe_set(h, i)
     if match_head >= 0 && i - match_head <= MAX_MATCH_OFFSET {
       let (length, offset) = self.find_best_match(i, match_head, max_chain)
       if length >= MIN_MATCH_LENGTH {
@@ -455,22 +476,22 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     }
     if self.has_prev {
       if cur_len > self.prev_match_len + 1 {
-        self.tokens.push(Token::literal(self.prev_literal))
+        tokens.push(Token::literal(self.prev_literal))
         self.prev_match_len = cur_len
         self.prev_match_dist = cur_dist
-        self.prev_literal = self.window.unsafe_get(i)
+        self.prev_literal = window.unsafe_get(i)
         i += 1
       } else {
-        self.tokens.push(
+        tokens.push(
           Token::match_(self.prev_match_len, self.prev_match_dist),
         )
         let start = i
         let skip_end = start + self.prev_match_len - 1
         // Rehash a capped number of intermediate positions.
-        let n_insert = if self.prev_match_len - 1 < MAX_INSERT {
+        let n_insert = if self.prev_match_len - 1 < mi {
           self.prev_match_len - 1
         } else {
-          MAX_INSERT
+          mi
         }
         let rehash_end = if start + n_insert + 3 < end {
           start + n_insert
@@ -487,15 +508,15 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       self.has_prev = true
       self.prev_match_len = cur_len
       self.prev_match_dist = cur_dist
-      self.prev_literal = self.window.unsafe_get(i)
+      self.prev_literal = window.unsafe_get(i)
       i += 1
     } else {
-      self.tokens.push(Token::literal(self.window.unsafe_get(i)))
+      tokens.push(Token::literal(window.unsafe_get(i)))
       i += 1
     }
-    if self.tokens.length() >= MAX_BLOCK_TOKENS {
-      self.w.write_dynamic_block(self.tokens, false)
-      self.tokens.clear()
+    if tokens.length() >= MAX_BLOCK_TOKENS {
+      self.w.write_dynamic_block(tokens, false)
+      tokens.clear()
     }
   }
   self.index = i
