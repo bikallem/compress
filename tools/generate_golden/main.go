@@ -47,6 +47,8 @@ func main() {
 		"text_10kb":  genText(10240),
 		"text_100kb": genText(102400),
 		"text_1mb":   genText(1048576),
+		"text_10mb":  genText(10485760),
+		"text_100mb": genText(104857600),
 	}
 
 	// Write input files

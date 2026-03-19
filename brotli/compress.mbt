@@ -70,11 +70,10 @@ const MAX_METABLOCK_SIZE : Int = 1 << 24
 
 ///|
 fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
-  // For data larger than max metablock size, use uncompressed chunking.
-  // Multi-metablock compressed encoding requires cross-metablock distance
-  // tracking which is not yet implemented.
+  // For data larger than max metablock size, split into independent chunks.
+  // Each chunk is compressed separately as its own metablock.
   if src_len > MAX_METABLOCK_SIZE {
-    return compress_uncompressed(src, src_len)
+    return compress_lz77_chunked(src, src_len, level)
   }
   let wbits = optimal_wbits(src_len)
   let cmds = if level <= 1 {
@@ -103,6 +102,37 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   compressed
 }
 
+///|
+/// Compress large data by splitting into independently-compressed metablocks.
+fn compress_lz77_chunked(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+) -> Bytes {
+  let wbits = optimal_wbits(src_len)
+  let bw = BitWriter::new(1048576)
+  encode_wbits(bw, wbits)
+  let mut offset = 0
+  while offset < src_len {
+    let chunk_size = if src_len - offset < MAX_METABLOCK_SIZE {
+      src_len - offset
+    } else {
+      MAX_METABLOCK_SIZE
+    }
+    let is_last = offset + chunk_size >= src_len
+    let chunk = src[offset : offset + chunk_size]
+    let cmds = lz77_find_matches(chunk, chunk_size)
+    encode_metablock_into(bw, chunk, chunk_size, cmds, 1, is_last)
+    offset += chunk_size
+  }
+  let compressed = bw.to_bytes()
+  let uncompressed = compress_uncompressed(src, src_len)
+  if compressed.length() >= uncompressed.length() {
+    uncompressed
+  } else {
+    compressed
+  }
+}
 
 // ─── LZ77 match finder ──────────────────────────────────────────────
 

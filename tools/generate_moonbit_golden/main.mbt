@@ -117,6 +117,7 @@ fn main {
   let input_names = [
     "empty", "hello", "repeated", "zeros_10k", "mixed_1k",
     "text_1kb", "text_10kb", "text_100kb", "text_1mb",
+    "text_10mb", "text_100mb",
   ]
   let entries : Array[Entry] = []
   // Read inputs from existing golden input files
