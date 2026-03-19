@@ -7,6 +7,7 @@
 #   ./tools/bench.sh --go               # current vs Go
 #   ./tools/bench.sh --prev --go        # current vs previous commit vs Go
 #   ./tools/bench.sh --filter crc32     # filter benchmarks by name
+#   ./tools/bench.sh --codec brotli     # only run brotli benchmarks (MoonBit + Go)
 #   ./tools/bench.sh --json             # save raw results to bench_results.json
 set -euo pipefail
 
@@ -21,6 +22,7 @@ fi
 RUN_PREV=false
 RUN_GO=false
 FILTER=""
+CODEC=""
 SAVE_JSON=false
 
 while [[ $# -gt 0 ]]; do
@@ -28,9 +30,10 @@ while [[ $# -gt 0 ]]; do
     --prev)   RUN_PREV=true; shift ;;
     --go)     RUN_GO=true; shift ;;
     --filter) FILTER="$2"; shift 2 ;;
+    --codec)  CODEC="$2"; shift 2 ;;
     --json)   SAVE_JSON=true; shift ;;
     -h|--help)
-      sed -n '2,8p' "$0" | sed 's/^# \?//'
+      sed -n '2,9p' "$0" | sed 's/^# \?//'
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -141,9 +144,31 @@ BENCH_PKGS=(
   bikallem/compress/benchmarks/brotli-100mb
 )
 
-echo "=== Running MoonBit benchmarks (current) ==="
-MOON_RAW=$(mktemp)
+# Filter packages by codec if specified
+ACTIVE_PKGS=()
 for pkg in "${BENCH_PKGS[@]}"; do
+  if [[ -n "$CODEC" ]]; then
+    # Match codec name in package path (e.g., "flate" matches "flate-1kb", "streaming" matches streaming)
+    case "$pkg" in
+      */"$CODEC"-*|*/"$CODEC") ACTIVE_PKGS+=("$pkg") ;;
+      */streaming)
+        # Include streaming if the codec has streaming benchmarks
+        if [[ "$CODEC" == "flate" || "$CODEC" == "lzw" ]]; then
+          ACTIVE_PKGS+=("$pkg")
+        fi ;;
+      */checksum)
+        if [[ "$CODEC" == "checksum" ]]; then
+          ACTIVE_PKGS+=("$pkg")
+        fi ;;
+    esac
+  else
+    ACTIVE_PKGS+=("$pkg")
+  fi
+done
+
+echo "=== Running MoonBit benchmarks (current)${CODEC:+ [$CODEC]} ==="
+MOON_RAW=$(mktemp)
+for pkg in "${ACTIVE_PKGS[@]}"; do
   echo "--- $pkg ---"
   moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$MOON_RAW"
 done
@@ -171,7 +196,7 @@ if $RUN_PREV; then
   moon install -q 2>/dev/null || true
   # Use the same package list — benchmarks on the previous commit may differ,
   # but moon bench silently skips packages that don't exist.
-  for pkg in "${BENCH_PKGS[@]}"; do
+  for pkg in "${ACTIVE_PKGS[@]}"; do
     echo "--- $pkg ---"
     moon bench -p "$pkg" --target native --release 2>&1 | tee -a "$PREV_RAW" || true
   done
@@ -190,9 +215,16 @@ fi
 
 declare -A GO
 if $RUN_GO; then
-  echo "=== Running Go benchmarks ==="
+  # Build Go -bench regex from codec filter
+  GO_BENCH_RE="."
+  if [[ -n "$CODEC" ]]; then
+    # Capitalize first letter for Go benchmark name matching
+    GO_CODEC="$(echo "$CODEC" | sed 's/^./\U&/')"
+    GO_BENCH_RE="Benchmark${GO_CODEC}"
+  fi
+  echo "=== Running Go benchmarks${CODEC:+ [$CODEC]} ==="
   GO_RAW=$(mktemp)
-  (cd "$REPO_ROOT/tools" && go test -run='^$' -bench=. -benchtime=1s -count=1 2>&1) | tee "$GO_RAW"
+  (cd "$REPO_ROOT/tools" && go test -run='^$' -bench="$GO_BENCH_RE" -benchtime=1s -count=1 2>&1) | tee "$GO_RAW"
   while IFS=$'\t' read -r name val; do
     GO["$name"]=$val
   done < <(parse_go_bench < "$GO_RAW")
