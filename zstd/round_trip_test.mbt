@@ -74,16 +74,17 @@ test "round-trip: all byte values" {
 ///|
 test "round-trip: 1MB repeating text" {
   let pattern = "The quick brown fox jumps over the lazy dog. "
-  let plen = pattern.to_bytes().length()
+  let pattern_bytes = @utf8.encode(pattern[:])
+  let plen = pattern_bytes.length()
   let buf = @buffer.new()
   let mut written = 0
   while written + plen <= 1048576 {
-    buf.write_string(pattern)
+    buf.write_string_utf8(pattern[:])
     written += plen
   }
   let remaining = 1048576 - written
   for i in 0..<remaining {
-    buf.write_byte(pattern.to_bytes()[i])
+    buf.write_byte(pattern_bytes[i])
   }
   let data = buf.to_bytes()
   let compressed = @zstd.compress(data)

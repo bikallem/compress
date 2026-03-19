@@ -120,7 +120,7 @@ test "round-trip: 20MB default (multi-metablock)" {
   let data = Bytes::makei(20_000_000, fn(i) { (i % 256).to_byte() })
   let compressed = @brotli.compress(data)
   let decompressed = @brotli.decompress(compressed)
-  inspect!(decompressed.length(), content="20000000")
+  inspect(decompressed.length(), content="20000000")
   // Check first mismatch position
   let mut first_diff = -1
   for i in 0..<decompressed.length() {
@@ -129,5 +129,5 @@ test "round-trip: 20MB default (multi-metablock)" {
       break
     }
   }
-  inspect!(first_diff, content="-1")
+  inspect(first_diff, content="-1")
 }

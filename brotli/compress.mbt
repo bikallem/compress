@@ -73,7 +73,7 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   // For data larger than max metablock size, split into independent chunks.
   // Each chunk is compressed separately as its own metablock.
   if src_len > MAX_METABLOCK_SIZE {
-    return compress_lz77_chunked(src, src_len, level)
+    return compress_lz77_chunked(src, src_len)
   }
   let wbits = optimal_wbits(src_len)
   let cmds = if level <= 1 {
@@ -104,11 +104,7 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
 
 ///|
 /// Compress large data by splitting into independently-compressed metablocks.
-fn compress_lz77_chunked(
-  src : BytesView,
-  src_len : Int,
-  level : Int,
-) -> Bytes {
+fn compress_lz77_chunked(src : BytesView, src_len : Int) -> Bytes {
   let wbits = optimal_wbits(src_len)
   let bw = BitWriter::new(1048576)
   encode_wbits(bw, wbits)
