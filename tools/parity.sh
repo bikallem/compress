@@ -3,10 +3,10 @@
 #
 # Usage:
 #   ./tools/parity.sh                    # generate + test (grouped by algorithm)
-#   ./tools/parity.sh --sort-delta       # generate + test (sorted by biggest size delta)
+#   ./tools/parity.sh --sort-ratio       # generate + test (sorted by biggest size delta)
 #   ./tools/parity.sh generate           # only generate MoonBit golden files
 #   ./tools/parity.sh test               # only run Go parity tests
-#   ./tools/parity.sh test --sort-delta  # test with sorted output
+#   ./tools/parity.sh test --sort-ratio  # test with sorted output
 #
 set -euo pipefail
 
@@ -72,12 +72,12 @@ SORT_DELTA=""
 CMDS=()
 for arg in "$@"; do
     case "$arg" in
-        --sort-delta) SORT_DELTA="1" ;;
+        --sort-ratio) SORT_DELTA="1" ;;
         *) CMDS+=("$arg") ;;
     esac
 done
 CMD="${CMDS[0]:-all}"
-export PARITY_SORT_DELTA="${SORT_DELTA}"
+export PARITY_SORT_RATIO="${SORT_DELTA}"
 
 case "$CMD" in
     generate)
@@ -92,7 +92,7 @@ case "$CMD" in
         run_tests
         ;;
     *)
-        echo "Usage: $0 [generate|test|all] [--sort-delta]"
+        echo "Usage: $0 [generate|test|all] [--sort-ratio]"
         exit 1
         ;;
 esac

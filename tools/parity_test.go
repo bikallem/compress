@@ -320,13 +320,19 @@ func TestParitySummary(t *testing.T) {
 		}
 	}
 
-	sortByDelta := os.Getenv("PARITY_SORT_DELTA") != ""
+	sortByDelta := os.Getenv("PARITY_SORT_RATIO") != ""
 
 	if sortByDelta {
 		sort.Slice(all, func(i, j int) bool {
+			// Sort by ratio distance from 1.0, descending (worst ratio first)
+			di := all[i].ratio - 1.0
+			if di < 0 { di = -di }
+			dj := all[j].ratio - 1.0
+			if dj < 0 { dj = -dj }
+			if di != dj { return di > dj }
 			return all[i].absDelta > all[j].absDelta
 		})
-		fmt.Printf("\n=== Parity Report (sorted by size delta) ===\n")
+		fmt.Printf("\n=== Parity Report (sorted by worst ratio) ===\n")
 	} else {
 		// Default: grouped by algorithm (already in insertion order)
 		fmt.Printf("\n=== Parity Report ===\n")
