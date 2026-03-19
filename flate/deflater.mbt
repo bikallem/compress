@@ -455,6 +455,12 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
     8 => 128
     _ => 258
   }
+  let nice = match level {
+    4 => 16
+    5 => 32
+    6 | 7 => 128
+    _ => 258
+  }
   let mi = max_insert(level)
   let end = self.window_end
   let mut i = self.index
@@ -520,7 +526,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         if length > best_len {
           best_len = length
           best_offset = i - pos
-          if best_len == max_len {
+          if best_len >= nice || best_len == max_len {
             break
           }
         }
@@ -561,7 +567,15 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
           end - 4
         }
         for j in start..<rehash_end {
-          ignore(self.insert_hash(j, hash_mask))
+          // Inline insert_hash to reuse cached locals
+          let rv = window.unsafe_get(j).to_int() |
+            (window.unsafe_get(j + 1).to_int() << 8) |
+            (window.unsafe_get(j + 2).to_int() << 16) |
+            (window.unsafe_get(j + 3).to_int() << 24)
+          let rh = ((rv & 0xFFFFFF) ^ (((rv >> 16) & 0xFF) * 0x1e35a7bd)) &
+            hash_mask
+          prev.unsafe_set(j & WINDOW_MASK, head.unsafe_get(rh))
+          head.unsafe_set(rh, j)
         }
         i = skip_end
         self.has_prev = false

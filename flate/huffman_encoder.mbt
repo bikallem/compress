@@ -248,30 +248,16 @@ fn fixed_block_bit_size(
 }
 
 ///|
-fn dynamic_block_bit_size(
+/// Compute dynamic block size using precomputed code-length tree data.
+fn compute_dynamic_block_size(
   lit_freqs : FixedArray[Int],
   dist_freqs : FixedArray[Int],
   lit_codes : HuffmanCode,
   dist_codes : HuffmanCode,
+  cl_freqs : FixedArray[Int],
+  cl_codes : HuffmanCode,
+  hclen : Int,
 ) -> Int {
-  let lit_bl = lit_codes.bit_lengths()
-  let dist_bl = dist_codes.bit_lengths()
-  let mut hlit = 286
-  while hlit > 257 && lit_bl[hlit - 1] == 0 {
-    hlit -= 1
-  }
-  let mut hdist = 30
-  while hdist > 1 && dist_bl[hdist - 1] == 0 {
-    hdist -= 1
-  }
-  let cl_freqs = FixedArray::make(19, 0)
-  rle_count_freqs(lit_bl, hlit, dist_bl, hdist, cl_freqs)
-  let cl_codes = HuffmanCode::from_freqs(cl_freqs, 7)
-  let cl_bl = cl_codes.bit_lengths()
-  let mut hclen = 19
-  while hclen > 4 && cl_bl[code_order[hclen - 1]] == 0 {
-    hclen -= 1
-  }
   let mut bits = 3 + 5 + 5 + 4 + 3 * hclen
   let clc = cl_codes.codes
   for i in 0..<19 {

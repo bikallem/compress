@@ -163,9 +163,31 @@ fn BitWriter::write_dynamic_block(
   let dyn_lit_codes = HuffmanCode::from_freqs(lit_freqs, 15)
   let dyn_dist_codes = HuffmanCode::from_freqs(dist_freqs, 15)
   let fixed_size = fixed_block_bit_size(lit_freqs, dist_freqs)
-  let dynamic_size = dynamic_block_bit_size(
-    lit_freqs, dist_freqs, dyn_lit_codes, dyn_dist_codes,
+  // Precompute CL tree data once (eliminates duplicate computation)
+  let lit_bl = dyn_lit_codes.bit_lengths()
+  let dist_bl = dyn_dist_codes.bit_lengths()
+  let mut hlit = 286
+  while hlit > 257 && lit_bl[hlit - 1] == 0 {
+    hlit -= 1
+  }
+  let mut hdist = 30
+  while hdist > 1 && dist_bl[hdist - 1] == 0 {
+    hdist -= 1
+  }
+  let cl_freqs = FixedArray::make(19, 0)
+  rle_count_freqs(lit_bl, hlit, dist_bl, hdist, cl_freqs)
+  let cl_codes = HuffmanCode::from_freqs(cl_freqs, 7)
+  let cl_bl = cl_codes.bit_lengths()
+  let mut hclen = 19
+  while hclen > 4 && cl_bl[code_order[hclen - 1]] == 0 {
+    hclen -= 1
+  }
+  let dynamic_size = compute_dynamic_block_size(
+    lit_freqs, dist_freqs, dyn_lit_codes, dyn_dist_codes, cl_freqs, cl_codes,
+    hclen,
   )
+  // Pre-allocate buffer for worst-case output (avoids repeated resizing)
+  self.ensure_capacity(tokens.length() * 6 + 512)
   if fixed_size <= dynamic_size {
     self.start_fixed_block(is_final)
     for t in tokens {
@@ -177,7 +199,9 @@ fn BitWriter::write_dynamic_block(
     }
     self.write_fixed_symbol(END_BLOCK_MARKER)
   } else {
-    self.write_dynamic_header(dyn_lit_codes, dyn_dist_codes, is_final)
+    self.write_dynamic_header_precomputed(
+      lit_bl, dist_bl, cl_codes, cl_bl, hlit, hdist, hclen, is_final,
+    )
     for t in tokens {
       if t.is_match() {
         let length = t.get_length()
@@ -217,32 +241,20 @@ fn BitWriter::write_dynamic_block(
 }
 
 ///|
-fn BitWriter::write_dynamic_header(
+/// Write dynamic Huffman header using precomputed code-length data.
+fn BitWriter::write_dynamic_header_precomputed(
   self : BitWriter,
-  lit_codes : HuffmanCode,
-  dist_codes : HuffmanCode,
+  lit_bl : FixedArray[Int],
+  dist_bl : FixedArray[Int],
+  cl_codes : HuffmanCode,
+  cl_bl : FixedArray[Int],
+  hlit : Int,
+  hdist : Int,
+  hclen : Int,
   is_final : Bool,
 ) -> Unit {
   let header = if is_final { 0b101U } else { 0b100U }
   self.write_bits_lsb(header, 3)
-  let lit_bl = lit_codes.bit_lengths()
-  let dist_bl = dist_codes.bit_lengths()
-  let mut hlit = 286
-  while hlit > 257 && lit_bl[hlit - 1] == 0 {
-    hlit -= 1
-  }
-  let mut hdist = 30
-  while hdist > 1 && dist_bl[hdist - 1] == 0 {
-    hdist -= 1
-  }
-  let cl_freqs = FixedArray::make(19, 0)
-  rle_count_freqs(lit_bl, hlit, dist_bl, hdist, cl_freqs)
-  let cl_codes = HuffmanCode::from_freqs(cl_freqs, 7)
-  let cl_bl = cl_codes.bit_lengths()
-  let mut hclen = 19
-  while hclen > 4 && cl_bl[code_order[hclen - 1]] == 0 {
-    hclen -= 1
-  }
   self.write_bits_lsb((hlit - 257).reinterpret_as_uint(), 5)
   self.write_bits_lsb((hdist - 1).reinterpret_as_uint(), 5)
   self.write_bits_lsb((hclen - 4).reinterpret_as_uint(), 4)
