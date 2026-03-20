@@ -28,10 +28,10 @@ fn xxh32_rotl(val : UInt, bits : Int) -> UInt {
 
 ///|
 fn xxh32_read32(data : BytesView, offset : Int) -> UInt {
-  data[offset].to_uint() |
-  (data[offset + 1].to_uint() << 8) |
-  (data[offset + 2].to_uint() << 16) |
-  (data[offset + 3].to_uint() << 24)
+  data.unsafe_get(offset).to_uint() |
+  (data.unsafe_get(offset + 1).to_uint() << 8) |
+  (data.unsafe_get(offset + 2).to_uint() << 16) |
+  (data.unsafe_get(offset + 3).to_uint() << 24)
 }
 
 ///|
@@ -106,13 +106,13 @@ pub impl Hasher for XXH32 with update(self, data) -> Unit {
     let fill = 16 - self.buf_used
     let to_copy = if fill < len { fill } else { len }
     for i in 0..<to_copy {
-      self.buf[self.buf_used + i] = data[i]
+      self.buf.unsafe_set(self.buf_used + i, data.unsafe_get(i))
     }
     self.buf_used += to_copy
     offset += to_copy
     if self.buf_used == 16 {
       // Process the full buffer as a BytesView via temporary Bytes
-      let buf_bytes = Bytes::makei(16, fn(i) { self.buf[i] })
+      let buf_bytes = Bytes::makei(16, fn(i) { self.buf.unsafe_get(i) })
       self.v1 = xxh32_round(self.v1, xxh32_read32(buf_bytes[:], 0))
       self.v2 = xxh32_round(self.v2, xxh32_read32(buf_bytes[:], 4))
       self.v3 = xxh32_round(self.v3, xxh32_read32(buf_bytes[:], 8))
@@ -130,7 +130,7 @@ pub impl Hasher for XXH32 with update(self, data) -> Unit {
   }
   // Buffer remaining bytes
   for off = offset; off < len; off = off + 1 {
-    self.buf[self.buf_used] = data[off]
+    self.buf.unsafe_set(self.buf_used, data.unsafe_get(off))
     self.buf_used += 1
   }
 }
@@ -147,7 +147,7 @@ pub impl Hasher for XXH32 with checksum(self) -> UInt {
   }
   h = h + self.total_len
   // Process remaining buffered bytes
-  let buf_bytes = Bytes::makei(self.buf_used, fn(i) { self.buf[i] })
+  let buf_bytes = Bytes::makei(self.buf_used, fn(i) { self.buf.unsafe_get(i) })
   let mut i = 0
   for off = 0; off + 4 <= self.buf_used; off = off + 4 {
     h = h + xxh32_read32(buf_bytes[:], off) * XXH32_PRIME3
@@ -155,7 +155,7 @@ pub impl Hasher for XXH32 with checksum(self) -> UInt {
     i = off + 4
   }
   for off = i; off < self.buf_used; off = off + 1 {
-    h = h + buf_bytes[off].to_uint() * XXH32_PRIME5
+    h = h + buf_bytes.unsafe_get(off).to_uint() * XXH32_PRIME5
     h = xxh32_rotl(h, 11) * XXH32_PRIME1
   }
   xxh32_avalanche(h)

@@ -19,17 +19,17 @@ let crc32_tables : FixedArray[FixedArray[UInt]] = {
         crc = crc >> 1
       }
     }
-    t0[i] = crc
+    t0.unsafe_set(i, crc)
   }
-  tables[0] = t0
+  tables.unsafe_set(0, t0)
   // Build tables 1-7 for slicing-by-8
   for k in 1..<8 {
     let tk = FixedArray::make(256, 0U)
     for i in 0..<256 {
-      tk[i] = (tables[k - 1][i] >> 8) ^
-        t0[(tables[k - 1][i] & 0xFFU).reinterpret_as_int()]
+      tk.unsafe_set(i, (tables.unsafe_get(k - 1).unsafe_get(i) >> 8) ^
+        t0[(tables.unsafe_get(k - 1).unsafe_get(i) & 0xFFU).reinterpret_as_int()])
     }
-    tables[k] = tk
+    tables.unsafe_set(k, tk)
   }
   tables
 }
@@ -72,23 +72,23 @@ pub impl Hasher for CRC32 with reset(self) -> Unit {
 pub impl Hasher for CRC32 with update(self, data) -> Unit {
   let len = data.length()
   let mut i = 0
-  let t0 = crc32_tables[0]
-  let t1 = crc32_tables[1]
-  let t2 = crc32_tables[2]
-  let t3 = crc32_tables[3]
-  let t4 = crc32_tables[4]
-  let t5 = crc32_tables[5]
-  let t6 = crc32_tables[6]
-  let t7 = crc32_tables[7]
+  let t0 = crc32_tables.unsafe_get(0)
+  let t1 = crc32_tables.unsafe_get(1)
+  let t2 = crc32_tables.unsafe_get(2)
+  let t3 = crc32_tables.unsafe_get(3)
+  let t4 = crc32_tables.unsafe_get(4)
+  let t5 = crc32_tables.unsafe_get(5)
+  let t6 = crc32_tables.unsafe_get(6)
+  let t7 = crc32_tables.unsafe_get(7)
   while i + 8 <= len {
-    let b0 = data[i].to_uint()
-    let b1 = data[i + 1].to_uint()
-    let b2 = data[i + 2].to_uint()
-    let b3 = data[i + 3].to_uint()
-    let b4 = data[i + 4].to_uint()
-    let b5 = data[i + 5].to_uint()
-    let b6 = data[i + 6].to_uint()
-    let b7 = data[i + 7].to_uint()
+    let b0 = data.unsafe_get(i).to_uint()
+    let b1 = data.unsafe_get(i + 1).to_uint()
+    let b2 = data.unsafe_get(i + 2).to_uint()
+    let b3 = data.unsafe_get(i + 3).to_uint()
+    let b4 = data.unsafe_get(i + 4).to_uint()
+    let b5 = data.unsafe_get(i + 5).to_uint()
+    let b6 = data.unsafe_get(i + 6).to_uint()
+    let b7 = data.unsafe_get(i + 7).to_uint()
     let p0 = (self.crc ^ b0) & 0xFFU
     let p1 = ((self.crc >> 8) ^ b1) & 0xFFU
     let p2 = ((self.crc >> 16) ^ b2) & 0xFFU
@@ -105,7 +105,7 @@ pub impl Hasher for CRC32 with update(self, data) -> Unit {
     i += 8
   }
   while i < len {
-    let index = (self.crc ^ data[i].to_uint()) & 0xFF_U
+    let index = (self.crc ^ data.unsafe_get(i).to_uint()) & 0xFF_U
     self.crc = t0.unsafe_get(index.reinterpret_as_int()) ^ (self.crc >> 8)
     i += 1
   }

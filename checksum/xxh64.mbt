@@ -35,22 +35,22 @@ fn xxh64_rotl(val : UInt64, bits : Int) -> UInt64 {
 
 ///|
 fn xxh64_read32(data : BytesView, offset : Int) -> UInt64 {
-  data[offset].to_uint().to_uint64() |
-  (data[offset + 1].to_uint().to_uint64() << 8) |
-  (data[offset + 2].to_uint().to_uint64() << 16) |
-  (data[offset + 3].to_uint().to_uint64() << 24)
+  data.unsafe_get(offset).to_uint().to_uint64() |
+  (data.unsafe_get(offset + 1).to_uint().to_uint64() << 8) |
+  (data.unsafe_get(offset + 2).to_uint().to_uint64() << 16) |
+  (data.unsafe_get(offset + 3).to_uint().to_uint64() << 24)
 }
 
 ///|
 fn xxh64_read64(data : BytesView, offset : Int) -> UInt64 {
-  data[offset].to_uint().to_uint64() |
-  (data[offset + 1].to_uint().to_uint64() << 8) |
-  (data[offset + 2].to_uint().to_uint64() << 16) |
-  (data[offset + 3].to_uint().to_uint64() << 24) |
-  (data[offset + 4].to_uint().to_uint64() << 32) |
-  (data[offset + 5].to_uint().to_uint64() << 40) |
-  (data[offset + 6].to_uint().to_uint64() << 48) |
-  (data[offset + 7].to_uint().to_uint64() << 56)
+  data.unsafe_get(offset).to_uint().to_uint64() |
+  (data.unsafe_get(offset + 1).to_uint().to_uint64() << 8) |
+  (data.unsafe_get(offset + 2).to_uint().to_uint64() << 16) |
+  (data.unsafe_get(offset + 3).to_uint().to_uint64() << 24) |
+  (data.unsafe_get(offset + 4).to_uint().to_uint64() << 32) |
+  (data.unsafe_get(offset + 5).to_uint().to_uint64() << 40) |
+  (data.unsafe_get(offset + 6).to_uint().to_uint64() << 48) |
+  (data.unsafe_get(offset + 7).to_uint().to_uint64() << 56)
 }
 
 ///|
@@ -128,12 +128,12 @@ pub fn XXH64::update(self : XXH64, data : BytesView) -> Unit {
     let fill = 32 - self.buf_used
     let to_copy = if fill < len { fill } else { len }
     for i in 0..<to_copy {
-      self.buf[self.buf_used + i] = data[i]
+      self.buf.unsafe_set(self.buf_used + i, data.unsafe_get(i))
     }
     self.buf_used += to_copy
     offset += to_copy
     if self.buf_used == 32 {
-      let buf_bytes = Bytes::makei(32, fn(i) { self.buf[i] })
+      let buf_bytes = Bytes::makei(32, fn(i) { self.buf.unsafe_get(i) })
       self.v1 = xxh64_round(self.v1, xxh64_read64(buf_bytes[:], 0))
       self.v2 = xxh64_round(self.v2, xxh64_read64(buf_bytes[:], 8))
       self.v3 = xxh64_round(self.v3, xxh64_read64(buf_bytes[:], 16))
@@ -151,7 +151,7 @@ pub fn XXH64::update(self : XXH64, data : BytesView) -> Unit {
   }
   // Buffer remaining bytes
   for off = offset; off < len; off = off + 1 {
-    self.buf[self.buf_used] = data[off]
+    self.buf.unsafe_set(self.buf_used, data.unsafe_get(off))
     self.buf_used += 1
   }
 }
@@ -174,7 +174,7 @@ pub fn XXH64::checksum64(self : XXH64) -> UInt64 {
   }
   h = h + self.total_len
   // Process remaining buffered bytes
-  let buf_bytes = Bytes::makei(self.buf_used, fn(i) { self.buf[i] })
+  let buf_bytes = Bytes::makei(self.buf_used, fn(i) { self.buf.unsafe_get(i) })
   let mut i = 0
   for off = 0; off + 8 <= self.buf_used; off = off + 8 {
     let k1 = xxh64_round(0UL, xxh64_read64(buf_bytes[:], off))
@@ -188,7 +188,7 @@ pub fn XXH64::checksum64(self : XXH64) -> UInt64 {
     i = off + 4
   }
   for off = i; off < self.buf_used; off = off + 1 {
-    h = h ^ (buf_bytes[off].to_uint().to_uint64() * XXH64_PRIME5)
+    h = h ^ (buf_bytes.unsafe_get(off).to_uint().to_uint64() * XXH64_PRIME5)
     h = xxh64_rotl(h, 11) * XXH64_PRIME1
   }
   xxh64_avalanche(h)

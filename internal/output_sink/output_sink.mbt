@@ -65,14 +65,14 @@ pub fn OutputSink::write_bytes(self : OutputSink, src : Bytes) -> Unit {
 /// Write a single byte.
 pub fn OutputSink::write_byte(self : OutputSink, b : Byte) -> Unit {
   self.ensure_capacity(1)
-  self.buf[self.pos] = b
+  self.buf.unsafe_set(self.pos, b)
   self.pos += 1
 }
 
 ///|
 /// Get a byte at absolute position in the output.
 pub fn OutputSink::get_byte(self : OutputSink, pos : Int) -> Byte {
-  self.buf[pos]
+  self.buf.unsafe_get(pos)
 }
 
 ///|
@@ -97,7 +97,7 @@ pub fn OutputSink::copy_from_self(
     // Overlapping: byte-by-byte (pattern repeats)
     let mut src = src_pos
     for _ in 0..<len {
-      buf[dst] = buf[src]
+      buf.unsafe_set(dst, buf.unsafe_get(src))
       dst += 1
       src += 1
     }
@@ -108,7 +108,7 @@ pub fn OutputSink::copy_from_self(
 ///|
 /// Write a single byte without capacity check (caller must ensure capacity).
 pub fn OutputSink::write_byte_unchecked(self : OutputSink, b : Byte) -> Unit {
-  self.buf[self.pos] = b
+  self.buf.unsafe_set(self.pos, b)
   self.pos += 1
 }
 
