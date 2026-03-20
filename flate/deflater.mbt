@@ -117,7 +117,7 @@ pub fn Deflater::new(
         }
         let dict_start = dict_bytes.length() - dict_len
         for i in 0..<dict_len {
-          d.window[i] = dict_bytes[dict_start + i]
+          d.window.unsafe_set(i, dict_bytes.unsafe_get(dict_start + i))
         }
         d.window_end = dict_len
         d.index = dict_len
@@ -303,15 +303,15 @@ fn Deflater::encode_uniform_run(self : Deflater) -> Bool {
   if end - start < 32 {
     return false
   }
-  let b = self.window[start]
+  let b = self.window.unsafe_get(start)
   for i in (start + 1)..<(start + 32) {
-    if self.window[i] != b {
+    if self.window.unsafe_get(i) != b {
       return false
     }
   }
   // Verify remaining bytes are also uniform
   for i in (start + 32)..<end {
-    if self.window[i] != b {
+    if self.window.unsafe_get(i) != b {
       return false
     }
   }
@@ -362,14 +362,14 @@ fn Deflater::encode_uniform_tokens(self : Deflater) -> Bool {
   if end - start < 32 {
     return false
   }
-  let b = self.window[start]
+  let b = self.window.unsafe_get(start)
   for i in (start + 1)..<(start + 32) {
-    if self.window[i] != b {
+    if self.window.unsafe_get(i) != b {
       return false
     }
   }
   for i in (start + 32)..<end {
-    if self.window[i] != b {
+    if self.window.unsafe_get(i) != b {
       return false
     }
   }
@@ -633,7 +633,7 @@ fn Deflater::flush_remaining(self : Deflater) -> Unit {
   }
   if self.index < self.window_end {
     while self.index < self.window_end {
-      self.tokens.push(Token::literal(self.window[self.index]))
+      self.tokens.push(Token::literal(self.window.unsafe_get(self.index)))
       self.index += 1
     }
   }

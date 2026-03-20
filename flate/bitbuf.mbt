@@ -29,7 +29,7 @@ fn BitBuf::fill(self : BitBuf) -> Unit {
   let (buf, count, pos) = for buf = self.buf, count = self.count, pos = self.pos; count <=
                              56 &&
                              pos < input_len; {
-    continue buf | (input[pos].to_uint64() << count), count + 8, pos + 1
+    continue buf | (input.unsafe_get(pos).to_uint64() << count), count + 8, pos + 1
   } nobreak {
     (buf, count, pos)
   }
@@ -90,7 +90,7 @@ fn BitBuf::next_bytes(self : BitBuf, max_len : Int) -> Bytes {
     }
     let result = FixedArray::make(n_from_buf, b'\x00')
     for i in 0..<n_from_buf {
-      result[i] = (self.buf & 0xFFUL).to_byte()
+      result.unsafe_set(i, (self.buf & 0xFFUL).to_byte())
       self.buf = self.buf >> 8
       self.count -= 8
     }
@@ -104,7 +104,7 @@ fn BitBuf::next_bytes(self : BitBuf, max_len : Int) -> Bytes {
   let n = if avail < max_len { avail } else { max_len }
   let start = self.pos
   self.pos += n
-  Bytes::makei(n, fn(i) { self.input[start + i] })
+  Bytes::makei(n, fn(i) { self.input.unsafe_get(start + i) })
 }
 
 ///|
@@ -126,11 +126,11 @@ fn BitBuf::remaining(self : BitBuf) -> Bytes {
   let result = FixedArray::make(total, b'\x00')
   let mut b = self.buf
   for i in 0..<num_bytes {
-    result[i] = (b & 0xFFUL).to_byte()
+    result.unsafe_set(i, (b & 0xFFUL).to_byte())
     b = b >> 8
   }
   for i in 0..<remaining_input {
-    result[num_bytes + i] = self.input[self.pos + i]
+    result.unsafe_set(num_bytes + i, self.input.unsafe_get(self.pos + i))
   }
   result.unsafe_reinterpret_as_bytes()
 }

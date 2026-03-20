@@ -241,7 +241,7 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
       return Await
     }
     for i, b in chunk {
-      hist[dd.wr_pos + i] = b
+      hist.unsafe_set(dd.wr_pos + i, b)
     }
     dd.wr_pos += chunk.length()
     rem -= chunk.length()
@@ -293,7 +293,7 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   }
   let cl_lengths = FixedArray::make(NUM_CODES, 0)
   for i in 0..<hclen {
-    cl_lengths[code_order[i]] = bb.read_unchecked(3)
+    cl_lengths.unsafe_set(code_order.unsafe_get(i), bb.read_unchecked(3))
   }
   let cl_decoder = HuffmanDecoder::build(cl_lengths) catch {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
@@ -313,7 +313,7 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
     }
     match sym {
       _ if sym <= CL_MAX_LIT => {
-        lengths[i] = sym
+        lengths.unsafe_set(i, sym)
         i += 1
       }
       CL_REPEAT_PREV => {
@@ -329,14 +329,14 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
             )
           Some(v) => v + 3
         }
-        let prev = lengths[i - 1]
+        let prev = lengths.unsafe_get(i - 1)
         for _ in 0..<count {
           guard i < total else {
             return self.fail(
               CompressError::CorruptInput("too many code lengths"),
             )
           }
-          lengths[i] = prev
+          lengths.unsafe_set(i, prev)
           i += 1
         }
       }
@@ -359,7 +359,7 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
               CompressError::CorruptInput("too many code lengths"),
             )
           }
-          lengths[i] = 0
+          lengths.unsafe_set(i, 0)
           i += 1
         }
       }
@@ -371,11 +371,11 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   }
   let lit_lengths = FixedArray::make(hlit, 0)
   for j in 0..<hlit {
-    lit_lengths[j] = lengths[j]
+    lit_lengths.unsafe_set(j, lengths.unsafe_get(j))
   }
   let dist_lengths = FixedArray::make(hdist, 0)
   for j in 0..<hdist {
-    dist_lengths[j] = lengths[hlit + j]
+    dist_lengths.unsafe_set(j, lengths.unsafe_get(hlit + j))
   }
   let lit_dec = HuffmanDecoder::build(lit_lengths) catch {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
@@ -414,7 +414,7 @@ fn Inflater::decode_huffman_loop(
   while true {
     // Inline fill(): pack bytes from input into bit accumulator
     while count <= 56 && pos < input_len {
-      buf = buf | (input[pos].to_uint64() << count)
+      buf = buf | (input.unsafe_get(pos).to_uint64() << count)
       count += 8
       pos += 1
     }
@@ -540,7 +540,7 @@ fn Inflater::decode_huffman_loop(
       let length = if lextra > 0 {
         if count < lextra {
           while count <= 56 && pos < input_len {
-            buf = buf | (input[pos].to_uint64() << count)
+            buf = buf | (input.unsafe_get(pos).to_uint64() << count)
             count += 8
             pos += 1
           }
@@ -566,7 +566,7 @@ fn Inflater::decode_huffman_loop(
       }
       // Refill bit buffer for distance decode
       while count <= 56 && pos < input_len {
-        buf = buf | (input[pos].to_uint64() << count)
+        buf = buf | (input.unsafe_get(pos).to_uint64() << count)
         count += 8
         pos += 1
       }
@@ -630,7 +630,7 @@ fn Inflater::decode_huffman_loop(
       let dist = if dextra > 0 {
         if count < dextra {
           while count <= 56 && pos < input_len {
-            buf = buf | (input[pos].to_uint64() << count)
+            buf = buf | (input.unsafe_get(pos).to_uint64() << count)
             count += 8
             pos += 1
           }

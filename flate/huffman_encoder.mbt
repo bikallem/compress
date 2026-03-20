@@ -15,22 +15,22 @@ fn HuffmanCode::from_freqs(
   let bl_count = FixedArray::make(max_bits + 1, 0)
   for _, bl in bit_lengths {
     if bl > 0 {
-      bl_count[bl] += 1
+      bl_count.unsafe_set(bl, bl_count.unsafe_get(bl) + 1)
     }
   }
   let next_code = FixedArray::make(max_bits + 1, 0)
   for bits = 1, code = 0; bits <= max_bits; {
-    let c = (code + bl_count[bits - 1]) << 1
-    next_code[bits] = c
+    let c = (code + bl_count.unsafe_get(bits - 1)) << 1
+    next_code.unsafe_set(bits, c)
     continue bits + 1, c
   }
   let codes = FixedArray::make(n, 0U)
   for sym, len in bit_lengths {
     if len > 0 {
-      let c = next_code[len]
-      next_code[len] += 1
-      codes[sym] = (reverse_uint(c.reinterpret_as_uint(), len) << 5) |
-        len.reinterpret_as_uint()
+      let c = next_code.unsafe_get(len)
+      next_code.unsafe_set(len, c + 1)
+      codes.unsafe_set(sym, (reverse_uint(c.reinterpret_as_uint(), len) << 5) |
+        len.reinterpret_as_uint())
     }
   }
   { codes, }
@@ -38,14 +38,14 @@ fn HuffmanCode::from_freqs(
 
 ///|
 fn HuffmanCode::get(self : HuffmanCode, sym : Int) -> UInt {
-  self.codes[sym]
+  self.codes.unsafe_get(sym)
 }
 
 ///|
 fn HuffmanCode::bit_lengths(self : HuffmanCode) -> FixedArray[Int] {
   let result = FixedArray::make(self.codes.length(), 0)
   for i, code in self.codes {
-    result[i] = (code & 0x1FU).reinterpret_as_int()
+    result.unsafe_set(i, (code & 0x1FU).reinterpret_as_int())
   }
   result
 }
@@ -58,7 +58,7 @@ fn compute_bit_lengths(
   let n = freqs.length()
   let bit_lengths = FixedArray::make(n, 0)
   let active = for i = 0, active = 0; i < n; i = i + 1 {
-    continue i + 1, active + (if freqs[i] > 0 { 1 } else { 0 })
+    continue i + 1, active + (if freqs.unsafe_get(i) > 0 { 1 } else { 0 })
   } nobreak {
     active
   }
@@ -67,8 +67,8 @@ fn compute_bit_lengths(
   }
   if active == 1 {
     for i in 0..<n {
-      if freqs[i] > 0 {
-        bit_lengths[i] = 1
+      if freqs.unsafe_get(i) > 0 {
+        bit_lengths.unsafe_set(i, 1)
         break
       }
     }
@@ -78,38 +78,38 @@ fn compute_bit_lengths(
   let leaf_freq = @blit.make_uninit_int(active)
   let leaf_sym = @blit.make_uninit_int(active)
   for i = 0, idx = 0; i < n; {
-    if freqs[i] > 0 {
-      leaf_freq[idx] = freqs[i]
-      leaf_sym[idx] = i
+    if freqs.unsafe_get(i) > 0 {
+      leaf_freq.unsafe_set(idx, freqs.unsafe_get(i))
+      leaf_sym.unsafe_set(idx, i)
       continue i + 1, idx + 1
     }
     continue i + 1, idx
   }
   // Insertion sort by frequency (parallel arrays)
   for i in 1..<active {
-    let kf = leaf_freq[i]
-    let ks = leaf_sym[i]
+    let kf = leaf_freq.unsafe_get(i)
+    let ks = leaf_sym.unsafe_get(i)
     let mut j = i - 1
-    while j >= 0 && leaf_freq[j] > kf {
-      leaf_freq[j + 1] = leaf_freq[j]
-      leaf_sym[j + 1] = leaf_sym[j]
+    while j >= 0 && leaf_freq.unsafe_get(j) > kf {
+      leaf_freq.unsafe_set(j + 1, leaf_freq.unsafe_get(j))
+      leaf_sym.unsafe_set(j + 1, leaf_sym.unsafe_get(j))
       j -= 1
     }
-    leaf_freq[j + 1] = kf
-    leaf_sym[j + 1] = ks
+    leaf_freq.unsafe_set(j + 1, kf)
+    leaf_sym.unsafe_set(j + 1, ks)
   }
   let total_nodes = 2 * active - 1
   let parent = FixedArray::make(total_nodes, -1)
   let node_freq = @blit.make_uninit_int(total_nodes)
   for i in 0..<active {
-    node_freq[i] = leaf_freq[i]
+    node_freq.unsafe_set(i, leaf_freq.unsafe_get(i))
   }
   let mut leaf_ptr = 0
   let mut int_ptr = active
   let mut next_node = active
   for _ in 0..<(active - 1) {
     let left = if leaf_ptr < active &&
-      (int_ptr >= next_node || leaf_freq[leaf_ptr] <= node_freq[int_ptr]) {
+      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -119,7 +119,7 @@ fn compute_bit_lengths(
       r
     }
     let right = if leaf_ptr < active &&
-      (int_ptr >= next_node || leaf_freq[leaf_ptr] <= node_freq[int_ptr]) {
+      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -128,37 +128,39 @@ fn compute_bit_lengths(
       int_ptr += 1
       r
     }
-    node_freq[next_node] = node_freq[left] + node_freq[right]
-    parent[left] = next_node
-    parent[right] = next_node
+    node_freq.unsafe_set(next_node, node_freq.unsafe_get(left) + node_freq.unsafe_get(right))
+    parent.unsafe_set(left, next_node)
+    parent.unsafe_set(right, next_node)
     next_node += 1
   }
   let depths = FixedArray::make(total_nodes, 0)
   for i = total_nodes - 1; i >= 0; i = i - 1 {
-    if parent[i] >= 0 {
-      depths[i] = depths[parent[i]] + 1
+    let p = parent.unsafe_get(i)
+    if p >= 0 {
+      depths.unsafe_set(i, depths.unsafe_get(p) + 1)
     }
   }
   for i, sym in leaf_sym {
-    bit_lengths[sym] = depths[i]
+    bit_lengths.unsafe_set(sym, depths.unsafe_get(i))
   }
   let mut needs_limiting = false
   for i in 0..<n {
-    if bit_lengths[i] > max_bits {
+    if bit_lengths.unsafe_get(i) > max_bits {
       needs_limiting = true
       break
     }
   }
   if needs_limiting {
     for i in 0..<n {
-      if bit_lengths[i] > max_bits {
-        bit_lengths[i] = max_bits
+      if bit_lengths.unsafe_get(i) > max_bits {
+        bit_lengths.unsafe_set(i, max_bits)
       }
     }
     let mut kraft = for i = 0, kraft = 0; i < n; i = i + 1 {
+      let bl = bit_lengths.unsafe_get(i)
       continue i + 1,
         kraft +
-        (if bit_lengths[i] > 0 { 1 << (max_bits - bit_lengths[i]) } else { 0 })
+        (if bl > 0 { 1 << (max_bits - bl) } else { 0 })
     } nobreak {
       kraft
     }
@@ -166,8 +168,8 @@ fn compute_bit_lengths(
     while kraft > target {
       for len = 1; len < max_bits && kraft > target; len = len + 1 {
         for i in 0..<n {
-          if bit_lengths[i] == len && kraft > target {
-            bit_lengths[i] += 1
+          if bit_lengths.unsafe_get(i) == len && kraft > target {
+            bit_lengths.unsafe_set(i, len + 1)
             kraft -= 1 << (max_bits - len - 1)
           }
         }
@@ -232,7 +234,7 @@ fn fixed_block_bit_size(
       if i > 256 && i < 286 {
         let length_code_idx = i - 257
         if length_code_idx < length_extra.length() {
-          total += freq * length_extra[length_code_idx]
+          total += freq * length_extra.unsafe_get(length_code_idx)
         }
       }
     }
@@ -241,7 +243,7 @@ fn fixed_block_bit_size(
     if freq > 0 {
       total += freq * 5
       if i < dist_extra.length() {
-        total += freq * dist_extra[i]
+        total += freq * dist_extra.unsafe_get(i)
       }
     }
   }
@@ -262,27 +264,28 @@ fn compute_dynamic_block_size(
   let mut bits = 3 + 5 + 5 + 4 + 3 * hclen
   let clc = cl_codes.codes
   for i in 0..<19 {
-    if cl_freqs[i] > 0 {
-      let len = (clc[i] & 0x1FU).reinterpret_as_int()
-      bits += cl_freqs[i] * len
+    let clf = cl_freqs.unsafe_get(i)
+    if clf > 0 {
+      let len = (clc.unsafe_get(i) & 0x1FU).reinterpret_as_int()
+      bits += clf * len
       if i == CL_REPEAT_PREV {
-        bits += cl_freqs[i] * 2
+        bits += clf * 2
       } else if i == CL_REPEAT_ZERO_SHORT {
-        bits += cl_freqs[i] * 3
+        bits += clf * 3
       } else if i == CL_REPEAT_ZERO_LONG {
-        bits += cl_freqs[i] * 7
+        bits += clf * 7
       }
     }
   }
   let lc = lit_codes.codes
   for i, freq in lit_freqs {
     if freq > 0 {
-      let len = (lc[i] & 0x1FU).reinterpret_as_int()
+      let len = (lc.unsafe_get(i) & 0x1FU).reinterpret_as_int()
       bits += freq * len
       if i > 256 && i < 286 {
         let length_code_idx = i - 257
         if length_code_idx < length_extra.length() {
-          bits += freq * length_extra[length_code_idx]
+          bits += freq * length_extra.unsafe_get(length_code_idx)
         }
       }
     }
@@ -290,10 +293,10 @@ fn compute_dynamic_block_size(
   let dc = dist_codes.codes
   for i, freq in dist_freqs {
     if freq > 0 {
-      let len = (dc[i] & 0x1FU).reinterpret_as_int()
+      let len = (dc.unsafe_get(i) & 0x1FU).reinterpret_as_int()
       bits += freq * len
       if i < dist_extra.length() {
-        bits += freq * dist_extra[i]
+        bits += freq * dist_extra.unsafe_get(i)
       }
     }
   }
@@ -311,48 +314,48 @@ fn rle_count_freqs(
   let total = hlit + hdist
   let all = @blit.make_uninit_int(total)
   for i in 0..<hlit {
-    all[i] = lit_bl[i]
+    all.unsafe_set(i, lit_bl.unsafe_get(i))
   }
   for i in 0..<hdist {
-    all[hlit + i] = dist_bl[i]
+    all.unsafe_set(hlit + i, dist_bl.unsafe_get(i))
   }
   let mut i = 0
   while i < total {
-    let cur = all[i]
+    let cur = all.unsafe_get(i)
     if cur == 0 {
       let mut run = 1
-      while i + run < total && all[i + run] == 0 {
+      while i + run < total && all.unsafe_get(i + run) == 0 {
         run += 1
       }
       i += run
       while run > 0 {
         if run >= 11 {
           let count = if run > 138 { 138 } else { run }
-          cl_freqs[CL_REPEAT_ZERO_LONG] += 1
+          cl_freqs.unsafe_set(CL_REPEAT_ZERO_LONG, cl_freqs.unsafe_get(CL_REPEAT_ZERO_LONG) + 1)
           run -= count
         } else if run >= 3 {
-          cl_freqs[CL_REPEAT_ZERO_SHORT] += 1
+          cl_freqs.unsafe_set(CL_REPEAT_ZERO_SHORT, cl_freqs.unsafe_get(CL_REPEAT_ZERO_SHORT) + 1)
           run = 0
         } else {
-          cl_freqs[0] += 1
+          cl_freqs.unsafe_set(0, cl_freqs.unsafe_get(0) + 1)
           run -= 1
         }
       }
     } else {
-      cl_freqs[cur] += 1
+      cl_freqs.unsafe_set(cur, cl_freqs.unsafe_get(cur) + 1)
       i += 1
       let mut run = 0
-      while i + run < total && all[i + run] == cur {
+      while i + run < total && all.unsafe_get(i + run) == cur {
         run += 1
       }
       i += run
       while run > 0 {
         if run >= 3 {
           let count = if run > 6 { 6 } else { run }
-          cl_freqs[CL_REPEAT_PREV] += 1
+          cl_freqs.unsafe_set(CL_REPEAT_PREV, cl_freqs.unsafe_get(CL_REPEAT_PREV) + 1)
           run -= count
         } else {
-          cl_freqs[cur] += 1
+          cl_freqs.unsafe_set(cur, cl_freqs.unsafe_get(cur) + 1)
           run -= 1
         }
       }

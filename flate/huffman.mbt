@@ -20,7 +20,7 @@ fn HuffmanDecoder::build(
   let mut max_bits = 0
   for _, n in lengths {
     if n > 0 {
-      count[n] += 1
+      count.unsafe_set(n, count.unsafe_get(n) + 1)
       if n < min_bits {
         min_bits = n
       }
@@ -34,8 +34,8 @@ fn HuffmanDecoder::build(
   }
   let next_code = FixedArray::make(MAX_CODE_LEN + 1, 0)
   for bits = 1, code = 0; bits <= max_bits; {
-    let c = (code + count[bits - 1]) << 1
-    next_code[bits] = c
+    let c = (code + count.unsafe_get(bits - 1)) << 1
+    next_code.unsafe_set(bits, c)
     continue bits + 1, c
   }
   let chunk_size = 1 << HUFFMAN_CHUNK_BITS
@@ -45,37 +45,37 @@ fn HuffmanDecoder::build(
     if n == 0 {
       continue
     }
-    let c = next_code[n]
-    next_code[n] += 1
+    let c = next_code.unsafe_get(n)
+    next_code.unsafe_set(n, c + 1)
     let reversed = reverse_bits(c, n)
     if n <= HUFFMAN_CHUNK_BITS {
       let entry = (sym.reinterpret_as_uint() << 8) | n.reinterpret_as_uint()
       let step = 1 << n
       let mut idx = reversed
       while idx < chunk_size {
-        chunks[idx] = entry
+        chunks.unsafe_set(idx, entry)
         idx += step
       }
     } else {
       let prefix = reversed & ((1 << HUFFMAN_CHUNK_BITS) - 1)
-      if chunks[prefix] == 0U {
+      if chunks.unsafe_get(prefix) == 0U {
         let link_idx = links.length()
         let link_bits = max_bits - HUFFMAN_CHUNK_BITS
         let link_size = 1 << link_bits
         links.push(FixedArray::make(link_size, 0U))
-        chunks[prefix] = (link_idx.reinterpret_as_uint() << 8) |
-          ((HUFFMAN_CHUNK_BITS + link_bits).reinterpret_as_uint() | 0x80U)
+        chunks.unsafe_set(prefix, (link_idx.reinterpret_as_uint() << 8) |
+          ((HUFFMAN_CHUNK_BITS + link_bits).reinterpret_as_uint() | 0x80U))
       }
-      let link_info = chunks[prefix]
+      let link_info = chunks.unsafe_get(prefix)
       let link_idx = (link_info >> 8).reinterpret_as_int()
-      let link_table = links[link_idx]
+      let link_table = links.unsafe_get(link_idx)
       let suffix = reversed >> HUFFMAN_CHUNK_BITS
       let link_bits = max_bits - HUFFMAN_CHUNK_BITS
       let entry = (sym.reinterpret_as_uint() << 8) | n.reinterpret_as_uint()
       let step = 1 << (n - HUFFMAN_CHUNK_BITS)
       let mut idx = suffix
       while idx < 1 << link_bits {
-        link_table[idx] = entry
+        link_table.unsafe_set(idx, entry)
         idx += step
       }
     }

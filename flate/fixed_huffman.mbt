@@ -3,16 +3,16 @@
 let fixed_lit_decoder : HuffmanDecoder = {
   let lengths = FixedArray::make(288, 0)
   for i in 0..<=143 {
-    lengths[i] = 8
+    lengths.unsafe_set(i, 8)
   }
   for i in 144..<=255 {
-    lengths[i] = 9
+    lengths.unsafe_set(i, 9)
   }
   for i in 256..<=279 {
-    lengths[i] = 7
+    lengths.unsafe_set(i, 7)
   }
   for i in 280..<=287 {
-    lengths[i] = 8
+    lengths.unsafe_set(i, 8)
   }
   HuffmanDecoder::build(lengths) catch {
     _ => abort("failed to build fixed literal Huffman table")
@@ -24,7 +24,7 @@ let fixed_lit_decoder : HuffmanDecoder = {
 let fixed_dist_decoder : HuffmanDecoder = {
   let lengths = FixedArray::make(32, 0)
   for i in 0..<30 {
-    lengths[i] = 5
+    lengths.unsafe_set(i, 5)
   }
   HuffmanDecoder::build(lengths) catch {
     _ => abort("failed to build fixed distance Huffman table")

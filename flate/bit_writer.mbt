@@ -141,23 +141,26 @@ fn BitWriter::write_dynamic_block(
   for t in tokens {
     if t.is_match() {
       let lidx = (t.get_length() - MIN_MATCH_LENGTH) * 3
-      lit_freqs[length_encode_table[lidx]] += 1
-      dist_freqs[dist_encode_table[(t.get_dist() - 1) * 2]] += 1
+      let lsym = length_encode_table.unsafe_get(lidx)
+      lit_freqs.unsafe_set(lsym, lit_freqs.unsafe_get(lsym) + 1)
+      let dsym = dist_encode_table.unsafe_get((t.get_dist() - 1) * 2)
+      dist_freqs.unsafe_set(dsym, dist_freqs.unsafe_get(dsym) + 1)
     } else {
-      lit_freqs[t.get_literal().to_int()] += 1
+      let llit = t.get_literal().to_int()
+      lit_freqs.unsafe_set(llit, lit_freqs.unsafe_get(llit) + 1)
     }
   }
-  lit_freqs[END_BLOCK_MARKER] += 1
-  if dist_freqs[0] == 0 {
+  lit_freqs.unsafe_set(END_BLOCK_MARKER, lit_freqs.unsafe_get(END_BLOCK_MARKER) + 1)
+  if dist_freqs.unsafe_get(0) == 0 {
     let mut has_dist = false
     for i in 0..<30 {
-      if dist_freqs[i] > 0 {
+      if dist_freqs.unsafe_get(i) > 0 {
         has_dist = true
         break
       }
     }
     if !has_dist {
-      dist_freqs[0] = 1
+      dist_freqs.unsafe_set(0, 1)
     }
   }
   let dyn_lit_codes = HuffmanCode::from_freqs(lit_freqs, 15)
@@ -167,11 +170,11 @@ fn BitWriter::write_dynamic_block(
   let lit_bl = dyn_lit_codes.bit_lengths()
   let dist_bl = dyn_dist_codes.bit_lengths()
   let mut hlit = 286
-  while hlit > 257 && lit_bl[hlit - 1] == 0 {
+  while hlit > 257 && lit_bl.unsafe_get(hlit - 1) == 0 {
     hlit -= 1
   }
   let mut hdist = 30
-  while hdist > 1 && dist_bl[hdist - 1] == 0 {
+  while hdist > 1 && dist_bl.unsafe_get(hdist - 1) == 0 {
     hdist -= 1
   }
   let cl_freqs = FixedArray::make(19, 0)
@@ -179,7 +182,7 @@ fn BitWriter::write_dynamic_block(
   let cl_codes = HuffmanCode::from_freqs(cl_freqs, 7)
   let cl_bl = cl_codes.bit_lengths()
   let mut hclen = 19
-  while hclen > 4 && cl_bl[code_order[hclen - 1]] == 0 {
+  while hclen > 4 && cl_bl.unsafe_get(code_order.unsafe_get(hclen - 1)) == 0 {
     hclen -= 1
   }
   let dynamic_size = compute_dynamic_block_size(
@@ -209,9 +212,9 @@ fn BitWriter::write_dynamic_block(
         let length = t.get_length()
         let dist = t.get_dist()
         let lidx = (length - MIN_MATCH_LENGTH) * 3
-        let length_code = length_encode_table[lidx]
-        let length_extra_bits = length_encode_table[lidx + 1]
-        let length_extra_val = length_encode_table[lidx + 2]
+        let length_code = length_encode_table.unsafe_get(lidx)
+        let length_extra_bits = length_encode_table.unsafe_get(lidx + 1)
+        let length_extra_val = length_encode_table.unsafe_get(lidx + 2)
         let lentry = lit_c.unsafe_get(length_code)
         self.write_bits_lsb(lentry >> 5, (lentry & 0x1FU).reinterpret_as_int())
         if length_extra_bits > 0 {
@@ -221,9 +224,9 @@ fn BitWriter::write_dynamic_block(
           )
         }
         let didx = (dist - 1) * 2
-        let dist_code = dist_encode_table[didx]
-        let dist_extra_bits = dist_encode_table[didx + 1]
-        let dist_extra_val = dist - dist_base[dist_code]
+        let dist_code = dist_encode_table.unsafe_get(didx)
+        let dist_extra_bits = dist_encode_table.unsafe_get(didx + 1)
+        let dist_extra_val = dist - dist_base.unsafe_get(dist_code)
         let dentry = dist_c.unsafe_get(dist_code)
         self.write_bits_lsb(dentry >> 5, (dentry & 0x1FU).reinterpret_as_int())
         if dist_extra_bits > 0 {
@@ -261,22 +264,22 @@ fn BitWriter::write_dynamic_header_precomputed(
   self.write_bits_lsb((hdist - 1).reinterpret_as_uint(), 5)
   self.write_bits_lsb((hclen - 4).reinterpret_as_uint(), 4)
   for i in 0..<hclen {
-    self.write_bits_lsb(cl_bl[code_order[i]].reinterpret_as_uint(), 3)
+    self.write_bits_lsb(cl_bl.unsafe_get(code_order.unsafe_get(i)).reinterpret_as_uint(), 3)
   }
   let total = hlit + hdist
   let all = @blit.make_uninit_int(total)
   for i in 0..<hlit {
-    all[i] = lit_bl[i]
+    all.unsafe_set(i, lit_bl.unsafe_get(i))
   }
   for i in 0..<hdist {
-    all[hlit + i] = dist_bl[i]
+    all.unsafe_set(hlit + i, dist_bl.unsafe_get(i))
   }
   let mut i = 0
   while i < total {
-    let cur = all[i]
+    let cur = all.unsafe_get(i)
     if cur == 0 {
       let mut run = 1
-      while i + run < total && all[i + run] == 0 {
+      while i + run < total && all.unsafe_get(i + run) == 0 {
         run += 1
       }
       i += run
@@ -303,7 +306,7 @@ fn BitWriter::write_dynamic_header_precomputed(
       self.write_bits_lsb(entry >> 5, (entry & 0x1FU).reinterpret_as_int())
       i += 1
       let mut run = 0
-      while i + run < total && all[i + run] == cur {
+      while i + run < total && all.unsafe_get(i + run) == cur {
         run += 1
       }
       i += run

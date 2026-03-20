@@ -21,7 +21,7 @@ fn DictDecoder::init_dict(self : DictDecoder, dict : Bytes) -> Unit {
   }
   let copy_len = dict.length() - n
   for i in 0..<copy_len {
-    self.hist[i] = dict[n + i]
+    self.hist.unsafe_set(i, dict.unsafe_get(n + i))
   }
   self.wr_pos = copy_len
   if self.wr_pos == self.hist.length() {
