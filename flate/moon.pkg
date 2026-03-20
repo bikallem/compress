@@ -1,5 +1,5 @@
 import {
-  "bikallem/compress/internal/blit",
+  "bikallem/blit",
   "bikallem/compress/internal/output_sink",
   "moonbitlang/core/buffer",
 }

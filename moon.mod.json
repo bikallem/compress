@@ -2,7 +2,8 @@
   "name": "bikallem/compress",
   "version": "0.1.2",
   "deps": {
-    "moonbitlang/async": "0.16.7"
+    "moonbitlang/async": "0.16.7",
+    "bikallem/blit": { "path": "../blit" }
   },
   "readme": "README.md",
   "repository": "https://github.com/bikallem/compress.git",
