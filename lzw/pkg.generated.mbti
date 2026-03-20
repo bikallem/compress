@@ -24,7 +24,7 @@ pub impl Show for BitOrder
 
 pub(all) enum Decode {
   Await
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(LzwError)
 }
@@ -36,7 +36,7 @@ pub fn Deflater::new(BitOrder, Int) -> Self raise LzwError
 
 pub(all) enum Encode {
   Ok
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(LzwError)
 }

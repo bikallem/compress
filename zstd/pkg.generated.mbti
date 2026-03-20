@@ -28,7 +28,7 @@ pub impl Show for CompressionLevel
 
 pub(all) enum Decode {
   Await
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(ZstdError)
 }
@@ -40,7 +40,7 @@ pub fn Deflater::new(level? : CompressionLevel) -> Self
 
 pub(all) enum Encode {
   Ok
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(ZstdError)
 }

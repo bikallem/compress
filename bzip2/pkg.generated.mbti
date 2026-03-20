@@ -18,7 +18,7 @@ pub impl Show for Bzip2Error
 // Types and methods
 pub(all) enum Decode {
   Await
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(Bzip2Error)
 }
@@ -30,7 +30,7 @@ pub fn Deflater::new(level? : Int) -> Self raise Bzip2Error
 
 pub(all) enum Encode {
   Ok
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(Bzip2Error)
 }

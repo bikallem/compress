@@ -23,7 +23,7 @@ pub impl Show for GzipError
 // Types and methods
 pub(all) enum Decode {
   Await
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(GzipError)
 }
@@ -35,7 +35,7 @@ pub fn Deflater::new(level? : @flate.CompressionLevel, header? : Header) -> Self
 
 pub(all) enum Encode {
   Ok
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(GzipError)
 }

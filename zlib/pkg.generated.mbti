@@ -23,7 +23,7 @@ pub impl Show for ZlibError
 // Types and methods
 pub(all) enum Decode {
   Await
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(ZlibError)
 }
@@ -35,7 +35,7 @@ pub fn Deflater::new(level? : @flate.CompressionLevel, dict? : Bytes) -> Self
 
 pub(all) enum Encode {
   Ok
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(ZlibError)
 }

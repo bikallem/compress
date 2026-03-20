@@ -19,7 +19,7 @@ pub impl Show for Lz4Error
 // Types and methods
 pub(all) enum Decode {
   Await
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(Lz4Error)
 }
@@ -31,7 +31,7 @@ pub fn Deflater::new() -> Self
 
 pub(all) enum Encode {
   Ok
-  Data(Bytes)
+  Data(BytesView)
   End
   Error(Lz4Error)
 }
