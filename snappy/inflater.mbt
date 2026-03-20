@@ -98,7 +98,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     }
     None => {
       let result = Bytes::makei(n, fn(i) { dst[i] })
-      Data(result)
+      Data(result[:])
     }
   }
 }

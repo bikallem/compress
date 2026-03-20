@@ -35,11 +35,11 @@ fn run() -> Unit raise {
   let cbuf = @buffer.new()
   match d.encode(Some(original[:])) {
     Ok | End | Error(_) => ()
-    Data(out) => cbuf.write_bytes(out)
+    Data(out) => cbuf.write_bytesview(out)
   }
   loop d.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue d.encode(None)
     }
     End | Ok | Error(_) => break
@@ -51,7 +51,7 @@ fn run() -> Unit raise {
   loop inf.decode() {
     Await => break
     Data(out) => {
-      dbuf.write_bytes(out)
+      dbuf.write_bytesview(out)
       continue inf.decode()
     }
     End => break

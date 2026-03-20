@@ -110,22 +110,22 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
 ///|
 /// Flush output buffer. In direct mode, drains to sink and returns empty Bytes.
 /// In streaming mode, allocates and returns a new Bytes.
-fn flush_output(s : InflaterState) -> Bytes {
+fn flush_output(s : InflaterState) -> BytesView {
   let len = s.out_pos
   if len == 0 {
-    return Bytes::default()
+    return b""[:]
   }
   match s.sink {
     Some(sink) => {
       sink.write_fixed(s.out_buf, 0, len)
       s.out_pos = 0
-      Bytes::default()
+      b""[:]
     }
     None => {
       let result = @blit.make_uninit(len)
       @blit.blit_fixed_array(result, 0, s.out_buf, 0, len)
       s.out_pos = 0
-      result.unsafe_reinterpret_as_bytes()
+      result.unsafe_reinterpret_as_bytes()[:]
     }
   }
 }

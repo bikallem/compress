@@ -81,7 +81,7 @@ test "signal protocol: chunked input" {
       break
     }
     Data(chunk) => {
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue d.decode()
     }
     End => inspect(buf.to_bytes() == data, content="true")
@@ -105,7 +105,7 @@ test "signal protocol: deflater streaming" {
   }
   let buf = @buffer.new()
   match d.encode(None) {
-    Data(out) => buf.write_bytes(out)
+    Data(out) => buf.write_bytesview(out)
     End => ()
     Ok => ()
     Error(e) => raise e

@@ -543,7 +543,7 @@ fn finish_block(s : Decoder) -> Decode {
       // Reset block state for next block
       s.decoded_len = 0
       s.phase = BlockMagic
-      Data(block_data)
+      Data(block_data[:])
     }
   }
 }

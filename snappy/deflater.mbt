@@ -42,7 +42,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       let output = s.state.close()
       s.finished = true
       if output.length() > 0 {
-        Data(output)
+        Data(output[:])
       } else {
         End
       }

@@ -10,11 +10,11 @@ pub fn compress(
   let def = Deflater::new(order, lit_width)
   let buf = @buffer.new(size_hint=256)
   match def.encode(Some(data[:])) {
-    Data(chunk) => buf.write_bytes(chunk)
+    Data(chunk) => buf.write_bytesview(chunk)
     Ok | End | Error(_) => ()
   }
   match def.encode(None) {
-    Data(chunk) => buf.write_bytes(chunk)
+    Data(chunk) => buf.write_bytesview(chunk)
     Ok | End | Error(_) => ()
   }
   buf.to_bytes()
@@ -178,18 +178,18 @@ fn Encoder::write(self : Encoder, data : BytesView) -> Unit {
 
 ///|
 /// Take accumulated output so far without closing the encoder.
-fn Encoder::take_output(self : Encoder) -> Bytes {
+fn Encoder::take_output(self : Encoder) -> BytesView {
   if self.out_pos == 0 {
-    return Bytes::default()
+    return b""[:]
   }
   let result = @blit.make_uninit(self.out_pos)
   @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
   self.out_pos = 0
-  result.unsafe_reinterpret_as_bytes()
+  result.unsafe_reinterpret_as_bytes()[:]
 }
 
 ///|
-fn Encoder::close(self : Encoder) -> Bytes {
+fn Encoder::close(self : Encoder) -> BytesView {
   // Write the saved code if valid
   if self.saved_code != INVALID_CODE {
     self.write_code(self.saved_code)
@@ -216,5 +216,5 @@ fn Encoder::close(self : Encoder) -> Bytes {
   }
   let result = @blit.make_uninit(self.out_pos)
   @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
-  result.unsafe_reinterpret_as_bytes()
+  result.unsafe_reinterpret_as_bytes()[:]
 }

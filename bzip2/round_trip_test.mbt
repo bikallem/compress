@@ -140,7 +140,7 @@ test "signal protocol: chunked input" {
         continue d.decode()
       }
     Data(chunk) => {
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue d.decode()
     }
     End => inspect(buf.to_bytes() == data, content="true")

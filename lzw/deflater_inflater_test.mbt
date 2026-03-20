@@ -5,10 +5,10 @@ test "streaming lzw deflater LSB" {
   let buf = @buffer.new()
   match d.encode(Some(original[:])) {
     Ok | End | Error(_) => ()
-    Data(out) => buf.write_bytes(out)
+    Data(out) => buf.write_bytesview(out)
   }
   match d.encode(None) {
-    Data(out) => buf.write_bytes(out)
+    Data(out) => buf.write_bytesview(out)
     End | Ok | Error(_) => ()
   }
   // Drain End if we got Data
@@ -30,7 +30,7 @@ test "streaming lzw inflater LSB" {
   loop d.decode() {
     Await => fail("unexpected Await: all data should be available")
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -63,7 +63,7 @@ test "streaming lzw inflater with chunked input" {
       continue d.decode()
     }
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -89,14 +89,14 @@ test "streaming lzw deflater + inflater round-trip" {
     let chunk = Bytes::makei(end - offset, fn(i) { original[offset + i] })
     match d.encode(Some(chunk[:])) {
       Ok | End | Error(_) => ()
-      Data(out) => cbuf.write_bytes(out)
+      Data(out) => cbuf.write_bytesview(out)
     }
     offset = end
   }
   // Finish
   loop d.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
@@ -110,7 +110,7 @@ test "streaming lzw deflater + inflater round-trip" {
   loop inf.decode() {
     Await => fail("unexpected Await")
     Data(out) => {
-      dbuf.write_bytes(out)
+      dbuf.write_bytesview(out)
       continue inf.decode()
     }
     End => break
@@ -126,11 +126,11 @@ test "streaming lzw MSB round-trip" {
   let cbuf = @buffer.new()
   match d.encode(Some(original[:])) {
     Ok | End | Error(_) => ()
-    Data(out) => cbuf.write_bytes(out)
+    Data(out) => cbuf.write_bytesview(out)
   }
   loop d.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
@@ -143,7 +143,7 @@ test "streaming lzw MSB round-trip" {
   loop inf.decode() {
     Await => fail("unexpected Await")
     Data(out) => {
-      dbuf.write_bytes(out)
+      dbuf.write_bytesview(out)
       continue inf.decode()
     }
     End => break

@@ -20,7 +20,7 @@ pub(all) enum Decode {
   /// Need input. Call src(bytes) then decode() again.
   Await
   /// Produced output. Consume it, then decode() again.
-  Data(Bytes)
+  Data(BytesView)
   /// Stream complete.
   End
   /// Unrecoverable format error.
@@ -33,7 +33,7 @@ pub(all) enum Encode {
   /// Input consumed. Call encode(Some(more)) or encode(None) to finish.
   Ok
   /// Produced output. Consume it, then call encode() again with same arg.
-  Data(Bytes)
+  Data(BytesView)
   /// Final output flushed. Encoding complete.
   End
   /// Unrecoverable error.

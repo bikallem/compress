@@ -8,7 +8,7 @@ test "streaming bzip2 deflater" {
   }
   loop d.encode(None) {
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
@@ -29,7 +29,7 @@ test "streaming bzip2 inflater" {
   loop d.decode() {
     Await => fail("unexpected Await: all data should be available")
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -63,7 +63,7 @@ test "streaming bzip2 inflater with chunked input" {
       continue d.decode()
     }
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -95,7 +95,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
   let cbuf = @buffer.new()
   loop d.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
@@ -109,7 +109,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
   loop inf.decode() {
     Await => fail("unexpected Await")
     Data(out) => {
-      dbuf.write_bytes(out)
+      dbuf.write_bytesview(out)
       continue inf.decode()
     }
     End => break
@@ -136,7 +136,7 @@ test "streaming bzip2 inflater byte-at-a-time" {
       continue d.decode()
     }
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -157,7 +157,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
     match d.encode(Some(chunk[:])) {
       Ok => ()
       Data(out) => {
-        cbuf.write_bytes(out)
+        cbuf.write_bytesview(out)
         data_signals += 1
       }
       End | Error(_) => fail("unexpected signal")
@@ -168,7 +168,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
   // Finish
   loop d.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break

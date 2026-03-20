@@ -132,7 +132,7 @@ test "signal protocol: chunked input LSB" {
         continue d.decode()
       }
     Data(chunk) => {
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue d.decode()
     }
     End => inspect(buf.to_bytes() == data, content="true")
@@ -157,7 +157,7 @@ test "signal protocol: chunked input MSB" {
         continue d.decode()
       }
     Data(chunk) => {
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue d.decode()
     }
     End => inspect(buf.to_bytes() == data, content="true")
@@ -189,7 +189,7 @@ test "signal protocol: chunked 1KB input" {
         continue d.decode()
       }
     Data(chunk) => {
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue d.decode()
     }
     End => inspect(buf.to_bytes() == data, content="true")

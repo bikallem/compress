@@ -88,6 +88,6 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       sink.write_bytes(result)
       End
     }
-    None => Data(result)
+    None => Data(result[:])
   }
 }

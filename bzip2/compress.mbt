@@ -494,14 +494,14 @@ fn Bzip2BitWriter::flush(self : Bzip2BitWriter) -> Unit {
 
 ///|
 /// Extract accumulated complete bytes without flushing partial bits.
-fn Bzip2BitWriter::take_output(self : Bzip2BitWriter) -> Bytes {
+fn Bzip2BitWriter::take_output(self : Bzip2BitWriter) -> BytesView {
   if self.pos == 0 {
-    return Bytes::default()
+    return b""[:]
   }
   let result = @blit.make_uninit(self.pos)
   @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
   self.pos = 0
-  result.unsafe_reinterpret_as_bytes()
+  result.unsafe_reinterpret_as_bytes()[:]
 }
 
 ///|

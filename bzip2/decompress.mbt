@@ -8,7 +8,7 @@ pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
   loop inf.decode() {
     Await => raise Bzip2Error::UnexpectedEOF
     Data(chunk) => {
-      sink.write_bytes(chunk)
+      sink.write_bytesview(chunk, 0, chunk.length())
       continue inf.decode()
     }
     End => break
