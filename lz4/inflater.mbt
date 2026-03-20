@@ -73,7 +73,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   }
   // Decompress the full frame
   let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
-    input[s.input_pos + i]
+    input.unsafe_get(s.input_pos + i)
   })
   let result = decompress(data) catch {
     e => {

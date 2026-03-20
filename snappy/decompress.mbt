@@ -20,7 +20,7 @@ fn read_varint(data : BytesView, pos_ : Int) -> (Int, Int) raise SnappyError {
   let mut result = 0
   let mut shift = 0
   while pos < data.length() {
-    let b = data[pos].to_int()
+    let b = data.unsafe_get(pos).to_int()
     pos += 1
     result = result | ((b & 0x7F) << shift)
     if (b & 0x80) == 0 {
@@ -46,33 +46,33 @@ fn decode_block(
   let mut dst_pos = 0
   let src_len = src.length()
   while src_pos < src_len && dst_pos < uncompressed_len {
-    let tag = src[src_pos].to_int()
+    let tag = src.unsafe_get(src_pos).to_int()
     let tag_type = tag & 0x03
     if tag_type == TAG_LITERAL {
       let mut lit_len = (tag >> 2) + 1
       src_pos += 1
       if lit_len == 61 {
         guard src_pos < src_len else { raise SnappyError::UnexpectedEOF }
-        lit_len = src[src_pos].to_int() + 1
+        lit_len = src.unsafe_get(src_pos).to_int() + 1
         src_pos += 1
       } else if lit_len == 62 {
         guard src_pos + 1 < src_len else { raise SnappyError::UnexpectedEOF }
-        lit_len = src[src_pos].to_int() | (src[src_pos + 1].to_int() << 8)
+        lit_len = src.unsafe_get(src_pos).to_int() | (src.unsafe_get(src_pos + 1).to_int() << 8)
         lit_len += 1
         src_pos += 2
       } else if lit_len == 63 {
         guard src_pos + 2 < src_len else { raise SnappyError::UnexpectedEOF }
-        lit_len = src[src_pos].to_int() |
-          (src[src_pos + 1].to_int() << 8) |
-          (src[src_pos + 2].to_int() << 16)
+        lit_len = src.unsafe_get(src_pos).to_int() |
+          (src.unsafe_get(src_pos + 1).to_int() << 8) |
+          (src.unsafe_get(src_pos + 2).to_int() << 16)
         lit_len += 1
         src_pos += 3
       } else if lit_len == 64 {
         guard src_pos + 3 < src_len else { raise SnappyError::UnexpectedEOF }
-        lit_len = src[src_pos].to_int() |
-          (src[src_pos + 1].to_int() << 8) |
-          (src[src_pos + 2].to_int() << 16) |
-          (src[src_pos + 3].to_int() << 24)
+        lit_len = src.unsafe_get(src_pos).to_int() |
+          (src.unsafe_get(src_pos + 1).to_int() << 8) |
+          (src.unsafe_get(src_pos + 2).to_int() << 16) |
+          (src.unsafe_get(src_pos + 3).to_int() << 24)
         lit_len += 1
         src_pos += 4
       }
@@ -83,7 +83,7 @@ fn decode_block(
         raise SnappyError::CorruptInput("literal extends past end of output")
       }
       for i in 0..<lit_len {
-        dst[dst_pos + i] = src[src_pos + i]
+        dst.unsafe_set(dst_pos + i, src.unsafe_get(src_pos + i))
       }
       dst_pos += lit_len
       src_pos += lit_len
@@ -92,7 +92,7 @@ fn decode_block(
       src_pos += 1
       guard src_pos < src_len else { raise SnappyError::UnexpectedEOF }
       let length = ((tag >> 2) & 0x07) + 4
-      let offset = (tag >> 5 << 8) | src[src_pos].to_int()
+      let offset = (tag >> 5 << 8) | src.unsafe_get(src_pos).to_int()
       src_pos += 1
       guard offset > 0 && offset <= dst_pos else {
         raise SnappyError::CorruptInput("invalid copy offset \{offset}")
@@ -102,7 +102,7 @@ fn decode_block(
       }
       let copy_start = dst_pos - offset
       for i in 0..<length {
-        dst[dst_pos + i] = dst[copy_start + i % offset]
+        dst.unsafe_set(dst_pos + i, dst.unsafe_get(copy_start + i % offset))
       }
       dst_pos += length
     } else if tag_type == TAG_COPY2 {
@@ -110,7 +110,7 @@ fn decode_block(
       src_pos += 1
       guard src_pos + 1 < src_len else { raise SnappyError::UnexpectedEOF }
       let length = (tag >> 2) + 1
-      let offset = src[src_pos].to_int() | (src[src_pos + 1].to_int() << 8)
+      let offset = src.unsafe_get(src_pos).to_int() | (src.unsafe_get(src_pos + 1).to_int() << 8)
       src_pos += 2
       guard offset > 0 && offset <= dst_pos else {
         raise SnappyError::CorruptInput("invalid copy offset \{offset}")
@@ -120,7 +120,7 @@ fn decode_block(
       }
       let copy_start = dst_pos - offset
       for i in 0..<length {
-        dst[dst_pos + i] = dst[copy_start + i % offset]
+        dst.unsafe_set(dst_pos + i, dst.unsafe_get(copy_start + i % offset))
       }
       dst_pos += length
     } else {
@@ -128,10 +128,10 @@ fn decode_block(
       src_pos += 1
       guard src_pos + 3 < src_len else { raise SnappyError::UnexpectedEOF }
       let length = (tag >> 2) + 1
-      let offset = src[src_pos].to_int() |
-        (src[src_pos + 1].to_int() << 8) |
-        (src[src_pos + 2].to_int() << 16) |
-        (src[src_pos + 3].to_int() << 24)
+      let offset = src.unsafe_get(src_pos).to_int() |
+        (src.unsafe_get(src_pos + 1).to_int() << 8) |
+        (src.unsafe_get(src_pos + 2).to_int() << 16) |
+        (src.unsafe_get(src_pos + 3).to_int() << 24)
       src_pos += 4
       guard offset > 0 && offset <= dst_pos else {
         raise SnappyError::CorruptInput("invalid copy offset \{offset}")
@@ -141,7 +141,7 @@ fn decode_block(
       }
       let copy_start = dst_pos - offset
       for i in 0..<length {
-        dst[dst_pos + i] = dst[copy_start + i % offset]
+        dst.unsafe_set(dst_pos + i, dst.unsafe_get(copy_start + i % offset))
       }
       dst_pos += length
     }

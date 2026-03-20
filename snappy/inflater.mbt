@@ -97,7 +97,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       End
     }
     None => {
-      let result = Bytes::makei(n, fn(i) { dst[i] })
+      let result = Bytes::makei(n, fn(i) { dst.unsafe_get(i) })
       Data(result[:])
     }
   }

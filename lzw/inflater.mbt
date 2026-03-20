@@ -305,7 +305,7 @@ fn decode_lsb(s : InflaterState) -> Decode {
       if pos >= input_len {
         return save_and_yield(s, bits, n_bits, pos)
       }
-      bits = bits | (input[pos].to_uint() << n_bits)
+      bits = bits | (input.unsafe_get(pos).to_uint() << n_bits)
       n_bits += 8
       pos += 1
     }
@@ -346,7 +346,7 @@ fn decode_msb(s : InflaterState) -> Decode {
       if pos >= input_len {
         return save_and_yield(s, bits, n_bits, pos)
       }
-      bits = bits | (input[pos].to_uint() << (24 - n_bits))
+      bits = bits | (input.unsafe_get(pos).to_uint() << (24 - n_bits))
       n_bits += 8
       pos += 1
     }

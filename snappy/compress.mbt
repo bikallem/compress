@@ -40,11 +40,11 @@ fn Encoder::emit_varint(self : Encoder, n_ : Int) -> Unit {
   let mut n = n_
   self.ensure_capacity(5)
   while n >= 128 {
-    self.out_buf[self.out_pos] = ((n & 0x7F) | 0x80).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((n & 0x7F) | 0x80).to_byte())
     self.out_pos += 1
     n = n >> 7
   }
-  self.out_buf[self.out_pos] = n.to_byte()
+  self.out_buf.unsafe_set(self.out_pos, n.to_byte())
   self.out_pos += 1
 }
 
@@ -59,38 +59,38 @@ fn Encoder::emit_literal(
   let n = length - 1
   if n < 60 {
     self.ensure_capacity(1 + length)
-    self.out_buf[self.out_pos] = ((n << 2) | TAG_LITERAL).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((n << 2) | TAG_LITERAL).to_byte())
     self.out_pos += 1
   } else if n < 0x100 {
     self.ensure_capacity(2 + length)
-    self.out_buf[self.out_pos] = ((60 << 2) | TAG_LITERAL).to_byte()
-    self.out_buf[self.out_pos + 1] = n.to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((60 << 2) | TAG_LITERAL).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, n.to_byte())
     self.out_pos += 2
   } else if n < 0x10000 {
     self.ensure_capacity(3 + length)
-    self.out_buf[self.out_pos] = ((61 << 2) | TAG_LITERAL).to_byte()
-    self.out_buf[self.out_pos + 1] = (n & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 2] = ((n >> 8) & 0xFF).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((61 << 2) | TAG_LITERAL).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (n & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 2, ((n >> 8) & 0xFF).to_byte())
     self.out_pos += 3
   } else if n < 0x1000000 {
     self.ensure_capacity(4 + length)
-    self.out_buf[self.out_pos] = ((62 << 2) | TAG_LITERAL).to_byte()
-    self.out_buf[self.out_pos + 1] = (n & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 2] = ((n >> 8) & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 3] = ((n >> 16) & 0xFF).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((62 << 2) | TAG_LITERAL).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (n & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 2, ((n >> 8) & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 3, ((n >> 16) & 0xFF).to_byte())
     self.out_pos += 4
   } else {
     self.ensure_capacity(5 + length)
-    self.out_buf[self.out_pos] = ((63 << 2) | TAG_LITERAL).to_byte()
-    self.out_buf[self.out_pos + 1] = (n & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 2] = ((n >> 8) & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 3] = ((n >> 16) & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 4] = ((n >> 24) & 0xFF).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((63 << 2) | TAG_LITERAL).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (n & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 2, ((n >> 8) & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 3, ((n >> 16) & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 4, ((n >> 24) & 0xFF).to_byte())
     self.out_pos += 5
   }
   // Copy literal bytes
   for i in 0..<length {
-    self.out_buf[self.out_pos + i] = data[offset + i]
+    self.out_buf.unsafe_set(self.out_pos + i, data.unsafe_get(offset + i))
   }
   self.out_pos += length
 }
@@ -103,44 +103,44 @@ fn Encoder::emit_copy(self : Encoder, offset_ : Int, length_ : Int) -> Unit {
   // Emit copy2 for lengths > 64 or offsets > 2047
   while length >= 68 {
     self.ensure_capacity(3)
-    self.out_buf[self.out_pos] = ((63 << 2) | TAG_COPY2).to_byte()
-    self.out_buf[self.out_pos + 1] = (offset & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 2] = ((offset >> 8) & 0xFF).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((63 << 2) | TAG_COPY2).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
     self.out_pos += 3
     length -= 64
   }
   if length > 64 {
     self.ensure_capacity(3)
     let len_field = length - 61
-    self.out_buf[self.out_pos] = ((len_field << 2) | TAG_COPY2).to_byte()
-    self.out_buf[self.out_pos + 1] = (offset & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 2] = ((offset >> 8) & 0xFF).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, ((len_field << 2) | TAG_COPY2).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
     self.out_pos += 3
     return
   }
   if length >= 12 || offset >= 2048 {
     self.ensure_capacity(3)
-    self.out_buf[self.out_pos] = (((length - 1) << 2) | TAG_COPY2).to_byte()
-    self.out_buf[self.out_pos + 1] = (offset & 0xFF).to_byte()
-    self.out_buf[self.out_pos + 2] = ((offset >> 8) & 0xFF).to_byte()
+    self.out_buf.unsafe_set(self.out_pos, (((length - 1) << 2) | TAG_COPY2).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
     self.out_pos += 3
   } else {
     // Use copy1 (2-byte encoding) for short copies with small offsets
     self.ensure_capacity(2)
-    self.out_buf[self.out_pos] = ((offset >> 8 << 5) |
+    self.out_buf.unsafe_set(self.out_pos, ((offset >> 8 << 5) |
     ((length - 4) << 2) |
-    TAG_COPY1).to_byte()
-    self.out_buf[self.out_pos + 1] = (offset & 0xFF).to_byte()
+    TAG_COPY1).to_byte())
+    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
     self.out_pos += 2
   }
 }
 
 ///|
 fn snappy_hash(data : BytesView, pos : Int) -> Int {
-  let u = data[pos].to_int() |
-    (data[pos + 1].to_int() << 8) |
-    (data[pos + 2].to_int() << 16) |
-    (data[pos + 3].to_int() << 24)
+  let u = data.unsafe_get(pos).to_int() |
+    (data.unsafe_get(pos + 1).to_int() << 8) |
+    (data.unsafe_get(pos + 2).to_int() << 16) |
+    (data.unsafe_get(pos + 3).to_int() << 24)
   // Knuth multiplicative hash
   ((u * 0x1E35A7BD) >> 18) & HASH_TABLE_MASK
 }
@@ -182,7 +182,7 @@ fn Encoder::compress_block(
   // Clear hash table
   let table = self.table
   for i in 0..<HASH_TABLE_SIZE {
-    table[i] = 0
+    table.unsafe_set(i, 0)
   }
   let mut ip = block_start // current position
   let mut next_emit = block_start // start of pending literal
@@ -190,8 +190,8 @@ fn Encoder::compress_block(
   let mut next_hash = snappy_hash(data, ip)
   while ip <= ip_limit {
     let hash = next_hash
-    let candidate = table[hash] + block_start
-    table[hash] = ip - block_start
+    let candidate = table.unsafe_get(hash) + block_start
+    table.unsafe_set(hash, ip - block_start)
     if ip + 1 <= ip_limit {
       next_hash = snappy_hash(data, ip + 1)
     }
@@ -199,10 +199,10 @@ fn Encoder::compress_block(
     if candidate < block_start ||
       ip == candidate ||
       ip - candidate >= MAX_BLOCK_SIZE ||
-      data[ip] != data[candidate] ||
-      data[ip + 1] != data[candidate + 1] ||
-      data[ip + 2] != data[candidate + 2] ||
-      data[ip + 3] != data[candidate + 3] {
+      data.unsafe_get(ip) != data.unsafe_get(candidate) ||
+      data.unsafe_get(ip + 1) != data.unsafe_get(candidate + 1) ||
+      data.unsafe_get(ip + 2) != data.unsafe_get(candidate + 2) ||
+      data.unsafe_get(ip + 3) != data.unsafe_get(candidate + 3) {
       ip += 1
       continue
     }
@@ -213,7 +213,7 @@ fn Encoder::compress_block(
     // Extend the match
     let mut match_len = 4
     while ip + match_len < block_end &&
-          data[ip + match_len] == data[candidate + match_len] {
+          data.unsafe_get(ip + match_len) == data.unsafe_get(candidate + match_len) {
       match_len += 1
     }
     self.emit_copy(ip - candidate, match_len)

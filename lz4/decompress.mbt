@@ -16,10 +16,10 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
   let xxh = @checksum.XXH32::new()
   // Read blocks
   while pos + 4 <= data.length() {
-    let block_size_raw = data[pos].to_int() |
-      (data[pos + 1].to_int() << 8) |
-      (data[pos + 2].to_int() << 16) |
-      (data[pos + 3].to_int() << 24)
+    let block_size_raw = data.unsafe_get(pos).to_int() |
+      (data.unsafe_get(pos + 1).to_int() << 8) |
+      (data.unsafe_get(pos + 2).to_int() << 16) |
+      (data.unsafe_get(pos + 3).to_int() << 24)
     pos += 4
     // End mark
     if block_size_raw == 0 {
@@ -31,7 +31,7 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
       raise Lz4Error::UnexpectedEOF
     }
     if is_uncompressed {
-      let block_bytes = Bytes::makei(block_size, fn(i) { data[pos + i] })
+      let block_bytes = Bytes::makei(block_size, fn(i) { data.unsafe_get(pos + i) })
       sink.write_bytes(block_bytes)
       xxh.update(block_bytes[:])
     } else {
@@ -43,7 +43,7 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
         0,
         block_max_size,
       )
-      let decoded_bytes = Bytes::makei(decoded_len, fn(i) { block_buf[i] })
+      let decoded_bytes = Bytes::makei(decoded_len, fn(i) { block_buf.unsafe_get(i) })
       sink.write_bytes(decoded_bytes)
       xxh.update(decoded_bytes[:])
     }
@@ -52,10 +52,10 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
   // Verify content checksum
   if has_content_checksum {
     guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
-    let expected_cs = data[pos].to_uint() |
-      (data[pos + 1].to_uint() << 8) |
-      (data[pos + 2].to_uint() << 16) |
-      (data[pos + 3].to_uint() << 24)
+    let expected_cs = data.unsafe_get(pos).to_uint() |
+      (data.unsafe_get(pos + 1).to_uint() << 8) |
+      (data.unsafe_get(pos + 2).to_uint() << 16) |
+      (data.unsafe_get(pos + 3).to_uint() << 24)
     let actual_cs = xxh.checksum()
     guard expected_cs == actual_cs else {
       raise Lz4Error::ChecksumMismatch(expected=expected_cs, got=actual_cs)

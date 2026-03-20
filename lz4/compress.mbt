@@ -28,26 +28,26 @@ pub fn compress(data : Bytes) -> Bytes {
     let compressed_size = block_compress(block_data, block_buf)
     if compressed_size > 0 && compressed_size < block_len {
       // Write compressed block header (size as 32-bit LE, high bit clear)
-      out[pos] = (compressed_size & 0xFF).to_byte()
-      out[pos + 1] = ((compressed_size >> 8) & 0xFF).to_byte()
-      out[pos + 2] = ((compressed_size >> 16) & 0xFF).to_byte()
-      out[pos + 3] = ((compressed_size >> 24) & 0x7F).to_byte()
+      out.unsafe_set(pos, (compressed_size & 0xFF).to_byte())
+      out.unsafe_set(pos + 1, ((compressed_size >> 8) & 0xFF).to_byte())
+      out.unsafe_set(pos + 2, ((compressed_size >> 16) & 0xFF).to_byte())
+      out.unsafe_set(pos + 3, ((compressed_size >> 24) & 0x7F).to_byte())
       pos += 4
       // Write compressed data
       for i in 0..<compressed_size {
-        out[pos + i] = block_buf[i]
+        out.unsafe_set(pos + i, block_buf.unsafe_get(i))
       }
       pos += compressed_size
     } else {
       // Write uncompressed block (high bit set = uncompressed)
-      out[pos] = (block_len & 0xFF).to_byte()
-      out[pos + 1] = ((block_len >> 8) & 0xFF).to_byte()
-      out[pos + 2] = ((block_len >> 16) & 0xFF).to_byte()
-      out[pos + 3] = (((block_len >> 24) & 0x7F) | 0x80).to_byte()
+      out.unsafe_set(pos, (block_len & 0xFF).to_byte())
+      out.unsafe_set(pos + 1, ((block_len >> 8) & 0xFF).to_byte())
+      out.unsafe_set(pos + 2, ((block_len >> 16) & 0xFF).to_byte())
+      out.unsafe_set(pos + 3, (((block_len >> 24) & 0x7F) | 0x80).to_byte())
       pos += 4
       // Write raw data
       for i in 0..<block_len {
-        out[pos + i] = block_data[i]
+        out.unsafe_set(pos + i, block_data.unsafe_get(i))
       }
       pos += block_len
     }

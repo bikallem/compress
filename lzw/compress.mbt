@@ -135,7 +135,7 @@ fn Encoder::write(self : Encoder, data : BytesView) -> Unit {
     // First write: send clear code
     let clear = 1 << self.lit_width
     self.write_code(clear)
-    code = data[0].to_int()
+    code = data.unsafe_get(0).to_int()
     start = 1
   }
   let table = self.table
