@@ -7,7 +7,8 @@ priv enum DeflatePhase {
 }
 
 ///|
-/// 4-byte hash for the hash chain, masked to hash_mask.
+/// 4-byte multiplicative hash for the hash chain, masked to hash_mask.
+/// Uses all 4 bytes for fewer collisions than the old 3-byte hash.
 /// SAFETY: caller must ensure pos+3 < window.length().
 fn Deflater::hash4(self : Deflater, pos : Int, hash_mask : Int) -> Int {
   let w = self.window
@@ -15,7 +16,7 @@ fn Deflater::hash4(self : Deflater, pos : Int, hash_mask : Int) -> Int {
     (w.unsafe_get(pos + 1).to_int() << 8) |
     (w.unsafe_get(pos + 2).to_int() << 16) |
     (w.unsafe_get(pos + 3).to_int() << 24)
-  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+  ((v.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >> 17) & hash_mask
 }
 
 ///|
@@ -492,7 +493,8 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       (window.unsafe_get(i + 1).to_int() << 8) |
       (window.unsafe_get(i + 2).to_int() << 16) |
       (window.unsafe_get(i + 3).to_int() << 24)
-    let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
+    let h = ((v.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >> 17) &
+      hash_mask
     let match_head_abs = head.unsafe_get(h)
     prev.unsafe_set(i & WINDOW_MASK, match_head_abs)
     head.unsafe_set(h, i + base)
@@ -587,7 +589,8 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
             (window.unsafe_get(j + 1).to_int() << 8) |
             (window.unsafe_get(j + 2).to_int() << 16) |
             (window.unsafe_get(j + 3).to_int() << 24)
-          let rh = ((rv & 0xFFFFFF) ^ (((rv >> 16) & 0xFF) * 0x1e35a7bd)) &
+          let rh = ((rv.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >>
+            17) &
             hash_mask
           prev.unsafe_set(j & WINDOW_MASK, head.unsafe_get(rh))
           head.unsafe_set(rh, j + base)
@@ -612,6 +615,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
   }
   self.index = i
 }
+
 
 ///|
 fn Deflater::flush_tokens(self : Deflater) -> Unit {
