@@ -63,9 +63,9 @@ fn rle1_encode(data : Bytes, start : Int, end : Int) -> Bytes {
   let mut pos = 0
   let mut i = start
   while i < end {
-    let b = data[i]
+    let b = data.unsafe_get(i)
     let mut run = 1
-    while i + run < end && data[i + run] == b && run < 259 {
+    while i + run < end && data.unsafe_get(i + run) == b && run < 259 {
       run += 1
     }
     if run >= 4 {
@@ -103,9 +103,9 @@ fn bwt_transform(data : Bytes) -> (Bytes, Int) {
     let s = sa.unsafe_get(i)
     if s == 0 {
       orig_ptr = i
-      bwt.unsafe_set(i, data[n - 1])
+      bwt.unsafe_set(i, data.unsafe_get(n - 1))
     } else {
-      bwt.unsafe_set(i, data[s - 1])
+      bwt.unsafe_set(i, data.unsafe_get(s - 1))
     }
   }
   (bwt.unsafe_reinterpret_as_bytes(), orig_ptr)
@@ -118,12 +118,12 @@ fn mtf_rle2_encode(data : Bytes) -> (Array[Int], Int, FixedArray[Bool]) {
   // Build in_use bitmap
   let in_use = FixedArray::make(256, false)
   for _, b in data {
-    in_use[b.to_int()] = true
+    in_use.unsafe_set(b.to_int(), true)
   }
   let mtf_list = FixedArray::make(256, b'\x00')
   let num_in_use = for i = 0, num_in_use = 0; i < 256; i = i + 1 {
-    if in_use[i] {
-      mtf_list[num_in_use] = i.to_byte()
+    if in_use.unsafe_get(i) {
+      mtf_list.unsafe_set(num_in_use, i.to_byte())
       continue i + 1, num_in_use + 1
     } else {
       continue i + 1, num_in_use
@@ -137,15 +137,15 @@ fn mtf_rle2_encode(data : Bytes) -> (Array[Int], Int, FixedArray[Bool]) {
   for b in data {
     // Find position in MTF list
     let mut pos = 0
-    while pos < num_in_use && mtf_list[pos] != b {
+    while pos < num_in_use && mtf_list.unsafe_get(pos) != b {
       pos += 1
     }
     // Move to front
-    let val = mtf_list[pos]
+    let val = mtf_list.unsafe_get(pos)
     for j = pos; j > 0; j = j - 1 {
-      mtf_list[j] = mtf_list[j - 1]
+      mtf_list.unsafe_set(j, mtf_list.unsafe_get(j - 1))
     }
-    mtf_list[0] = val
+    mtf_list.unsafe_set(0, val)
     if pos == 0 {
       zero_run += 1
     } else {
@@ -207,7 +207,7 @@ fn write_block(
   for g in 0..<16 {
     let mut any = false
     for j in 0..<16 {
-      if in_use[g * 16 + j] {
+      if in_use.unsafe_get(g * 16 + j) {
         any = true
         break
       }
@@ -221,7 +221,7 @@ fn write_block(
     if (used_groups & (1U << (15 - g))) != 0U {
       let mut group_bits = 0U
       for j in 0..<16 {
-        if in_use[g * 16 + j] {
+        if in_use.unsafe_get(g * 16 + j) {
           group_bits = group_bits | (1U << (15 - j))
         }
       }
@@ -232,7 +232,7 @@ fn write_block(
   let alpha_size = num_in_use + 2 // RUNA, RUNB, symbols 1..num_in_use-1, EOB
   let freqs = FixedArray::make(alpha_size, 0)
   for s in symbols {
-    freqs[s] += 1
+    freqs.unsafe_set(s, freqs.unsafe_get(s) + 1)
   }
   let lengths = bzip2_compute_lengths(freqs, alpha_size, BZIP2_MAX_CODE_LEN)
   // Use a single Huffman tree (num_trees = 2 is minimum, but we duplicate)
@@ -248,12 +248,12 @@ fn write_block(
   }
   // Write code lengths for both trees (they're identical)
   for _ in 0..<num_trees {
-    let mut curr = lengths[0]
+    let mut curr = lengths.unsafe_get(0)
     bw.write_bits(curr.reinterpret_as_uint(), 5)
     for j in 0..<alpha_size {
-      while curr != lengths[j] {
+      while curr != lengths.unsafe_get(j) {
         bw.write_bits(1U, 1) // need adjustment
-        if curr < lengths[j] {
+        if curr < lengths.unsafe_get(j) {
           bw.write_bits(0U, 1) // increment
           curr += 1
         } else {
@@ -268,8 +268,8 @@ fn write_block(
   let codes = build_canonical_codes(lengths, alpha_size)
   // Encode symbols
   for s in symbols {
-    let code = codes[s]
-    let len = lengths[s]
+    let code = codes.unsafe_get(s)
+    let len = lengths.unsafe_get(s)
     bw.write_bits(code, len)
   }
 }
@@ -286,45 +286,45 @@ fn bzip2_compute_lengths(
   let lengths = FixedArray::make(n, 0)
   if n < 2 {
     for i in 0..<n {
-      lengths[i] = 1
+      lengths.unsafe_set(i, 1)
     }
     return lengths
   }
   // Ensure all symbols have frequency >= 1 so the Huffman tree
   // covers the full alphabet without overflowing the code space.
   let adj_freqs = FixedArray::makei(n, fn(i) {
-    if freqs[i] > 0 {
-      freqs[i]
+    if freqs.unsafe_get(i) > 0 {
+      freqs.unsafe_get(i)
     } else {
       1
     }
   })
   // Build sorted pairs (freq, symbol)
-  let sorted = FixedArray::makei(n, fn(i) { (adj_freqs[i], i) })
+  let sorted = FixedArray::makei(n, fn(i) { (adj_freqs.unsafe_get(i), i) })
   // Insertion sort by frequency
   for i in 1..<n {
-    let key = sorted[i]
+    let key = sorted.unsafe_get(i)
     let mut j = i - 1
-    while j >= 0 && sorted[j].0 > key.0 {
-      sorted[j + 1] = sorted[j]
+    while j >= 0 && sorted.unsafe_get(j).0 > key.0 {
+      sorted.unsafe_set(j + 1, sorted.unsafe_get(j))
       j -= 1
     }
-    sorted[j + 1] = key
+    sorted.unsafe_set(j + 1, key)
   }
   // Two-queue Huffman tree
-  let leaf_freq = FixedArray::makei(n, fn(i) { sorted[i].0 })
+  let leaf_freq = FixedArray::makei(n, fn(i) { sorted.unsafe_get(i).0 })
   let total_nodes = 2 * n - 1
   let parent = FixedArray::make(total_nodes, -1)
   let node_freq = FixedArray::make(total_nodes, 0)
   for i, f in leaf_freq {
-    node_freq[i] = f
+    node_freq.unsafe_set(i, f)
   }
   let mut leaf_ptr = 0
   let mut int_ptr = n
   let mut next_node = n
   for _ in 0..<(n - 1) {
     let left = if leaf_ptr < n &&
-      (int_ptr >= next_node || leaf_freq[leaf_ptr] <= node_freq[int_ptr]) {
+      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -334,7 +334,7 @@ fn bzip2_compute_lengths(
       r
     }
     let right = if leaf_ptr < n &&
-      (int_ptr >= next_node || leaf_freq[leaf_ptr] <= node_freq[int_ptr]) {
+      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -343,25 +343,25 @@ fn bzip2_compute_lengths(
       int_ptr += 1
       r
     }
-    node_freq[next_node] = node_freq[left] + node_freq[right]
-    parent[left] = next_node
-    parent[right] = next_node
+    node_freq.unsafe_set(next_node, node_freq.unsafe_get(left) + node_freq.unsafe_get(right))
+    parent.unsafe_set(left, next_node)
+    parent.unsafe_set(right, next_node)
     next_node += 1
   }
   // Compute depths
   let depths = FixedArray::make(total_nodes, 0)
   for i = total_nodes - 1; i >= 0; i = i - 1 {
-    if parent[i] >= 0 {
-      depths[i] = depths[parent[i]] + 1
+    if parent.unsafe_get(i) >= 0 {
+      depths.unsafe_set(i, depths.unsafe_get(parent.unsafe_get(i)) + 1)
     }
   }
   for i, entry in sorted {
-    lengths[entry.1] = depths[i]
+    lengths.unsafe_set(entry.1, depths.unsafe_get(i))
   }
   // Clamp to max_len
   for i in 0..<n {
-    if lengths[i] > max_len {
-      lengths[i] = max_len
+    if lengths.unsafe_get(i) > max_len {
+      lengths.unsafe_set(i, max_len)
     }
   }
   lengths
@@ -374,30 +374,30 @@ fn build_canonical_codes(
   n : Int,
 ) -> FixedArray[UInt] {
   let max_len = for i = 0, max_len = 0; i < n; i = i + 1 {
-    continue i + 1, if lengths[i] > max_len { lengths[i] } else { max_len }
+    continue i + 1, if lengths.unsafe_get(i) > max_len { lengths.unsafe_get(i) } else { max_len }
   } nobreak {
     max_len
   }
   // Count codes per length
   let count = FixedArray::make(max_len + 1, 0)
   for i in 0..<n {
-    if lengths[i] > 0 {
-      count[lengths[i]] += 1
+    if lengths.unsafe_get(i) > 0 {
+      count.unsafe_set(lengths.unsafe_get(i), count.unsafe_get(lengths.unsafe_get(i)) + 1)
     }
   }
   // Assign codes
   let next_code = FixedArray::make(max_len + 1, 0)
   for bits = 1, code = 0; bits <= max_len; {
-    let c = (code + count[bits - 1]) << 1
-    next_code[bits] = c
+    let c = (code + count.unsafe_get(bits - 1)) << 1
+    next_code.unsafe_set(bits, c)
     continue bits + 1, c
   }
   let codes = FixedArray::make(n, 0U)
   for i in 0..<n {
-    let len = lengths[i]
+    let len = lengths.unsafe_get(i)
     if len > 0 {
-      codes[i] = next_code[len].reinterpret_as_uint()
-      next_code[len] += 1
+      codes.unsafe_set(i, next_code.unsafe_get(len).reinterpret_as_uint())
+      next_code.unsafe_set(len, next_code.unsafe_get(len) + 1)
     }
   }
   codes
@@ -408,8 +408,8 @@ fn build_canonical_codes(
 fn bzip2_crc32_range(data : Bytes, start : Int, end : Int) -> UInt {
   let mut crc = 0xFFFFFFFF_U
   for i in start..<end {
-    let idx = ((crc >> 24) ^ data[i].to_uint()) & 0xFFU
-    crc = (crc << 8) ^ bzip2_crc_table[idx.reinterpret_as_int()]
+    let idx = ((crc >> 24) ^ data.unsafe_get(i).to_uint()) & 0xFFU
+    crc = (crc << 8) ^ bzip2_crc_table.unsafe_get(idx.reinterpret_as_int())
   }
   crc ^ 0xFFFFFFFF_U
 }

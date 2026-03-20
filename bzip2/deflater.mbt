@@ -62,7 +62,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
           space
         }
         for i in 0..<n {
-          s.block_buf[s.block_len + i] = chunk[offset + i]
+          s.block_buf.unsafe_set(s.block_len + i, chunk.unsafe_get(offset + i))
         }
         s.block_len += n
         offset += n
@@ -119,7 +119,7 @@ fn write_stream_header(s : Encoder) -> Unit {
 
 ///|
 fn flush_block(s : Encoder) -> Unit {
-  let block_data = Bytes::makei(s.block_len, fn(i) { s.block_buf[i] })
+  let block_data = Bytes::makei(s.block_len, fn(i) { s.block_buf.unsafe_get(i) })
   let block_crc = compress_block(s.bw, block_data, 0, s.block_len)
   s.stream_crc = ((s.stream_crc << 1) | (s.stream_crc >> 31)) ^ block_crc
   s.block_len = 0

@@ -245,7 +245,7 @@ fn step_read_symbol_map(s : Decoder) -> Decode {
   s.symmap_group = 0
   s.num_in_use = 0
   for i in 0..<256 {
-    s.in_use[i] = false
+    s.in_use.unsafe_set(i, false)
   }
   s.phase = ReadSymbolMapGroups
   step(s)
@@ -259,7 +259,7 @@ fn step_read_symbol_map_groups(s : Decoder) -> Decode {
       guard s.bb.read(16) is Some(group_bits) else { return Await }
       for j in 0..<16 {
         if (group_bits & (1U << (15 - j))) != 0U {
-          s.in_use[g * 16 + j] = true
+          s.in_use.unsafe_set(g * 16 + j, true)
           s.num_in_use += 1
         }
       }
@@ -304,15 +304,15 @@ fn step_read_selectors(s : Decoder) -> Decode {
   // Undo MTF on selectors
   let sel_mtf = FixedArray::make(s.num_trees, 0)
   for i in 0..<s.num_trees {
-    sel_mtf[i] = i
+    sel_mtf.unsafe_set(i, i)
   }
   for i in 0..<s.num_selectors {
     let idx = s.selectors[i]
-    let val = sel_mtf[idx]
+    let val = sel_mtf.unsafe_get(idx)
     for j = idx; j > 0; j = j - 1 {
-      sel_mtf[j] = sel_mtf[j - 1]
+      sel_mtf.unsafe_set(j, sel_mtf.unsafe_get(j - 1))
     }
-    sel_mtf[0] = val
+    sel_mtf.unsafe_set(0, val)
     s.selectors[i] = val
   }
   // Start reading tree lengths
@@ -351,8 +351,8 @@ fn step_read_tree_lengths(s : Decoder) -> Decode {
     s.current_tree_idx = 0
     // Initialize MTF list    
     for i = 0, k = 0; i < 256; {
-      if s.in_use[i] {
-        s.mtf_list[k] = i.to_byte()
+      if s.in_use.unsafe_get(i) {
+        s.mtf_list.unsafe_set(k, i.to_byte())
         continue i + 1, k + 1
       }
       continue i + 1, k
@@ -365,7 +365,7 @@ fn step_read_tree_lengths(s : Decoder) -> Decode {
   s.current_length = initial_len.reinterpret_as_int()
   s.length_idx = 0
   for i in 0..<s.alpha_size {
-    s.lengths[i] = 0
+    s.lengths.unsafe_set(i, 0)
   }
   s.phase = ReadTreeLengthDelta
   step(s)
@@ -384,7 +384,7 @@ fn step_read_tree_length_delta(s : Decoder) -> Decode {
       if s.current_length < 1 || s.current_length > BZIP2_MAX_CODE_LEN {
         return fail(s, Bzip2Error::CorruptData("invalid code length"))
       }
-      s.lengths[s.length_idx] = s.current_length
+      s.lengths.unsafe_set(s.length_idx, s.current_length)
       s.length_idx += 1
     } else {
       // Adjust length: direction bit
@@ -431,7 +431,7 @@ fn step_decode_symbols(s : Decoder) -> Decode {
     }
     if sym == 0 || sym == 1 {
       // RUNA/RUNB: start run-length decoding
-      s.run_byte = s.mtf_list[0]
+      s.run_byte = s.mtf_list.unsafe_get(0)
       s.run_len = 0
       s.run_power = 1
       s.run_len += (sym + 1) * s.run_power
@@ -444,15 +444,15 @@ fn step_decode_symbols(s : Decoder) -> Decode {
     if mtf_idx >= s.num_in_use {
       return fail(s, Bzip2Error::CorruptData("MTF index out of range"))
     }
-    let byte_val = s.mtf_list[mtf_idx]
+    let byte_val = s.mtf_list.unsafe_get(mtf_idx)
     for j = mtf_idx; j > 0; j = j - 1 {
-      s.mtf_list[j] = s.mtf_list[j - 1]
+      s.mtf_list.unsafe_set(j, s.mtf_list.unsafe_get(j - 1))
     }
-    s.mtf_list[0] = byte_val
+    s.mtf_list.unsafe_set(0, byte_val)
     if s.decoded_len >= s.max_block_bytes {
       return fail(s, Bzip2Error::CorruptData("block too large"))
     }
-    s.tt[s.decoded_len] = byte_val.to_int()
+    s.tt.unsafe_set(s.decoded_len, byte_val.to_int())
     s.decoded_len += 1
   }
   End // unreachable
@@ -493,7 +493,7 @@ fn step_emit_run(s : Decoder) -> Decode {
     if s.decoded_len >= s.max_block_bytes {
       return fail(s, Bzip2Error::CorruptData("block too large"))
     }
-    s.tt[s.decoded_len] = s.run_byte.to_int()
+    s.tt.unsafe_set(s.decoded_len, s.run_byte.to_int())
     s.decoded_len += 1
   }
   s.run_len = 0
@@ -506,15 +506,15 @@ fn step_emit_run(s : Decoder) -> Decode {
   if mtf_idx >= s.num_in_use {
     return fail(s, Bzip2Error::CorruptData("MTF index out of range"))
   }
-  let byte_val = s.mtf_list[mtf_idx]
+  let byte_val = s.mtf_list.unsafe_get(mtf_idx)
   for j = mtf_idx; j > 0; j = j - 1 {
-    s.mtf_list[j] = s.mtf_list[j - 1]
+    s.mtf_list.unsafe_set(j, s.mtf_list.unsafe_get(j - 1))
   }
-  s.mtf_list[0] = byte_val
+  s.mtf_list.unsafe_set(0, byte_val)
   if s.decoded_len >= s.max_block_bytes {
     return fail(s, Bzip2Error::CorruptData("block too large"))
   }
-  s.tt[s.decoded_len] = byte_val.to_int()
+  s.tt.unsafe_set(s.decoded_len, byte_val.to_int())
   s.decoded_len += 1
   s.phase = DecodeSymbols
   step(s)

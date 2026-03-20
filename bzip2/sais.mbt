@@ -244,7 +244,7 @@ fn build_suffix_array(data : Bytes) -> FixedArray[Int] {
   let len = 2 * n + 1
   let text = FixedArray::make(len, 0)
   for i in 0..<n {
-    let v = data[i].to_int() + 1
+    let v = data.unsafe_get(i).to_int() + 1
     text.unsafe_set(i, v)
     text.unsafe_set(n + i, v)
   }

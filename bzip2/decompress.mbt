@@ -69,20 +69,20 @@ fn undo_rle1(data : Bytes, max_block_bytes : Int) -> Bytes raise Bzip2Error {
   let mut pos = 0
   let mut i = 0
   while i < len {
-    let b = data[i]
+    let b = data.unsafe_get(i)
     out.unsafe_set(pos, b)
     pos += 1
     i += 1
     // Check for run of 4 identical bytes
-    if i < len && data[i] == b {
+    if i < len && data.unsafe_get(i) == b {
       out.unsafe_set(pos, b)
       pos += 1
       i += 1
-      if i < len && data[i] == b {
+      if i < len && data.unsafe_get(i) == b {
         out.unsafe_set(pos, b)
         pos += 1
         i += 1
-        if i < len && data[i] == b {
+        if i < len && data.unsafe_get(i) == b {
           out.unsafe_set(pos, b)
           pos += 1
           i += 1
@@ -90,7 +90,7 @@ fn undo_rle1(data : Bytes, max_block_bytes : Int) -> Bytes raise Bzip2Error {
           if i >= len {
             raise Bzip2Error::CorruptData("unexpected end of RLE1 data")
           }
-          let count = data[i].to_int()
+          let count = data.unsafe_get(i).to_int()
           i += 1
           for _ in 0..<count {
             out.unsafe_set(pos, b)
@@ -118,7 +118,7 @@ let bzip2_crc_table : FixedArray[UInt] = {
         crc = crc << 1
       }
     }
-    t[i] = crc
+    t.unsafe_set(i, crc)
   }
   t
 }
@@ -128,7 +128,7 @@ fn bzip2_crc32(data : Bytes) -> UInt {
   let mut crc = 0xFFFFFFFF_U
   for b in data {
     let idx = ((crc >> 24) ^ b.to_uint()) & 0xFFU
-    crc = (crc << 8) ^ bzip2_crc_table[idx.reinterpret_as_int()]
+    crc = (crc << 8) ^ bzip2_crc_table.unsafe_get(idx.reinterpret_as_int())
   }
   crc ^ 0xFFFFFFFF_U
 }
