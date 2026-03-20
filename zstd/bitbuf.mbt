@@ -15,7 +15,7 @@ fn BackwardBitReader::new(
   let len = data.length()
   guard len > 0 else { raise ZstdError::CorruptData("empty backward stream") }
   // Find the highest set bit in the last byte to establish initial position
-  let last_byte = data[len - 1].to_int()
+  let last_byte = data.unsafe_get(len - 1).to_int()
   guard last_byte != 0 else {
     raise ZstdError::CorruptData("zero padding byte in backward stream")
   }
@@ -38,7 +38,7 @@ fn BackwardBitReader::new(
 fn BackwardBitReader::refill(self : BackwardBitReader) -> Unit {
   while self.n_bits <= 56 && self.byte_pos >= 0 {
     self.bits = (self.bits << 8) |
-      self.data[self.byte_pos].to_uint().to_uint64()
+      self.data.unsafe_get(self.byte_pos).to_uint().to_uint64()
     self.byte_pos -= 1
     self.n_bits += 8
   }

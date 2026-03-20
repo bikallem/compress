@@ -5,16 +5,16 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   let src_len = data.length()
   guard src_len >= 4 else { raise ZstdError::UnexpectedEOF }
   // Check magic number
-  let magic = src[0].to_uint() |
-    (src[1].to_uint() << 8) |
-    (src[2].to_uint() << 16) |
-    (src[3].to_uint() << 24)
+  let magic = src.unsafe_get(0).to_uint() |
+    (src.unsafe_get(1).to_uint() << 8) |
+    (src.unsafe_get(2).to_uint() << 16) |
+    (src.unsafe_get(3).to_uint() << 24)
   guard magic == ZSTD_MAGIC else {
     raise ZstdError::InvalidHeader("invalid magic number")
   }
   // Parse frame header descriptor
   guard src_len >= 5 else { raise ZstdError::UnexpectedEOF }
-  let fhd = src[4].to_int()
+  let fhd = src.unsafe_get(4).to_int()
   let fcs_flag = (fhd >> 6) & 0x03
   let single_segment = (fhd >> 5) & 0x01
   let has_checksum = (fhd >> 2) & 0x01
@@ -24,7 +24,7 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   let mut window_size = 0
   if single_segment == 0 {
     guard pos < src_len else { raise ZstdError::UnexpectedEOF }
-    let wd = src[pos].to_int()
+    let wd = src.unsafe_get(pos).to_int()
     pos += 1
     let exponent = (wd >> 3) + 10
     let mantissa = wd & 0x07
@@ -53,29 +53,29 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   let content_size : Int? = match fcs_size {
     0 => None
     1 => {
-      let v = src[pos].to_int()
+      let v = src.unsafe_get(pos).to_int()
       pos += 1
       Some(v)
     }
     2 => {
-      let v = src[pos].to_int() | (src[pos + 1].to_int() << 8)
+      let v = src.unsafe_get(pos).to_int() | (src.unsafe_get(pos + 1).to_int() << 8)
       pos += 2
       Some(v + 256)
     }
     4 => {
-      let v = src[pos].to_int() |
-        (src[pos + 1].to_int() << 8) |
-        (src[pos + 2].to_int() << 16) |
-        (src[pos + 3].to_int() << 24)
+      let v = src.unsafe_get(pos).to_int() |
+        (src.unsafe_get(pos + 1).to_int() << 8) |
+        (src.unsafe_get(pos + 2).to_int() << 16) |
+        (src.unsafe_get(pos + 3).to_int() << 24)
       pos += 4
       Some(v)
     }
     _ => {
       // 8 bytes — read lower 4 for now
-      let v = src[pos].to_int() |
-        (src[pos + 1].to_int() << 8) |
-        (src[pos + 2].to_int() << 16) |
-        (src[pos + 3].to_int() << 24)
+      let v = src.unsafe_get(pos).to_int() |
+        (src.unsafe_get(pos + 1).to_int() << 8) |
+        (src.unsafe_get(pos + 2).to_int() << 16) |
+        (src.unsafe_get(pos + 3).to_int() << 24)
       pos += 8
       Some(v)
     }
@@ -98,22 +98,22 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   let rep = [1, 4, 8]
   while pos < src_len {
     guard pos + 3 <= src_len else { raise ZstdError::UnexpectedEOF }
-    let bh = src[pos].to_int() |
-      (src[pos + 1].to_int() << 8) |
-      (src[pos + 2].to_int() << 16)
+    let bh = src.unsafe_get(pos).to_int() |
+      (src.unsafe_get(pos + 1).to_int() << 8) |
+      (src.unsafe_get(pos + 2).to_int() << 16)
     pos += 3
     let last_block = bh & 1
     let block_type = (bh >> 1) & 3
     let block_size = bh >> 3
     if block_type == BLOCK_TYPE_RAW {
       guard pos + block_size <= src_len else { raise ZstdError::UnexpectedEOF }
-      let block_data = Bytes::makei(block_size, fn(i) { src[pos + i] })
+      let block_data = Bytes::makei(block_size, fn(i) { src.unsafe_get(pos + i) })
       sink.write_bytes(block_data)
       xxh.update(block_data[:])
       pos += block_size
     } else if block_type == BLOCK_TYPE_RLE {
       guard pos < src_len else { raise ZstdError::UnexpectedEOF }
-      let rle_byte = src[pos]
+      let rle_byte = src.unsafe_get(pos)
       pos += 1
       let block_data = Bytes::make(block_size, rle_byte)
       sink.write_bytes(block_data)
@@ -136,10 +136,10 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   // Verify checksum
   if has_checksum == 1 {
     guard pos + 4 <= src_len else { raise ZstdError::UnexpectedEOF }
-    let expected_cs = src[pos].to_uint() |
-      (src[pos + 1].to_uint() << 8) |
-      (src[pos + 2].to_uint() << 16) |
-      (src[pos + 3].to_uint() << 24)
+    let expected_cs = src.unsafe_get(pos).to_uint() |
+      (src.unsafe_get(pos + 1).to_uint() << 8) |
+      (src.unsafe_get(pos + 2).to_uint() << 16) |
+      (src.unsafe_get(pos + 3).to_uint() << 24)
     let actual_cs = xxh.checksum64().to_uint()
     guard expected_cs == actual_cs else {
       raise ZstdError::ChecksumMismatch(expected=expected_cs, got=actual_cs)
@@ -166,7 +166,7 @@ fn decompress_block(
   guard pos < block_end else {
     raise ZstdError::CorruptData("empty compressed block")
   }
-  let lit_header = src[pos].to_int()
+  let lit_header = src.unsafe_get(pos).to_int()
   let lit_type = lit_header & 0x03
   let mut lit_data : Bytes = b""
   if lit_type == 0 {
@@ -178,21 +178,21 @@ fn decompress_block(
     } else if size_format == 1 {
       // 2 byte header
       guard pos + 1 < block_end else { raise ZstdError::UnexpectedEOF }
-      let h = lit_header | (src[pos + 1].to_int() << 8)
+      let h = lit_header | (src.unsafe_get(pos + 1).to_int() << 8)
       ((h >> 4) & 0xFFF, 2)
     } else {
       // 3 byte header
       guard pos + 2 < block_end else { raise ZstdError::UnexpectedEOF }
       let h = lit_header |
-        (src[pos + 1].to_int() << 8) |
-        (src[pos + 2].to_int() << 16)
+        (src.unsafe_get(pos + 1).to_int() << 8) |
+        (src.unsafe_get(pos + 2).to_int() << 16)
       ((h >> 4) & 0xFFFFF, 3)
     }
     pos += header_bytes
     guard pos + lit_size <= block_end else {
       raise ZstdError::CorruptData("literals extend past block")
     }
-    lit_data = Bytes::makei(lit_size, fn(i) { src[pos + i] })
+    lit_data = Bytes::makei(lit_size, fn(i) { src.unsafe_get(pos + i) })
     pos += lit_size
   } else if lit_type == 1 {
     // RLE literals
@@ -201,18 +201,18 @@ fn decompress_block(
       ((lit_header >> 3) & 0x1F, 1)
     } else if size_format == 1 {
       guard pos + 1 < block_end else { raise ZstdError::UnexpectedEOF }
-      let h = lit_header | (src[pos + 1].to_int() << 8)
+      let h = lit_header | (src.unsafe_get(pos + 1).to_int() << 8)
       ((h >> 4) & 0xFFF, 2)
     } else {
       guard pos + 2 < block_end else { raise ZstdError::UnexpectedEOF }
       let h = lit_header |
-        (src[pos + 1].to_int() << 8) |
-        (src[pos + 2].to_int() << 16)
+        (src.unsafe_get(pos + 1).to_int() << 8) |
+        (src.unsafe_get(pos + 2).to_int() << 16)
       ((h >> 4) & 0xFFFFF, 3)
     }
     pos += header_bytes
     guard pos < block_end else { raise ZstdError::UnexpectedEOF }
-    let rle_byte = src[pos]
+    let rle_byte = src.unsafe_get(pos)
     pos += 1
     lit_data = Bytes::make(lit_size, rle_byte)
   } else {
@@ -226,18 +226,18 @@ fn decompress_block(
     // No sequences, just literals
     return lit_data
   }
-  let num_sequences = if src[pos].to_int() < 128 {
-    let n = src[pos].to_int()
+  let num_sequences = if src.unsafe_get(pos).to_int() < 128 {
+    let n = src.unsafe_get(pos).to_int()
     pos += 1
     n
-  } else if src[pos].to_int() < 255 {
+  } else if src.unsafe_get(pos).to_int() < 255 {
     guard pos + 1 < block_end else { raise ZstdError::UnexpectedEOF }
-    let n = ((src[pos].to_int() - 128) << 8) + src[pos + 1].to_int()
+    let n = ((src.unsafe_get(pos).to_int() - 128) << 8) + src.unsafe_get(pos + 1).to_int()
     pos += 2
     n
   } else {
     guard pos + 2 < block_end else { raise ZstdError::UnexpectedEOF }
-    let n = src[pos + 1].to_int() + (src[pos + 2].to_int() << 8) + 0x7F00
+    let n = src.unsafe_get(pos + 1).to_int() + (src.unsafe_get(pos + 2).to_int() << 8) + 0x7F00
     pos += 3
     n
   }
@@ -246,11 +246,11 @@ fn decompress_block(
   }
   // Compression modes byte
   guard pos < block_end else { raise ZstdError::UnexpectedEOF }
-  let _modes = src[pos].to_int()
+  let _modes = src.unsafe_get(pos).to_int()
   pos += 1
   // For now: decode using predefined tables and the bitstream
   // The remaining bytes [pos..block_end) contain the sequence bitstream (backward)
-  let seq_data = Bytes::makei(block_end - pos, fn(i) { src[pos + i] })
+  let seq_data = Bytes::makei(block_end - pos, fn(i) { src.unsafe_get(pos + i) })
   // Execute sequences using a local output sink for this block
   let block_out = @output_sink.OutputSink::new(
     if num_sequences > 0 {
@@ -285,8 +285,8 @@ fn decompress_block(
     let match_len = if ml_code < 32 {
       ml_code + 3
     } else {
-      let extra = ml_extra_bits[ml_code]
-      ml_baselines[ml_code] +
+      let extra = ml_extra_bits.unsafe_get(ml_code)
+      ml_baselines.unsafe_get(ml_code) +
       (if extra > 0 { br.read_bits(extra).reinterpret_as_int() } else { 0 })
     }
     // Decode literal length
@@ -295,8 +295,8 @@ fn decompress_block(
     let lit_len = if ll_code < 16 {
       ll_code
     } else {
-      let extra = ll_extra_bits[ll_code]
-      ll_baselines[ll_code] +
+      let extra = ll_extra_bits.unsafe_get(ll_code)
+      ll_baselines.unsafe_get(ll_code) +
       (if extra > 0 { br.read_bits(extra).reinterpret_as_int() } else { 0 })
     }
     // Update FSE states (not for last sequence)
@@ -309,50 +309,50 @@ fn decompress_block(
     let offset = if offset_value > 3 {
       // New offset
       let actual = offset_value - 3
-      rep[2] = rep[1]
-      rep[1] = rep[0]
-      rep[0] = actual
+      rep.unsafe_set(2, rep.unsafe_get(1))
+      rep.unsafe_set(1, rep.unsafe_get(0))
+      rep.unsafe_set(0, actual)
       actual
     } else if offset_value == 1 {
       if lit_len == 0 {
-        let tmp = rep[0]
-        rep[0] = rep[1]
-        rep[1] = tmp
-        rep[0]
+        let tmp = rep.unsafe_get(0)
+        rep.unsafe_set(0, rep.unsafe_get(1))
+        rep.unsafe_set(1, tmp)
+        rep.unsafe_get(0)
       } else {
-        rep[0]
+        rep.unsafe_get(0)
       }
     } else if offset_value == 2 {
       if lit_len == 0 {
-        let tmp = rep[2]
-        rep[2] = rep[1]
-        rep[1] = rep[0]
-        rep[0] = tmp
-        rep[0]
+        let tmp = rep.unsafe_get(2)
+        rep.unsafe_set(2, rep.unsafe_get(1))
+        rep.unsafe_set(1, rep.unsafe_get(0))
+        rep.unsafe_set(0, tmp)
+        rep.unsafe_get(0)
       } else {
-        let tmp = rep[1]
-        rep[1] = rep[0]
-        rep[0] = tmp
-        rep[0]
+        let tmp = rep.unsafe_get(1)
+        rep.unsafe_set(1, rep.unsafe_get(0))
+        rep.unsafe_set(0, tmp)
+        rep.unsafe_get(0)
       }
       // offset_value == 3
     } else if lit_len == 0 {
-      let actual = rep[0] - 1
-      rep[2] = rep[1]
-      rep[1] = rep[0]
-      rep[0] = actual
+      let actual = rep.unsafe_get(0) - 1
+      rep.unsafe_set(2, rep.unsafe_get(1))
+      rep.unsafe_set(1, rep.unsafe_get(0))
+      rep.unsafe_set(0, actual)
       actual
     } else {
-      let tmp = rep[2]
-      rep[2] = rep[1]
-      rep[1] = rep[0]
-      rep[0] = tmp
-      rep[0]
+      let tmp = rep.unsafe_get(2)
+      rep.unsafe_set(2, rep.unsafe_get(1))
+      rep.unsafe_set(1, rep.unsafe_get(0))
+      rep.unsafe_set(0, tmp)
+      rep.unsafe_get(0)
     }
     // Copy literals
     for j in 0..<lit_len {
       if lit_pos + j < lit_data.length() {
-        block_out.write_byte(lit_data[lit_pos + j])
+        block_out.write_byte(lit_data.unsafe_get(lit_pos + j))
       }
     }
     lit_pos += lit_len
@@ -372,7 +372,7 @@ fn decompress_block(
   }
   // Copy remaining literals
   while lit_pos < lit_data.length() {
-    block_out.write_byte(lit_data[lit_pos])
+    block_out.write_byte(lit_data.unsafe_get(lit_pos))
     lit_pos += 1
   }
   block_out.to_bytes()

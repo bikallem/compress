@@ -150,8 +150,8 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
   let max_distance = MAX_BACKWARD_DISTANCE
   while pos + 3 < src_len {
     let h = brotli_hash4(src, pos)
-    let match_pos = hash_table[h]
-    hash_table[h] = pos
+    let match_pos = hash_table.unsafe_get(h)
+    hash_table.unsafe_set(h, pos)
     if match_pos >= 0 && pos - match_pos <= max_distance && pos - match_pos > 0 {
       let max_len = if src_len - pos < MAX_MATCH_LENGTH {
         src_len - pos
@@ -181,7 +181,7 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
           match_end
         }
         for i = pos + 1; i <= rehash_end; i = i + 1 {
-          hash_table[brotli_hash4(src, i)] = i
+          hash_table.unsafe_set(brotli_hash4(src, i), i)
         }
         pos += mlen
         insert_start = pos
@@ -203,10 +203,10 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
 
 ///|
 fn brotli_hash4(src : BytesView, pos : Int) -> Int {
-  let v = src[pos].to_int() |
-    (src[pos + 1].to_int() << 8) |
-    (src[pos + 2].to_int() << 16) |
-    (src[pos + 3].to_int() << 24)
+  let v = src.unsafe_get(pos).to_int() |
+    (src.unsafe_get(pos + 1).to_int() << 8) |
+    (src.unsafe_get(pos + 2).to_int() << 16) |
+    (src.unsafe_get(pos + 3).to_int() << 24)
   ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & (BROTLI_HASH_SIZE - 1)
 }
 
@@ -270,8 +270,8 @@ fn lz77_find_matches_chain(
   // Insert a position into the hash chain
   fn insert_hash(p : Int) -> Unit {
     let h = brotli_hash4(src, p) & hash_mask
-    prev[p & win_mask] = head[h]
-    head[h] = p
+    prev.unsafe_set(p & win_mask, head.unsafe_get(h))
+    head.unsafe_set(h, p)
   }
 
   // Find best match at position p using hash chains
@@ -283,7 +283,7 @@ fn lz77_find_matches_chain(
     let h = brotli_hash4(src, p) & hash_mask
     let mut best_len = 3 // minimum match is 4, so we need > 3
     let mut best_dist = 0
-    let mut candidate = head[h]
+    let mut candidate = head.unsafe_get(h)
     let mut chains = 0
     let max_len = if src_len - p < MAX_MATCH_LENGTH {
       src_len - p
@@ -303,7 +303,7 @@ fn lz77_find_matches_chain(
           break
         }
       }
-      candidate = prev[candidate & win_mask]
+      candidate = prev.unsafe_get(candidate & win_mask)
       chains += 1
     }
     if best_dist > 0 {
@@ -434,13 +434,13 @@ fn lz77_find_matches_chain(
 ///|
 fn encode_insert_len(insert_len : Int) -> (Int, Int, Int) {
   let code = bsearch_baselines(_insert_baselines, insert_len)
-  (code, insert_len - _insert_baselines[code], _insert_extra_bits[code])
+  (code, insert_len - _insert_baselines.unsafe_get(code), _insert_extra_bits.unsafe_get(code))
 }
 
 ///|
 fn encode_copy_len(copy_len : Int) -> (Int, Int, Int) {
   let code = bsearch_baselines(_copy_baselines, copy_len)
-  (code, copy_len - _copy_baselines[code], _copy_extra_bits[code])
+  (code, copy_len - _copy_baselines.unsafe_get(code), _copy_extra_bits.unsafe_get(code))
 }
 
 ///|
@@ -450,7 +450,7 @@ fn bsearch_baselines(baselines : FixedArray[Int], value : Int) -> Int {
   let mut hi = baselines.length() - 1
   while lo < hi {
     let mid = (lo + hi + 1) >> 1
-    if baselines[mid] <= value {
+    if baselines.unsafe_get(mid) <= value {
       lo = mid
     } else {
       hi = mid - 1
@@ -585,7 +585,7 @@ fn brotli_code_lengths(
   if active == 1 {
     for i, f in freqs {
       if f > 0 {
-        bl[i] = 1
+        bl.unsafe_set(i, 1)
         break
       }
     }
@@ -602,36 +602,36 @@ fn brotli_code_lengths(
     for i, f in freqs {
       if f > 0 {
         let clamped = if f < count_limit { count_limit } else { f }
-        sorted[idx] = (clamped, i)
+        sorted.unsafe_set(idx, (clamped, i))
         idx += 1
       }
     }
     for i in 1..<active {
-      let key = sorted[i]
+      let key = sorted.unsafe_get(i)
       let mut j = i - 1
-      while j >= 0 && sorted[j].0 > key.0 {
-        sorted[j + 1] = sorted[j]
+      while j >= 0 && sorted.unsafe_get(j).0 > key.0 {
+        sorted.unsafe_set(j + 1, sorted.unsafe_get(j))
         j -= 1
       }
-      sorted[j + 1] = key
+      sorted.unsafe_set(j + 1, key)
     }
     let leaf_freq = FixedArray::make(active, 0)
     let leaf_sym = FixedArray::make(active, 0)
     for i, entry in sorted {
-      leaf_freq[i] = entry.0
-      leaf_sym[i] = entry.1
+      leaf_freq.unsafe_set(i, entry.0)
+      leaf_sym.unsafe_set(i, entry.1)
     }
     let total = 2 * active - 1
     let parent = FixedArray::make(total, -1)
     let node_freq = FixedArray::make(total, 0)
     for i, f in leaf_freq {
-      node_freq[i] = f
+      node_freq.unsafe_set(i, f)
     }
     let mut lp = 0
     let mut ip = active
     let mut nn = active
     for _merge_step in 0..<(active - 1) {
-      let left = if lp < active && (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
+      let left = if lp < active && (ip >= nn || leaf_freq.unsafe_get(lp) <= node_freq.unsafe_get(ip)) {
         let r = lp
         lp += 1
         r
@@ -640,7 +640,7 @@ fn brotli_code_lengths(
         ip += 1
         r
       }
-      let right = if lp < active && (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
+      let right = if lp < active && (ip >= nn || leaf_freq.unsafe_get(lp) <= node_freq.unsafe_get(ip)) {
         let r = lp
         lp += 1
         r
@@ -649,24 +649,24 @@ fn brotli_code_lengths(
         ip += 1
         r
       }
-      node_freq[nn] = node_freq[left] + node_freq[right]
-      parent[left] = nn
-      parent[right] = nn
+      node_freq.unsafe_set(nn, node_freq.unsafe_get(left) + node_freq.unsafe_get(right))
+      parent.unsafe_set(left, nn)
+      parent.unsafe_set(right, nn)
       nn += 1
     }
     let depths = FixedArray::make(total, 0)
     for i = total - 1; i >= 0; i = i - 1 {
-      if parent[i] >= 0 {
-        depths[i] = depths[parent[i]] + 1
+      if parent.unsafe_get(i) >= 0 {
+        depths.unsafe_set(i, depths.unsafe_get(parent.unsafe_get(i)) + 1)
       }
     }
     for i in 0..<n {
-      bl[i] = 0
+      bl.unsafe_set(i, 0)
     }
     let mut fits = true
     for i, sym in leaf_sym {
-      bl[sym] = depths[i]
-      if depths[i] > max_bits {
+      bl.unsafe_set(sym, depths.unsafe_get(i))
+      if depths.unsafe_get(i) > max_bits {
         fits = false
       }
     }
@@ -695,20 +695,20 @@ fn brotli_build_codes(lengths : FixedArray[Int]) -> FixedArray[Int] {
   let bl_count = FixedArray::make(max_len + 1, 0)
   for _, l in lengths {
     if l > 0 {
-      bl_count[l] += 1
+      bl_count.unsafe_set(l, bl_count.unsafe_get(l) + 1)
     }
   }
   let next_code = FixedArray::make(max_len + 1, 0)
   for bits = 1, code = 0; bits <= max_len; {
-    let c = (code + bl_count[bits - 1]) << 1
-    next_code[bits] = c
+    let c = (code + bl_count.unsafe_get(bits - 1)) << 1
+    next_code.unsafe_set(bits, c)
     continue bits + 1, c
   }
   for sym, len in lengths {
     if len > 0 {
-      let c = next_code[len]
-      next_code[len] += 1
-      codes[sym] = (brotli_reverse(c, len) << 8) | len
+      let c = next_code.unsafe_get(len)
+      next_code.unsafe_set(len, next_code.unsafe_get(len) + 1)
+      codes.unsafe_set(sym, (brotli_reverse(c, len) << 8) | len)
     }
   }
   codes
@@ -718,13 +718,13 @@ fn brotli_build_codes(lengths : FixedArray[Int]) -> FixedArray[Int] {
 /// In-place insertion sort for a FixedArray[Int] (ascending).
 fn sort_ints(arr : FixedArray[Int], len : Int) -> Unit {
   for i in 1..<len {
-    let key = arr[i]
+    let key = arr.unsafe_get(i)
     let mut j = i - 1
-    while j >= 0 && arr[j] > key {
-      arr[j + 1] = arr[j]
+    while j >= 0 && arr.unsafe_get(j) > key {
+      arr.unsafe_set(j + 1, arr.unsafe_get(j))
       j -= 1
     }
-    arr[j + 1] = key
+    arr.unsafe_set(j + 1, key)
   }
 }
 
@@ -750,12 +750,12 @@ fn rebuild_simple_codes(
 ) -> Unit {
   let syms = FixedArray::make(nsym, 0)
   for i in 0..<nsym {
-    syms[i] = syms_arr[i]
+    syms.unsafe_set(i, syms_arr.unsafe_get(i))
   }
   sort_ints(syms, nsym)
   // Clear all existing codes
   for i in 0..<codes.length() {
-    codes[i] = 0
+    codes.unsafe_set(i, 0)
   }
   // Assign codes based on simple prefix tree structure
   match nsym {
@@ -765,23 +765,23 @@ fn rebuild_simple_codes(
       // 2 symbols: each 1 bit
       // sym[0] → code 0, depth 1
       // sym[1] → code 1, depth 1
-      codes[syms[0]] = (0 << 8) | 1
-      codes[syms[1]] = (1 << 8) | 1
+      codes.unsafe_set(syms.unsafe_get(0), (0 << 8) | 1)
+      codes.unsafe_set(syms.unsafe_get(1), (1 << 8) | 1)
     }
     3 => {
       // 3 symbols:
       // sym[0] → depth 1, code 0
       // sym[1] → depth 2, code 10 (reversed: 01)
       // sym[2] → depth 2, code 11 (reversed: 11)
-      codes[syms[0]] = (0 << 8) | 1 // 0, 1 bit
-      codes[syms[1]] = (1 << 8) | 2 // 01, 2 bits (reversed 10)
-      codes[syms[2]] = (3 << 8) | 2 // 11, 2 bits (reversed 11)
+      codes.unsafe_set(syms.unsafe_get(0), (0 << 8) | 1) // 0, 1 bit
+      codes.unsafe_set(syms.unsafe_get(1), (1 << 8) | 2) // 01, 2 bits (reversed 10)
+      codes.unsafe_set(syms.unsafe_get(2), (3 << 8) | 2) // 11, 2 bits (reversed 11)
     }
     _ => {
       // 4 symbols: depends on tree_select
       let tree_select = if code_lengths.length() > 0 &&
-        syms[0] < code_lengths.length() &&
-        code_lengths[syms[0]] == 1 {
+        syms.unsafe_get(0) < code_lengths.length() &&
+        code_lengths.unsafe_get(syms.unsafe_get(0)) == 1 {
         1
       } else {
         0
@@ -789,16 +789,16 @@ fn rebuild_simple_codes(
       if tree_select == 0 {
         // All depth 2. Code assignment must match decoder's table layout:
         //   table[0]=syms[0], table[1]=syms[2], table[2]=syms[1], table[3]=syms[3]
-        codes[syms[0]] = (0 << 8) | 2 // code 00
-        codes[syms[1]] = (2 << 8) | 2 // code 10 (write_bits(2,2) → index 2)
-        codes[syms[2]] = (1 << 8) | 2 // code 01 (write_bits(1,2) → index 1)
-        codes[syms[3]] = (3 << 8) | 2 // code 11
+        codes.unsafe_set(syms.unsafe_get(0), (0 << 8) | 2) // code 00
+        codes.unsafe_set(syms.unsafe_get(1), (2 << 8) | 2) // code 10 (write_bits(2,2) → index 2)
+        codes.unsafe_set(syms.unsafe_get(2), (1 << 8) | 2) // code 01 (write_bits(1,2) → index 1)
+        codes.unsafe_set(syms.unsafe_get(3), (3 << 8) | 2) // code 11
       } else {
         // sym[0] depth 1, sym[1] depth 2, sym[2] depth 3, sym[3] depth 3
-        codes[syms[0]] = (0 << 8) | 1 // 0, 1 bit
-        codes[syms[1]] = (1 << 8) | 2 // 01, 2 bits (reversed 10)
-        codes[syms[2]] = (3 << 8) | 3 // 011, 3 bits (reversed 110)
-        codes[syms[3]] = (7 << 8) | 3 // 111, 3 bits (reversed 111)
+        codes.unsafe_set(syms.unsafe_get(0), (0 << 8) | 1) // 0, 1 bit
+        codes.unsafe_set(syms.unsafe_get(1), (1 << 8) | 2) // 01, 2 bits (reversed 10)
+        codes.unsafe_set(syms.unsafe_get(2), (3 << 8) | 3) // 011, 3 bits (reversed 110)
+        codes.unsafe_set(syms.unsafe_get(3), (7 << 8) | 3) // 111, 3 bits (reversed 111)
       }
     }
   }
@@ -806,7 +806,7 @@ fn rebuild_simple_codes(
 
 ///|
 fn write_symbol(bw : BitWriter, codes : FixedArray[Int], sym : Int) -> Unit {
-  let entry = codes[sym]
+  let entry = codes.unsafe_get(sym)
   let len = entry & 0xFF
   let rev_code = entry >> 8
   bw.write_bits(rev_code, len)
@@ -831,24 +831,24 @@ fn sym_bits(alphabet_size : Int) -> Int {
 ///|
 let brotli_cl_order : FixedArray[Int] = {
   let a = FixedArray::make(18, 0)
-  a[0] = 1
-  a[1] = 2
-  a[2] = 3
-  a[3] = 4
-  a[4] = 0
-  a[5] = 5
-  a[6] = 17
-  a[7] = 6
-  a[8] = 16
-  a[9] = 7
-  a[10] = 8
-  a[11] = 9
-  a[12] = 10
-  a[13] = 11
-  a[14] = 12
-  a[15] = 13
-  a[16] = 14
-  a[17] = 15
+  a.unsafe_set(0, 1)
+  a.unsafe_set(1, 2)
+  a.unsafe_set(2, 3)
+  a.unsafe_set(3, 4)
+  a.unsafe_set(4, 0)
+  a.unsafe_set(5, 5)
+  a.unsafe_set(6, 17)
+  a.unsafe_set(7, 6)
+  a.unsafe_set(8, 16)
+  a.unsafe_set(9, 7)
+  a.unsafe_set(10, 8)
+  a.unsafe_set(11, 9)
+  a.unsafe_set(12, 10)
+  a.unsafe_set(13, 11)
+  a.unsafe_set(14, 12)
+  a.unsafe_set(15, 13)
+  a.unsafe_set(16, 14)
+  a.unsafe_set(17, 15)
   a
 }
 
@@ -877,7 +877,7 @@ fn encode_prefix_code(
   let mut nsym = 0
   let syms : Array[Int] = []
   for i in 0..<num_symbols {
-    if i < code_lengths.length() && code_lengths[i] > 0 {
+    if i < code_lengths.length() && code_lengths.unsafe_get(i) > 0 {
       nsym += 1
       syms.push(i)
     }
@@ -909,29 +909,29 @@ fn write_simple_prefix(
 ) -> Unit {
   let syms = FixedArray::make(nsym, 0)
   for i in 0..<nsym {
-    syms[i] = syms_arr[i]
+    syms.unsafe_set(i, syms_arr.unsafe_get(i))
   }
   sort_ints(syms, nsym)
   bw.write_bits(1, 2) // simple prefix code
   bw.write_bits(nsym - 1, 2)
   let sb = sym_bits(alphabet_size)
   match nsym {
-    1 => bw.write_bits(syms[0], sb)
+    1 => bw.write_bits(syms.unsafe_get(0), sb)
     2 => {
-      bw.write_bits(syms[0], sb)
-      bw.write_bits(syms[1], sb)
+      bw.write_bits(syms.unsafe_get(0), sb)
+      bw.write_bits(syms.unsafe_get(1), sb)
     }
     3 => {
-      bw.write_bits(syms[0], sb)
-      bw.write_bits(syms[1], sb)
-      bw.write_bits(syms[2], sb)
+      bw.write_bits(syms.unsafe_get(0), sb)
+      bw.write_bits(syms.unsafe_get(1), sb)
+      bw.write_bits(syms.unsafe_get(2), sb)
     }
     _ => {
-      bw.write_bits(syms[0], sb)
-      bw.write_bits(syms[1], sb)
-      bw.write_bits(syms[2], sb)
-      bw.write_bits(syms[3], sb)
-      let tree_select = if code_lengths[syms[0]] == 1 { 1 } else { 0 }
+      bw.write_bits(syms.unsafe_get(0), sb)
+      bw.write_bits(syms.unsafe_get(1), sb)
+      bw.write_bits(syms.unsafe_get(2), sb)
+      bw.write_bits(syms.unsafe_get(3), sb)
+      let tree_select = if code_lengths.unsafe_get(syms.unsafe_get(0)) == 1 { 1 } else { 0 }
       bw.write_bits(tree_select, 1)
     }
   }
@@ -1013,7 +1013,7 @@ fn write_complex_prefix(
   // beyond the last non-zero entry.
   let mut rle_end = 0
   for idx in 0..<num_symbols {
-    if idx < code_lengths.length() && code_lengths[idx] > 0 {
+    if idx < code_lengths.length() && code_lengths.unsafe_get(idx) > 0 {
       rle_end = idx + 1
     }
   }
@@ -1022,12 +1022,12 @@ fn write_complex_prefix(
   let cl_extra : Array[Int] = []
   let mut i = 0
   while i < rle_end {
-    let cl = if i < code_lengths.length() { code_lengths[i] } else { 0 }
+    let cl = if i < code_lengths.length() { code_lengths.unsafe_get(i) } else { 0 }
     if cl == 0 {
       let mut run = 1
       while i + run < rle_end {
         let next = if i + run < code_lengths.length() {
-          code_lengths[i + run]
+          code_lengths.unsafe_get(i + run)
         } else {
           0
         }
@@ -1050,7 +1050,7 @@ fn write_complex_prefix(
       let mut run = 0
       while i + run < rle_end {
         let next = if i + run < code_lengths.length() {
-          code_lengths[i + run]
+          code_lengths.unsafe_get(i + run)
         } else {
           0
         }
@@ -1076,17 +1076,17 @@ fn write_complex_prefix(
   }
   let cl_freqs = FixedArray::make(18, 0)
   for _, s in cl_syms {
-    cl_freqs[s] += 1
+    cl_freqs.unsafe_set(s, cl_freqs.unsafe_get(s) + 1)
   }
   let cl_lens = brotli_code_lengths(cl_freqs, 5)
   // Determine HSKIP: skip leading zero CL-CL entries to save bits.
   // HSKIP=2 skips positions 0-1, HSKIP=3 skips positions 0-2.
   // (HSKIP=1 means simple prefix code, not used here.)
-  let hskip = if cl_lens[brotli_cl_order[0]] == 0 &&
-    cl_lens[brotli_cl_order[1]] == 0 &&
-    cl_lens[brotli_cl_order[2]] == 0 {
+  let hskip = if cl_lens.unsafe_get(brotli_cl_order.unsafe_get(0)) == 0 &&
+    cl_lens.unsafe_get(brotli_cl_order.unsafe_get(1)) == 0 &&
+    cl_lens.unsafe_get(brotli_cl_order.unsafe_get(2)) == 0 {
     3
-  } else if cl_lens[brotli_cl_order[0]] == 0 && cl_lens[brotli_cl_order[1]] == 0 {
+  } else if cl_lens.unsafe_get(brotli_cl_order.unsafe_get(0)) == 0 && cl_lens.unsafe_get(brotli_cl_order.unsafe_get(1)) == 0 {
     2
   } else {
     0
@@ -1098,8 +1098,8 @@ fn write_complex_prefix(
     if num_codes >= 2 && space == 0 {
       break
     }
-    let sym = brotli_cl_order[j]
-    let cl = cl_lens[sym]
+    let sym = brotli_cl_order.unsafe_get(j)
+    let cl = cl_lens.unsafe_get(sym)
     write_cl_length(bw, cl)
     if cl > 0 {
       space -= 32 >> cl
@@ -1111,20 +1111,20 @@ fn write_complex_prefix(
   // Match this by setting depth to 0 before building codes for RLE output.
   if num_codes == 1 {
     for j in 0..<18 {
-      if cl_lens[j] > 0 {
-        cl_lens[j] = 0
+      if cl_lens.unsafe_get(j) > 0 {
+        cl_lens.unsafe_set(j, 0)
         break
       }
     }
   }
   let cl_codes = brotli_build_codes(cl_lens)
   for j in 0..<cl_syms.length() {
-    let sym = cl_syms[j]
+    let sym = cl_syms.unsafe_get(j)
     write_symbol(bw, cl_codes, sym)
     if sym == 16 {
-      bw.write_bits(cl_extra[j], 2)
+      bw.write_bits(cl_extra.unsafe_get(j), 2)
     } else if sym == 17 {
-      bw.write_bits(cl_extra[j], 3)
+      bw.write_bits(cl_extra.unsafe_get(j), 3)
     }
   }
 }
@@ -1181,14 +1181,14 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
         if iac > max_iac {
           max_iac = iac
         }
-        cmd_iac[ci] = iac
-        cmd_iev[ci] = iev
-        cmd_ieb[ci] = ieb
-        cmd_cev[ci] = cev
-        cmd_ceb[ci] = ceb
-        cmd_dc[ci] = -1
-        cmd_dev[ci] = 0
-        cmd_deb[ci] = 0
+        cmd_iac.unsafe_set(ci, iac)
+        cmd_iev.unsafe_set(ci, iev)
+        cmd_ieb.unsafe_set(ci, ieb)
+        cmd_cev.unsafe_set(ci, cev)
+        cmd_ceb.unsafe_set(ci, ceb)
+        cmd_dc.unsafe_set(ci, -1)
+        cmd_dev.unsafe_set(ci, 0)
+        cmd_deb.unsafe_set(ci, 0)
       } else {
         let (dc, dev, deb) = encode_distance_val(cmd.distance)
         if iac > max_iac {
@@ -1197,14 +1197,14 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
         if dc > max_dist {
           max_dist = dc
         }
-        cmd_iac[ci] = iac
-        cmd_iev[ci] = iev
-        cmd_ieb[ci] = ieb
-        cmd_cev[ci] = cev
-        cmd_ceb[ci] = ceb
-        cmd_dc[ci] = dc
-        cmd_dev[ci] = dev
-        cmd_deb[ci] = deb
+        cmd_iac.unsafe_set(ci, iac)
+        cmd_iev.unsafe_set(ci, iev)
+        cmd_ieb.unsafe_set(ci, ieb)
+        cmd_cev.unsafe_set(ci, cev)
+        cmd_ceb.unsafe_set(ci, ceb)
+        cmd_dc.unsafe_set(ci, dc)
+        cmd_dev.unsafe_set(ci, dev)
+        cmd_deb.unsafe_set(ci, deb)
         last_distance = cmd.distance
       }
       ci += 1
@@ -1216,20 +1216,20 @@ fn precompute_commands(cmds : Array[BrotliCmd]) -> EncodedCommands {
         if iac > max_iac {
           max_iac = iac
         }
-        cmd_iac[ci] = iac
-        cmd_iev[ci] = iev
-        cmd_ieb[ci] = ieb
-        cmd_dc[ci] = -1
+        cmd_iac.unsafe_set(ci, iac)
+        cmd_iev.unsafe_set(ci, iev)
+        cmd_ieb.unsafe_set(ci, ieb)
+        cmd_dc.unsafe_set(ci, -1)
         ci += 1
       } else {
         let iac = insert_copy_combined(ic, cc)
         if iac > max_iac {
           max_iac = iac
         }
-        cmd_iac[ci] = iac
-        cmd_iev[ci] = iev
-        cmd_ieb[ci] = ieb
-        cmd_dc[ci] = -1 // No distance for insert-only commands
+        cmd_iac.unsafe_set(ci, iac)
+        cmd_iev.unsafe_set(ci, iev)
+        cmd_ieb.unsafe_set(ci, ieb)
+        cmd_dc.unsafe_set(ci, -1) // No distance for insert-only commands
         ci += 1
       }
     }
@@ -1298,12 +1298,12 @@ fn encode_metablock_into(
   let dist_freqs = FixedArray::make(dist_size, 0)
 
   for i in 0..<ec.count {
-    iac_freqs[ec.iac[i]] += 1
+    iac_freqs.unsafe_set(ec.iac.unsafe_get(i), iac_freqs.unsafe_get(ec.iac.unsafe_get(i)) + 1)
   }
   for i in 0..<ec.count {
-    let dc = ec.dc[i]
+    let dc = ec.dc.unsafe_get(i)
     if dc >= 0 && dc < dist_size {
-      dist_freqs[dc] += 1
+      dist_freqs.unsafe_set(dc, dist_freqs.unsafe_get(dc) + 1)
     }
   }
 
@@ -1341,7 +1341,7 @@ fn encode_metablock_into(
   // Write prefix codes: NTREESL literal trees, then IAC, then distance
   let lit_codes_arr : Array[FixedArray[Int]] = []
   for t in 0..<ntreesl {
-    let lengths = brotli_code_lengths(tree_freqs[t], 15)
+    let lengths = brotli_code_lengths(tree_freqs.unsafe_get(t), 15)
     let codes = brotli_build_codes(lengths)
     encode_prefix_code(bw, lengths, 256, codes)
     lit_codes_arr.push(codes)
@@ -1361,36 +1361,36 @@ fn encode_metablock_into(
     if ci >= ec.count {
       break
     }
-    let iac_entry = iac_codes[ec.iac[ci]]
+    let iac_entry = iac_codes.unsafe_get(ec.iac.unsafe_get(ci))
     bw.write_bits(iac_entry >> 8, iac_entry & 0xFF)
-    if ec.ieb[ci] > 0 {
-      bw.write_bits(ec.iev[ci], ec.ieb[ci])
+    if ec.ieb.unsafe_get(ci) > 0 {
+      bw.write_bits(ec.iev.unsafe_get(ci), ec.ieb.unsafe_get(ci))
     }
-    if ec.ceb[ci] > 0 {
-      bw.write_bits(ec.cev[ci], ec.ceb[ci])
+    if ec.ceb.unsafe_get(ci) > 0 {
+      bw.write_bits(ec.cev.unsafe_get(ci), ec.ceb.unsafe_get(ci))
     }
     if ntreesl > 1 {
       for j in 0..<cmd.insert_len {
         let pos = cmd.insert_pos + j
-        let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
+        let p1 = if pos > 0 { src.unsafe_get(pos - 1).to_int() } else { 0 }
         let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
-        let tree_idx = cmap[ctx]
-        let codes = lit_codes_arr[tree_idx]
-        let entry = codes[src[pos].to_int()]
+        let tree_idx = cmap.unsafe_get(ctx)
+        let codes = lit_codes_arr.unsafe_get(tree_idx)
+        let entry = codes.unsafe_get(src.unsafe_get(pos).to_int())
         bw.write_bits(entry >> 8, entry & 0xFF)
       }
     } else {
-      let codes = lit_codes_arr[0]
+      let codes = lit_codes_arr.unsafe_get(0)
       for j in 0..<cmd.insert_len {
-        let entry = codes[src[cmd.insert_pos + j].to_int()]
+        let entry = codes.unsafe_get(src.unsafe_get(cmd.insert_pos + j).to_int())
         bw.write_bits(entry >> 8, entry & 0xFF)
       }
     }
-    if ec.dc[ci] >= 0 {
-      let dist_entry = dist_codes[ec.dc[ci]]
+    if ec.dc.unsafe_get(ci) >= 0 {
+      let dist_entry = dist_codes.unsafe_get(ec.dc.unsafe_get(ci))
       bw.write_bits(dist_entry >> 8, dist_entry & 0xFF)
-      if ec.deb[ci] > 0 {
-        bw.write_bits(ec.dev[ci], ec.deb[ci])
+      if ec.deb.unsafe_get(ci) > 0 {
+        bw.write_bits(ec.dev.unsafe_get(ci), ec.deb.unsafe_get(ci))
       }
     }
     ci += 1
@@ -1408,7 +1408,8 @@ fn build_context_model(
     let lit_freqs = FixedArray::make(256, 0)
     for cmd in cmds {
       for j in 0..<cmd.insert_len {
-        lit_freqs[src[cmd.insert_pos + j].to_int()] += 1
+        let _lf_idx = src.unsafe_get(cmd.insert_pos + j).to_int()
+        lit_freqs.unsafe_set(_lf_idx, lit_freqs.unsafe_get(_lf_idx) + 1)
       }
     }
     return (1, FixedArray::make(64, 0), [lit_freqs])
@@ -1420,14 +1421,16 @@ fn build_context_model(
     FixedArray::make(0, 0),
   )
   for i in 0..<64 {
-    ctx_hists[i] = FixedArray::make(256, 0)
+    ctx_hists.unsafe_set(i, FixedArray::make(256, 0))
   }
   for cmd in cmds {
     for j in 0..<cmd.insert_len {
       let pos = cmd.insert_pos + j
-      let p1 = if pos > 0 { src[pos - 1].to_int() } else { 0 }
+      let p1 = if pos > 0 { src.unsafe_get(pos - 1).to_int() } else { 0 }
       let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
-      ctx_hists[ctx][src[pos].to_int()] += 1
+      let _ch_idx = src.unsafe_get(pos).to_int()
+      let _ch = ctx_hists.unsafe_get(ctx)
+      _ch.unsafe_set(_ch_idx, _ch.unsafe_get(_ch_idx) + 1)
     }
   }
 
@@ -1443,12 +1446,12 @@ fn build_context_model(
   let mut has_tree0 = false
   let mut has_tree1 = false
   for ctx in 0..<64 {
-    let tree_idx = cmap[ctx]
-    let hist = ctx_hists[ctx]
-    let dst = tree_freqs[tree_idx]
+    let tree_idx = cmap.unsafe_get(ctx)
+    let hist = ctx_hists.unsafe_get(ctx)
+    let dst = tree_freqs.unsafe_get(tree_idx)
     for sym in 0..<256 {
-      if hist[sym] > 0 {
-        dst[sym] += hist[sym]
+      if hist.unsafe_get(sym) > 0 {
+        dst.unsafe_set(sym, dst.unsafe_get(sym) + hist.unsafe_get(sym))
         if tree_idx == 0 {
           has_tree0 = true
         } else {
@@ -1461,10 +1464,10 @@ fn build_context_model(
   if not(has_tree0 && has_tree1) {
     // All contexts map to one tree; fall back to single tree
     // Merge both tree_freqs into one
-    let lit_freqs = tree_freqs[0]
-    let other = tree_freqs[1]
+    let lit_freqs = tree_freqs.unsafe_get(0)
+    let other = tree_freqs.unsafe_get(1)
     for sym in 0..<256 {
-      lit_freqs[sym] += other[sym]
+      lit_freqs.unsafe_set(sym, lit_freqs.unsafe_get(sym) + other.unsafe_get(sym))
     }
     return (1, FixedArray::make(64, 0), [lit_freqs])
   }
@@ -1483,14 +1486,14 @@ fn cluster_contexts(
   // cluster_id[i] = which cluster context i belongs to
   let cluster_id = FixedArray::make(n, 0)
   for i in 0..<n {
-    cluster_id[i] = i
+    cluster_id.unsafe_set(i, i)
   }
   // Merged histogram per cluster
   let merged : Array[FixedArray[Int]] = []
   for i in 0..<n {
     let h = FixedArray::make(256, 0)
     for j in 0..<256 {
-      h[j] = ctx_hists[i][j]
+      h.unsafe_set(j, ctx_hists.unsafe_get(i).unsafe_get(j))
     }
     merged.push(h)
   }
@@ -1499,9 +1502,9 @@ fn cluster_contexts(
   for i in 0..<n {
     let mut total = 0
     for j in 0..<256 {
-      total += ctx_hists[i][j]
+      total += ctx_hists.unsafe_get(i).unsafe_get(j)
     }
-    counts[i] = total
+    counts.unsafe_set(i, total)
   }
   // alive[i] = true if cluster i still exists
   let alive = FixedArray::make(n, true)
@@ -1517,14 +1520,14 @@ fn cluster_contexts(
     // For efficiency, find the two smallest clusters to merge
     // (simplification: merge the two clusters with smallest combined count)
     for i in 0..<n {
-      if not(alive[i]) {
+      if not(alive.unsafe_get(i)) {
         continue
       }
       for j in (i + 1)..<n {
-        if not(alive[j]) {
+        if not(alive.unsafe_get(j)) {
           continue
         }
-        let cost = counts[i] + counts[j]
+        let cost = counts.unsafe_get(i) + counts.unsafe_get(j)
         if cost < best_cost {
           best_cost = cost
           best_a = i
@@ -1537,14 +1540,14 @@ fn cluster_contexts(
     }
     // Merge cluster best_b into best_a
     for j in 0..<256 {
-      merged[best_a][j] += merged[best_b][j]
+      merged.unsafe_get(best_a)[j] += merged.unsafe_get(best_b)[j]
     }
-    counts[best_a] += counts[best_b]
-    alive[best_b] = false
+    counts.unsafe_set(best_a, counts.unsafe_get(best_a) + counts.unsafe_get(best_b))
+    alive.unsafe_set(best_b, false)
     // Reassign all contexts from best_b to best_a
     for i in 0..<n {
-      if cluster_id[i] == best_b {
-        cluster_id[i] = best_a
+      if cluster_id.unsafe_get(i) == best_b {
+        cluster_id.unsafe_set(i, best_a)
       }
     }
     num_alive -= 1
@@ -1553,14 +1556,14 @@ fn cluster_contexts(
   let remap = FixedArray::make(n, 0)
   let mut next_id = 0
   for i in 0..<n {
-    if alive[i] {
-      remap[i] = next_id
+    if alive.unsafe_get(i) {
+      remap.unsafe_set(i, next_id)
       next_id += 1
     }
   }
   let result = FixedArray::make(n, 0)
   for i in 0..<n {
-    result[i] = remap[cluster_id[i]]
+    result.unsafe_set(i, remap.unsafe_get(cluster_id.unsafe_get(i)))
   }
   result
 }
@@ -1586,7 +1589,7 @@ fn encode_context_map(bw : BitWriter, cmap : FixedArray[Int]) -> Unit {
   // Build histogram and prefix code for context map entries
   let cm_freqs = FixedArray::make(num_trees, 0)
   for _, v in cmap {
-    cm_freqs[v] += 1
+    cm_freqs.unsafe_set(v, cm_freqs.unsafe_get(v) + 1)
   }
   let cm_lengths = brotli_code_lengths(cm_freqs, 15)
   let cm_codes = brotli_build_codes(cm_lengths)
@@ -1594,7 +1597,7 @@ fn encode_context_map(bw : BitWriter, cmap : FixedArray[Int]) -> Unit {
 
   // Write the context map entries
   for i in 0..<map_size {
-    write_symbol(bw, cm_codes, cmap[i])
+    write_symbol(bw, cm_codes, cmap.unsafe_get(i))
   }
 
   // IMTF = 0 (no inverse move-to-front)

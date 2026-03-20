@@ -78,119 +78,119 @@ const NUM_LITERAL_CONTEXTS : Int = 64
 /// For simplicity, we define the baselines and extra bits for insert lengths.
 let _insert_baselines : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
-  a[0] = 0
-  a[1] = 1
-  a[2] = 2
-  a[3] = 3
-  a[4] = 4
-  a[5] = 5
-  a[6] = 6
-  a[7] = 8
-  a[8] = 10
-  a[9] = 14
-  a[10] = 18
-  a[11] = 26
-  a[12] = 34
-  a[13] = 50
-  a[14] = 66
-  a[15] = 98
-  a[16] = 130
-  a[17] = 194
-  a[18] = 322
-  a[19] = 578
-  a[20] = 1090
-  a[21] = 2114
-  a[22] = 6210
-  a[23] = 22594
+  a.unsafe_set(0, 0)
+  a.unsafe_set(1, 1)
+  a.unsafe_set(2, 2)
+  a.unsafe_set(3, 3)
+  a.unsafe_set(4, 4)
+  a.unsafe_set(5, 5)
+  a.unsafe_set(6, 6)
+  a.unsafe_set(7, 8)
+  a.unsafe_set(8, 10)
+  a.unsafe_set(9, 14)
+  a.unsafe_set(10, 18)
+  a.unsafe_set(11, 26)
+  a.unsafe_set(12, 34)
+  a.unsafe_set(13, 50)
+  a.unsafe_set(14, 66)
+  a.unsafe_set(15, 98)
+  a.unsafe_set(16, 130)
+  a.unsafe_set(17, 194)
+  a.unsafe_set(18, 322)
+  a.unsafe_set(19, 578)
+  a.unsafe_set(20, 1090)
+  a.unsafe_set(21, 2114)
+  a.unsafe_set(22, 6210)
+  a.unsafe_set(23, 22594)
   a
 }
 
 ///|
 let _insert_extra_bits : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
-  a[0] = 0
-  a[1] = 0
-  a[2] = 0
-  a[3] = 0
-  a[4] = 0
-  a[5] = 0
-  a[6] = 1
-  a[7] = 1
-  a[8] = 2
-  a[9] = 2
-  a[10] = 3
-  a[11] = 3
-  a[12] = 4
-  a[13] = 4
-  a[14] = 5
-  a[15] = 5
-  a[16] = 6
-  a[17] = 7
-  a[18] = 8
-  a[19] = 9
-  a[20] = 10
-  a[21] = 12
-  a[22] = 14
-  a[23] = 24
+  a.unsafe_set(0, 0)
+  a.unsafe_set(1, 0)
+  a.unsafe_set(2, 0)
+  a.unsafe_set(3, 0)
+  a.unsafe_set(4, 0)
+  a.unsafe_set(5, 0)
+  a.unsafe_set(6, 1)
+  a.unsafe_set(7, 1)
+  a.unsafe_set(8, 2)
+  a.unsafe_set(9, 2)
+  a.unsafe_set(10, 3)
+  a.unsafe_set(11, 3)
+  a.unsafe_set(12, 4)
+  a.unsafe_set(13, 4)
+  a.unsafe_set(14, 5)
+  a.unsafe_set(15, 5)
+  a.unsafe_set(16, 6)
+  a.unsafe_set(17, 7)
+  a.unsafe_set(18, 8)
+  a.unsafe_set(19, 9)
+  a.unsafe_set(20, 10)
+  a.unsafe_set(21, 12)
+  a.unsafe_set(22, 14)
+  a.unsafe_set(23, 24)
   a
 }
 
 ///|
 let _copy_baselines : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
-  a[0] = 2
-  a[1] = 3
-  a[2] = 4
-  a[3] = 5
-  a[4] = 6
-  a[5] = 7
-  a[6] = 8
-  a[7] = 9
-  a[8] = 10
-  a[9] = 12
-  a[10] = 14
-  a[11] = 18
-  a[12] = 22
-  a[13] = 30
-  a[14] = 38
-  a[15] = 54
-  a[16] = 70
-  a[17] = 102
-  a[18] = 134
-  a[19] = 198
-  a[20] = 326
-  a[21] = 582
-  a[22] = 1094
-  a[23] = 2118
+  a.unsafe_set(0, 2)
+  a.unsafe_set(1, 3)
+  a.unsafe_set(2, 4)
+  a.unsafe_set(3, 5)
+  a.unsafe_set(4, 6)
+  a.unsafe_set(5, 7)
+  a.unsafe_set(6, 8)
+  a.unsafe_set(7, 9)
+  a.unsafe_set(8, 10)
+  a.unsafe_set(9, 12)
+  a.unsafe_set(10, 14)
+  a.unsafe_set(11, 18)
+  a.unsafe_set(12, 22)
+  a.unsafe_set(13, 30)
+  a.unsafe_set(14, 38)
+  a.unsafe_set(15, 54)
+  a.unsafe_set(16, 70)
+  a.unsafe_set(17, 102)
+  a.unsafe_set(18, 134)
+  a.unsafe_set(19, 198)
+  a.unsafe_set(20, 326)
+  a.unsafe_set(21, 582)
+  a.unsafe_set(22, 1094)
+  a.unsafe_set(23, 2118)
   a
 }
 
 ///|
 let _copy_extra_bits : FixedArray[Int] = {
   let a = FixedArray::make(24, 0)
-  a[0] = 0
-  a[1] = 0
-  a[2] = 0
-  a[3] = 0
-  a[4] = 0
-  a[5] = 0
-  a[6] = 0
-  a[7] = 0
-  a[8] = 1
-  a[9] = 1
-  a[10] = 2
-  a[11] = 2
-  a[12] = 3
-  a[13] = 3
-  a[14] = 4
-  a[15] = 4
-  a[16] = 5
-  a[17] = 5
-  a[18] = 6
-  a[19] = 7
-  a[20] = 8
-  a[21] = 9
-  a[22] = 10
-  a[23] = 24
+  a.unsafe_set(0, 0)
+  a.unsafe_set(1, 0)
+  a.unsafe_set(2, 0)
+  a.unsafe_set(3, 0)
+  a.unsafe_set(4, 0)
+  a.unsafe_set(5, 0)
+  a.unsafe_set(6, 0)
+  a.unsafe_set(7, 0)
+  a.unsafe_set(8, 1)
+  a.unsafe_set(9, 1)
+  a.unsafe_set(10, 2)
+  a.unsafe_set(11, 2)
+  a.unsafe_set(12, 3)
+  a.unsafe_set(13, 3)
+  a.unsafe_set(14, 4)
+  a.unsafe_set(15, 4)
+  a.unsafe_set(16, 5)
+  a.unsafe_set(17, 5)
+  a.unsafe_set(18, 6)
+  a.unsafe_set(19, 7)
+  a.unsafe_set(20, 8)
+  a.unsafe_set(21, 9)
+  a.unsafe_set(22, 10)
+  a.unsafe_set(23, 24)
   a
 }

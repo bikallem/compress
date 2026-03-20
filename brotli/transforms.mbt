@@ -275,14 +275,14 @@ fn transform_dictionary_word(
   transform_idx : Int,
 ) -> Int {
   let mut idx = dst_offset
-  let prefix_id = transforms_data[transform_idx * 3]
-  let ttype = transforms_data[transform_idx * 3 + 1]
-  let suffix_id = transforms_data[transform_idx * 3 + 2]
+  let prefix_id = transforms_data.unsafe_get(transform_idx * 3)
+  let ttype = transforms_data.unsafe_get(transform_idx * 3 + 1)
+  let suffix_id = transforms_data.unsafe_get(transform_idx * 3 + 2)
   // Write prefix
-  let prefix_offset = prefix_suffix_map[prefix_id]
-  let prefix_len = prefix_suffix_data[prefix_offset].to_int()
+  let prefix_offset = prefix_suffix_map.unsafe_get(prefix_id)
+  let prefix_len = prefix_suffix_data.unsafe_get(prefix_offset).to_int()
   for i in 0..<prefix_len {
-    dst[idx] = prefix_suffix_data[prefix_offset + 1 + i]
+    dst.unsafe_set(idx, prefix_suffix_data.unsafe_get(prefix_offset + 1 + i))
     idx += 1
   }
   // Determine effective word after omit transforms
@@ -305,7 +305,7 @@ fn transform_dictionary_word(
   // Copy word bytes
   let word_start_in_dst = idx
   for i in 0..<w_len {
-    dst[idx] = word[w_off + i]
+    dst.unsafe_set(idx, word.unsafe_get(w_off + i))
     idx += 1
   }
   // Apply uppercase transforms in-place
@@ -320,10 +320,10 @@ fn transform_dictionary_word(
     }
   }
   // Write suffix
-  let suffix_offset = prefix_suffix_map[suffix_id]
-  let suffix_len = prefix_suffix_data[suffix_offset].to_int()
+  let suffix_offset = prefix_suffix_map.unsafe_get(suffix_id)
+  let suffix_len = prefix_suffix_data.unsafe_get(suffix_offset).to_int()
   for i in 0..<suffix_len {
-    dst[idx] = prefix_suffix_data[suffix_offset + 1 + i]
+    dst.unsafe_set(idx, prefix_suffix_data.unsafe_get(suffix_offset + 1 + i))
     idx += 1
   }
   idx - dst_offset
@@ -333,20 +333,20 @@ fn transform_dictionary_word(
 /// Uppercase a single character in place (simplified UTF-8 model).
 /// Returns the number of bytes consumed.
 fn to_upper_case(buf : FixedArray[Byte], pos : Int) -> Int {
-  let b = buf[pos].to_int()
+  let b = buf.unsafe_get(pos).to_int()
   if b < 0xC0 {
     if b >= 0x61 && b <= 0x7A {
       // a-z -> A-Z
-      buf[pos] = (b ^ 32).to_byte()
+      buf.unsafe_set(pos, (b ^ 32).to_byte())
     }
     return 1
   }
   if b < 0xE0 {
     // 2-byte UTF-8: flip bit 5 of second byte
-    buf[pos + 1] = (buf[pos + 1].to_int() ^ 32).to_byte()
+    buf.unsafe_set(pos + 1, (buf.unsafe_get(pos + 1).to_int() ^ 32).to_byte())
     return 2
   }
   // 3-byte UTF-8: flip bits 0,2 of third byte
-  buf[pos + 2] = (buf[pos + 2].to_int() ^ 5).to_byte()
+  buf.unsafe_set(pos + 2, (buf.unsafe_get(pos + 2).to_int() ^ 5).to_byte())
   3
 }

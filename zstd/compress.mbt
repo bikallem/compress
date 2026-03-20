@@ -13,17 +13,17 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   xxh.update(src)
   if src_len == 0 {
     let block_header = 1
-    out[pos] = (block_header & 0xFF).to_byte()
-    out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-    out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+    out.unsafe_set(pos, (block_header & 0xFF).to_byte())
+    out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
+    out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
     pos += 3
   } else if is_all_same(src) {
     let block_header = 1 | (BLOCK_TYPE_RLE << 1) | (src_len << 3)
-    out[pos] = (block_header & 0xFF).to_byte()
-    out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-    out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+    out.unsafe_set(pos, (block_header & 0xFF).to_byte())
+    out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
+    out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
     pos += 3
-    out[pos] = src[0]
+    out.unsafe_set(pos, src.unsafe_get(0))
     pos += 1
   } else {
     // Find sequences across the entire input
@@ -41,12 +41,12 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         let is_last = block_end == src_len
         let last_flag = if is_last { 1 } else { 0 }
         let block_header = last_flag | (BLOCK_TYPE_RAW << 1) | (block_len << 3)
-        out[pos] = (block_header & 0xFF).to_byte()
-        out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-        out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+        out.unsafe_set(pos, (block_header & 0xFF).to_byte())
+        out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
+        out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
         pos += 3
         for i in 0..<block_len {
-          out[pos + i] = src[src_pos + i]
+          out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
         }
         pos += block_len
         src_pos = block_end
@@ -56,7 +56,7 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
       // First, split any sequence whose decoded size exceeds MAX_BLOCK_SIZE.
       let split_seqs : Array[ZstdSequence] = []
       for i in 0..<sequences.length() {
-        let seq = sequences[i]
+        let seq = sequences.unsafe_get(i)
         let seq_decoded = seq.lit_len + seq.match_len
         if seq_decoded <= MAX_BLOCK_SIZE {
           split_seqs.push(seq)
@@ -101,7 +101,7 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         let block_lit_start = lit_offset
         let mut block_lit_count = 0
         while seq_idx < num_seq {
-          let seq = split_seqs[seq_idx]
+          let seq = split_seqs.unsafe_get(seq_idx)
           let seq_decoded = seq.lit_len + seq.match_len
           if block_decoded + seq_decoded > MAX_BLOCK_SIZE &&
             block_seqs.length() > 0 {
@@ -133,12 +133,12 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
           let block_header = last_flag |
             (BLOCK_TYPE_COMPRESSED << 1) |
             (comp_size << 3)
-          out[pos] = (block_header & 0xFF).to_byte()
-          out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-          out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+          out.unsafe_set(pos, (block_header & 0xFF).to_byte())
+          out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
+          out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
           pos += 3
           for i in 0..<comp_size {
-            out[pos + i] = comp_buf[i]
+            out.unsafe_set(pos + i, comp_buf.unsafe_get(i))
           }
           pos += comp_size
         } else {
@@ -147,12 +147,12 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
           let block_header = last_flag |
             (BLOCK_TYPE_RAW << 1) |
             (block_content_size << 3)
-          out[pos] = (block_header & 0xFF).to_byte()
-          out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
-          out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
+          out.unsafe_set(pos, (block_header & 0xFF).to_byte())
+          out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
+          out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
           pos += 3
           for i in 0..<block_content_size {
-            out[pos + i] = src[raw_start + i]
+            out.unsafe_set(pos + i, src.unsafe_get(raw_start + i))
           }
           pos += block_content_size
         }
@@ -164,10 +164,10 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   }
   let cs = xxh.checksum64()
   let cs32 = cs.to_uint()
-  out[pos] = (cs32 & 0xFFU).to_byte()
-  out[pos + 1] = ((cs32 >> 8) & 0xFFU).to_byte()
-  out[pos + 2] = ((cs32 >> 16) & 0xFFU).to_byte()
-  out[pos + 3] = ((cs32 >> 24) & 0xFFU).to_byte()
+  out.unsafe_set(pos, (cs32 & 0xFFU).to_byte())
+  out.unsafe_set(pos + 1, ((cs32 >> 8) & 0xFFU).to_byte())
+  out.unsafe_set(pos + 2, ((cs32 >> 16) & 0xFFU).to_byte())
+  out.unsafe_set(pos + 3, ((cs32 >> 24) & 0xFFU).to_byte())
   pos += 4
   let result = @blit.make_uninit(pos)
   @blit.blit_fixed_array(result, 0, out, 0, pos)
@@ -179,9 +179,9 @@ fn is_all_same(data : BytesView) -> Bool {
   if data.length() <= 1 {
     return true
   }
-  let first = data[0]
+  let first = data.unsafe_get(0)
   for i in 1..<data.length() {
-    if data[i] != first {
+    if data.unsafe_get(i) != first {
       return false
     }
   }
@@ -196,10 +196,10 @@ fn write_zstd_frame_header(
 ) -> Int {
   let mut pos = pos_
   let start = pos
-  dst[pos] = (ZSTD_MAGIC & 0xFFU).to_byte()
-  dst[pos + 1] = ((ZSTD_MAGIC >> 8) & 0xFFU).to_byte()
-  dst[pos + 2] = ((ZSTD_MAGIC >> 16) & 0xFFU).to_byte()
-  dst[pos + 3] = ((ZSTD_MAGIC >> 24) & 0xFFU).to_byte()
+  dst.unsafe_set(pos, (ZSTD_MAGIC & 0xFFU).to_byte())
+  dst.unsafe_set(pos + 1, ((ZSTD_MAGIC >> 8) & 0xFFU).to_byte())
+  dst.unsafe_set(pos + 2, ((ZSTD_MAGIC >> 16) & 0xFFU).to_byte())
+  dst.unsafe_set(pos + 3, ((ZSTD_MAGIC >> 24) & 0xFFU).to_byte())
   pos += 4
   let (fcs_field, fcs_bytes) = if content_size == 0 {
     (0, 0)
@@ -212,24 +212,24 @@ fn write_zstd_frame_header(
   }
   let single_segment = 1
   let fhd = (fcs_field << 6) | (single_segment << 5) | 0x04
-  dst[pos] = fhd.to_byte()
+  dst.unsafe_set(pos, fhd.to_byte())
   pos += 1
   if fcs_bytes == 0 {
-    dst[pos] = content_size.to_byte()
+    dst.unsafe_set(pos, content_size.to_byte())
     pos += 1
   } else if fcs_bytes == 1 {
-    dst[pos] = content_size.to_byte()
+    dst.unsafe_set(pos, content_size.to_byte())
     pos += 1
   } else if fcs_bytes == 2 {
     let val = content_size - 256
-    dst[pos] = (val & 0xFF).to_byte()
-    dst[pos + 1] = ((val >> 8) & 0xFF).to_byte()
+    dst.unsafe_set(pos, (val & 0xFF).to_byte())
+    dst.unsafe_set(pos + 1, ((val >> 8) & 0xFF).to_byte())
     pos += 2
   } else {
-    dst[pos] = (content_size & 0xFF).to_byte()
-    dst[pos + 1] = ((content_size >> 8) & 0xFF).to_byte()
-    dst[pos + 2] = ((content_size >> 16) & 0xFF).to_byte()
-    dst[pos + 3] = ((content_size >> 24) & 0xFF).to_byte()
+    dst.unsafe_set(pos, (content_size & 0xFF).to_byte())
+    dst.unsafe_set(pos + 1, ((content_size >> 8) & 0xFF).to_byte())
+    dst.unsafe_set(pos + 2, ((content_size >> 16) & 0xFF).to_byte())
+    dst.unsafe_set(pos + 3, ((content_size >> 24) & 0xFF).to_byte())
     pos += 4
   }
   pos - start
@@ -248,10 +248,10 @@ const ZSTD_MIN_MATCH : Int = 4
 
 ///|
 fn zstd_hash(data : BytesView, pos : Int) -> Int {
-  let u = data[pos].to_int() |
-    (data[pos + 1].to_int() << 8) |
-    (data[pos + 2].to_int() << 16) |
-    (data[pos + 3].to_int() << 24)
+  let u = data.unsafe_get(pos).to_int() |
+    (data.unsafe_get(pos + 1).to_int() << 8) |
+    (data.unsafe_get(pos + 2).to_int() << 16) |
+    (data.unsafe_get(pos + 3).to_int() << 24)
   let h = u.reinterpret_as_uint() * 0x9E3779B1_U
   (h >> (32 - ZSTD_HASH_BITS)).reinterpret_as_int()
 }
@@ -274,7 +274,7 @@ fn find_sequences(
   let mut lit_pos = 0
   if src_len < ZSTD_MIN_MATCH + 5 {
     for i in 0..<src_len {
-      literals[lit_pos] = src[i]
+      literals.unsafe_set(lit_pos, src.unsafe_get(i))
       lit_pos += 1
     }
     return (sequences, literals, lit_pos)
@@ -287,22 +287,22 @@ fn find_sequences(
   let mf_limit = src_len - ZSTD_MIN_MATCH
   while ip < mf_limit {
     let hash = zstd_hash(src, ip)
-    let ref_pos = hash_table[hash]
-    hash_table[hash] = ip
+    let ref_pos = hash_table.unsafe_get(hash)
+    hash_table.unsafe_set(hash, ip)
     // Try repeat offsets first
     let mut best_offset = 0
     let mut best_match_len = 0
     let mut best_rep_idx = -1
     for r in 0..<3 {
-      let rep_off = rep[r]
+      let rep_off = rep.unsafe_get(r)
       if ip >= rep_off &&
         ip + ZSTD_MIN_MATCH <= src_len &&
-        src[ip - rep_off] == src[ip] &&
-        src[ip - rep_off + 1] == src[ip + 1] &&
-        src[ip - rep_off + 2] == src[ip + 2] &&
-        src[ip - rep_off + 3] == src[ip + 3] {
+        src.unsafe_get(ip - rep_off) == src.unsafe_get(ip) &&
+        src.unsafe_get(ip - rep_off + 1) == src.unsafe_get(ip + 1) &&
+        src.unsafe_get(ip - rep_off + 2) == src.unsafe_get(ip + 2) &&
+        src.unsafe_get(ip - rep_off + 3) == src.unsafe_get(ip + 3) {
         let mut mlen = ZSTD_MIN_MATCH
-        while ip + mlen < src_len && src[ip - rep_off + mlen] == src[ip + mlen] {
+        while ip + mlen < src_len && src.unsafe_get(ip - rep_off + mlen) == src.unsafe_get(ip + mlen) {
           mlen += 1
         }
         if mlen > best_match_len {
@@ -315,13 +315,13 @@ fn find_sequences(
     // Try hash match
     if ref_pos >= 0 &&
       ip - ref_pos <= 65535 &&
-      src[ref_pos] == src[ip] &&
-      src[ref_pos + 1] == src[ip + 1] &&
-      src[ref_pos + 2] == src[ip + 2] &&
-      src[ref_pos + 3] == src[ip + 3] {
+      src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
+      src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
+      src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
+      src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
       let mut match_len = ZSTD_MIN_MATCH
       while ip + match_len < src_len &&
-            src[ref_pos + match_len] == src[ip + match_len] {
+            src.unsafe_get(ref_pos + match_len) == src.unsafe_get(ip + match_len) {
         match_len += 1
       }
       let hash_offset = ip - ref_pos
@@ -337,7 +337,7 @@ fn find_sequences(
     if best_match_len >= ZSTD_MIN_MATCH {
       let lit_len = ip - anchor
       for i in 0..<lit_len {
-        literals[lit_pos] = src[anchor + i]
+        literals.unsafe_set(lit_pos, src.unsafe_get(anchor + i))
         lit_pos += 1
       }
       // Determine offset_value for zstd encoding, accounting for lit_len==0 special cases.
@@ -352,10 +352,10 @@ fn find_sequences(
           // Want rep[0], but val 1 means rep[1] when lit_len==0
           // Need to check if rep[0] == rep[1]; if so val 1 works
           // Otherwise emit as new offset to be safe
-          if rep[0] == rep[1] {
+          if rep.unsafe_get(0) == rep.unsafe_get(1) {
             1
           } else {
-            rep[0] + 3 // emit as new offset
+            rep.unsafe_get(0) + 3 // emit as new offset
           }
         } else if best_rep_idx == 1 {
           1 // val 1 with lit_len==0 => rep[1], which is what we want
@@ -369,7 +369,7 @@ fn find_sequences(
       let actual_off = if offset_value > 3 {
         offset_value - 3
       } else {
-        rep[0] // after rep update, rep[0] is the actual offset used
+        rep.unsafe_get(0) // after rep update, rep[0] is the actual offset used
       }
       sequences.push({
         lit_len,
@@ -380,38 +380,38 @@ fn find_sequences(
       // Update repeat offsets same way as decoder
       if offset_value > 3 {
         let actual = offset_value - 3
-        rep[2] = rep[1]
-        rep[1] = rep[0]
-        rep[0] = actual
+        rep.unsafe_set(2, rep.unsafe_get(1))
+        rep.unsafe_set(1, rep.unsafe_get(0))
+        rep.unsafe_set(0, actual)
       } else if offset_value == 1 {
         if lit_len == 0 {
-          let tmp = rep[0]
-          rep[0] = rep[1]
-          rep[1] = tmp
+          let tmp = rep.unsafe_get(0)
+          rep.unsafe_set(0, rep.unsafe_get(1))
+          rep.unsafe_set(1, tmp)
         }
         // else rep[0] stays
       } else if offset_value == 2 {
         if lit_len == 0 {
-          let tmp = rep[2]
-          rep[2] = rep[1]
-          rep[1] = rep[0]
-          rep[0] = tmp
+          let tmp = rep.unsafe_get(2)
+          rep.unsafe_set(2, rep.unsafe_get(1))
+          rep.unsafe_set(1, rep.unsafe_get(0))
+          rep.unsafe_set(0, tmp)
         } else {
-          let tmp = rep[1]
-          rep[1] = rep[0]
-          rep[0] = tmp
+          let tmp = rep.unsafe_get(1)
+          rep.unsafe_set(1, rep.unsafe_get(0))
+          rep.unsafe_set(0, tmp)
         }
         // offset_value == 3
       } else if lit_len == 0 {
-        let actual = rep[0] - 1
-        rep[2] = rep[1]
-        rep[1] = rep[0]
-        rep[0] = actual
+        let actual = rep.unsafe_get(0) - 1
+        rep.unsafe_set(2, rep.unsafe_get(1))
+        rep.unsafe_set(1, rep.unsafe_get(0))
+        rep.unsafe_set(0, actual)
       } else {
-        let tmp = rep[2]
-        rep[2] = rep[1]
-        rep[1] = rep[0]
-        rep[0] = tmp
+        let tmp = rep.unsafe_get(2)
+        rep.unsafe_set(2, rep.unsafe_get(1))
+        rep.unsafe_set(1, rep.unsafe_get(0))
+        rep.unsafe_set(0, tmp)
       }
       // Update hash table for positions within the match for better future matches
       let hash_end = if ip + best_match_len < mf_limit {
@@ -421,7 +421,7 @@ fn find_sequences(
       }
       for j = ip + 1; j < hash_end; j = j + 1 {
         let h = zstd_hash(src, j)
-        hash_table[h] = j
+        hash_table.unsafe_set(h, j)
       }
       ip += best_match_len
       anchor = ip
@@ -431,7 +431,7 @@ fn find_sequences(
   }
   let trailing = src_len - anchor
   for i in 0..<trailing {
-    literals[lit_pos] = src[anchor + i]
+    literals.unsafe_set(lit_pos, src.unsafe_get(anchor + i))
     lit_pos += 1
   }
   (sequences, literals, lit_pos)
@@ -466,8 +466,8 @@ fn build_fse_ctable(
   let decode_symbols = FixedArray::make(table_size, 0)
   let mut high_threshold = table_size - 1
   for sym in 0..<=max_symbol {
-    if norm_counts[sym] == -1 {
-      decode_symbols[high_threshold] = sym
+    if norm_counts.unsafe_get(sym) == -1 {
+      decode_symbols.unsafe_set(high_threshold, sym)
       high_threshold -= 1
     }
   }
@@ -475,12 +475,12 @@ fn build_fse_ctable(
   let mask = table_size - 1
   let mut pos = 0
   for sym in 0..<=max_symbol {
-    let count = norm_counts[sym]
+    let count = norm_counts.unsafe_get(sym)
     if count <= 0 {
       continue
     }
     for _ in 0..<count {
-      decode_symbols[pos] = sym
+      decode_symbols.unsafe_set(pos, sym)
       pos = (pos + step) & mask
       while pos > high_threshold {
         pos = (pos + step) & mask
@@ -494,23 +494,23 @@ fn build_fse_ctable(
   })
   let mut total = 0
   for sym in 0..<=max_symbol {
-    let count = norm_counts[sym]
+    let count = norm_counts.unsafe_get(sym)
     if count == 0 {
       continue
     }
     if count == -1 || count == 1 {
-      symbol_tt[sym] = {
+      symbol_tt.unsafe_set(sym, {
         delta_nb_bits: (table_log << 16) - (1 << table_log),
         delta_find_state: total - 1,
-      }
+      })
       total += 1
     } else {
       let max_bits_out = table_log - (highest_bit(count - 1) - 1)
       let min_state_plus = count << max_bits_out
-      symbol_tt[sym] = {
+      symbol_tt.unsafe_set(sym, {
         delta_nb_bits: (max_bits_out << 16) - min_state_plus,
         delta_find_state: total - count,
-      }
+      })
       total += count
     }
   }
@@ -520,23 +520,24 @@ fn build_fse_ctable(
   // Compute cumulative positions
   let mut c = 0
   for sym in 0..<=max_symbol {
-    let count = norm_counts[sym]
+    let count = norm_counts.unsafe_get(sym)
     if count == 0 {
-      cum[sym] = c
+      cum.unsafe_set(sym, c)
       continue
     }
-    cum[sym] = c
+    cum.unsafe_set(sym, c)
     c += if count == -1 { 1 } else { count }
   }
   // Fill state table
   let sym_pos = FixedArray::make(max_symbol + 1, 0)
   for sym in 0..<=max_symbol {
-    sym_pos[sym] = cum[sym]
+    sym_pos.unsafe_set(sym, cum.unsafe_get(sym))
   }
   for i in 0..<table_size {
-    let sym = decode_symbols[i]
-    state_table[sym_pos[sym]] = table_size + i
-    sym_pos[sym] += 1
+    let sym = decode_symbols.unsafe_get(i)
+    let sp = sym_pos.unsafe_get(sym)
+    state_table.unsafe_set(sp, table_size + i)
+    sym_pos.unsafe_set(sym, sp + 1)
   }
   { state_table, symbol_tt }
 }
@@ -549,20 +550,20 @@ fn fse_encode_symbol(
   state : Int,
   symbol : Int,
 ) -> Int {
-  let stt = ct.symbol_tt[symbol]
+  let stt = ct.symbol_tt.unsafe_get(symbol)
   let nb_bits_out = (state + stt.delta_nb_bits) >> 16
   bw.add_bits(state, nb_bits_out)
   bw.flush()
-  ct.state_table[(state >> nb_bits_out) + stt.delta_find_state]
+  ct.state_table.unsafe_get((state >> nb_bits_out) + stt.delta_find_state)
 }
 
 ///|
 /// Initialize FSE state for a given symbol (FSE_initCState2).
 fn fse_init_state(ct : FseCTable, symbol : Int) -> Int {
-  let stt = ct.symbol_tt[symbol]
+  let stt = ct.symbol_tt.unsafe_get(symbol)
   let nb_bits_out = (stt.delta_nb_bits + (1 << 15)) >> 16
   let val = (nb_bits_out << 16) - stt.delta_nb_bits
-  ct.state_table[(val >> nb_bits_out) + stt.delta_find_state]
+  ct.state_table.unsafe_get((val >> nb_bits_out) + stt.delta_find_state)
 }
 
 ///|
@@ -608,7 +609,7 @@ fn FseBitWriter::add_bits(self : FseBitWriter, value : Int, nb : Int) -> Unit {
 ///|
 fn FseBitWriter::flush(self : FseBitWriter) -> Unit {
   while self.bit_pos >= 8 {
-    self.buf[self.byte_pos] = (self.bit_buf & 0xFFUL).to_uint().to_byte()
+    self.buf.unsafe_set(self.byte_pos, (self.bit_buf & 0xFFUL).to_uint().to_byte())
     self.byte_pos += 1
     self.bit_buf = self.bit_buf >> 8
     self.bit_pos -= 8
@@ -620,7 +621,7 @@ fn FseBitWriter::flush(self : FseBitWriter) -> Unit {
 fn FseBitWriter::close(self : FseBitWriter) -> Unit {
   self.add_bits(1, 1)
   if self.bit_pos > 0 {
-    self.buf[self.byte_pos] = (self.bit_buf & 0xFFUL).to_uint().to_byte()
+    self.buf.unsafe_set(self.byte_pos, (self.bit_buf & 0xFFUL).to_uint().to_byte())
     self.byte_pos += 1
   }
 }
@@ -635,7 +636,7 @@ fn FseBitWriter::copy_to(
 ) -> Int {
   let n = self.byte_pos
   for i in 0..<n {
-    dst[dst_pos + i] = self.buf[i]
+    dst.unsafe_set(dst_pos + i, self.buf.unsafe_get(i))
   }
   n
 }
@@ -657,8 +658,8 @@ fn get_ll_code(ll : Int) -> (Int, Int, Int) {
     return (ll, 0, 0)
   }
   for code = 35; code >= 16; code = code - 1 {
-    if ll >= ll_baselines[code] {
-      return (code, ll_extra_bits[code], ll - ll_baselines[code])
+    if ll >= ll_baselines.unsafe_get(code) {
+      return (code, ll_extra_bits.unsafe_get(code), ll - ll_baselines.unsafe_get(code))
     }
   }
   (0, 0, 0)
@@ -670,8 +671,8 @@ fn get_ml_code(ml : Int) -> (Int, Int, Int) {
     return (ml - 3, 0, 0)
   }
   for code = 52; code >= 32; code = code - 1 {
-    if ml >= ml_baselines[code] {
-      return (code, ml_extra_bits[code], ml - ml_baselines[code])
+    if ml >= ml_baselines.unsafe_get(code) {
+      return (code, ml_extra_bits.unsafe_get(code), ml - ml_baselines.unsafe_get(code))
     }
   }
   (0, 0, 0)
@@ -694,42 +695,42 @@ fn compress_block_from_sequences(
   let mut pos = 0
   // Write literals section header (raw literals, type=0)
   if lit_count < 32 {
-    dst[pos] = ((lit_count << 3) | 0).to_byte()
+    dst.unsafe_set(pos, ((lit_count << 3) | 0).to_byte())
     pos += 1
   } else if lit_count < 4096 {
     let header = (lit_count << 4) | (1 << 2) | 0
-    dst[pos] = (header & 0xFF).to_byte()
-    dst[pos + 1] = ((header >> 8) & 0xFF).to_byte()
+    dst.unsafe_set(pos, (header & 0xFF).to_byte())
+    dst.unsafe_set(pos + 1, ((header >> 8) & 0xFF).to_byte())
     pos += 2
   } else {
     let header = (lit_count << 4) | (3 << 2) | 0
-    dst[pos] = (header & 0xFF).to_byte()
-    dst[pos + 1] = ((header >> 8) & 0xFF).to_byte()
-    dst[pos + 2] = ((header >> 16) & 0xFF).to_byte()
+    dst.unsafe_set(pos, (header & 0xFF).to_byte())
+    dst.unsafe_set(pos + 1, ((header >> 8) & 0xFF).to_byte())
+    dst.unsafe_set(pos + 2, ((header >> 16) & 0xFF).to_byte())
     pos += 3
   }
   for i in 0..<lit_count {
-    dst[pos + i] = literals[lit_start + i]
+    dst.unsafe_set(pos + i, literals.unsafe_get(lit_start + i))
   }
   pos += lit_count
   // Write sequences section header
   let num_seq = sequences.length()
   if num_seq < 128 {
-    dst[pos] = num_seq.to_byte()
+    dst.unsafe_set(pos, num_seq.to_byte())
     pos += 1
   } else if num_seq < 0x7F00 {
-    dst[pos] = ((num_seq >> 8) + 128).to_byte()
-    dst[pos + 1] = (num_seq & 0xFF).to_byte()
+    dst.unsafe_set(pos, ((num_seq >> 8) + 128).to_byte())
+    dst.unsafe_set(pos + 1, (num_seq & 0xFF).to_byte())
     pos += 2
   } else {
-    dst[pos] = b'\xFF'
+    dst.unsafe_set(pos, b'\xFF')
     let val = num_seq - 0x7F00
-    dst[pos + 1] = (val & 0xFF).to_byte()
-    dst[pos + 2] = ((val >> 8) & 0xFF).to_byte()
+    dst.unsafe_set(pos + 1, (val & 0xFF).to_byte())
+    dst.unsafe_set(pos + 2, ((val >> 8) & 0xFF).to_byte())
     pos += 3
   }
   // Compression modes: all predefined (0)
-  dst[pos] = b'\x00'
+  dst.unsafe_set(pos, b'\x00')
   pos += 1
   // Encode sequences
   let stream_size = encode_sequences(sequences, dst, pos)
@@ -757,7 +758,7 @@ fn encode_sequences(
   let ml_ct = build_fse_ctable(ml_default_norm, 52, ML_DEFAULT_ACCURACY)
   let bw = FseBitWriter::new(num_seq * 20 + 64)
   // Get codes for the last sequence
-  let last = sequences[num_seq - 1]
+  let last = sequences.unsafe_get(num_seq - 1)
   let (ll_code_last, ll_xb_last, ll_xv_last) = get_ll_code(last.lit_len)
   let (of_code_last, _of_xb_last, of_xv_last) = get_offset_code(last.offset)
   let (ml_code_last, ml_xb_last, ml_xv_last) = get_ml_code(last.match_len)
@@ -781,7 +782,7 @@ fn encode_sequences(
   //   5. BIT_addBits(ML extra)
   //   6. BIT_addBits(OF extra)
   for n = num_seq - 2; n >= 0; n = n - 1 {
-    let seq = sequences[n]
+    let seq = sequences.unsafe_get(n)
     let (of_code, _of_xb, of_xv) = get_offset_code(seq.offset)
     let (ml_code, ml_xb, ml_xv) = get_ml_code(seq.match_len)
     let (ll_code, ll_xb, ll_xv) = get_ll_code(seq.lit_len)

@@ -19,14 +19,14 @@ fn BitReader::refill(self : BitReader) -> Unit {
     // Fast path: load 8 bytes at once into an empty buffer
     let d = self.data
     let p = self.byte_pos
-    self.bits = d[p].to_uint().to_uint64() |
-      (d[p + 1].to_uint().to_uint64() << 8) |
-      (d[p + 2].to_uint().to_uint64() << 16) |
-      (d[p + 3].to_uint().to_uint64() << 24) |
-      (d[p + 4].to_uint().to_uint64() << 32) |
-      (d[p + 5].to_uint().to_uint64() << 40) |
-      (d[p + 6].to_uint().to_uint64() << 48) |
-      (d[p + 7].to_uint().to_uint64() << 56)
+    self.bits = d.unsafe_get(p).to_uint().to_uint64() |
+      (d.unsafe_get(p + 1).to_uint().to_uint64() << 8) |
+      (d.unsafe_get(p + 2).to_uint().to_uint64() << 16) |
+      (d.unsafe_get(p + 3).to_uint().to_uint64() << 24) |
+      (d.unsafe_get(p + 4).to_uint().to_uint64() << 32) |
+      (d.unsafe_get(p + 5).to_uint().to_uint64() << 40) |
+      (d.unsafe_get(p + 6).to_uint().to_uint64() << 48) |
+      (d.unsafe_get(p + 7).to_uint().to_uint64() << 56)
     self.byte_pos += 8
     self.n_bits = 64
   } else if remaining >= 7 && self.n_bits <= 8 {
@@ -35,19 +35,19 @@ fn BitReader::refill(self : BitReader) -> Unit {
     let p = self.byte_pos
     let n = self.n_bits
     self.bits = self.bits |
-      (d[p].to_uint().to_uint64() << n) |
-      (d[p + 1].to_uint().to_uint64() << (n + 8)) |
-      (d[p + 2].to_uint().to_uint64() << (n + 16)) |
-      (d[p + 3].to_uint().to_uint64() << (n + 24)) |
-      (d[p + 4].to_uint().to_uint64() << (n + 32)) |
-      (d[p + 5].to_uint().to_uint64() << (n + 40)) |
-      (d[p + 6].to_uint().to_uint64() << (n + 48))
+      (d.unsafe_get(p).to_uint().to_uint64() << n) |
+      (d.unsafe_get(p + 1).to_uint().to_uint64() << (n + 8)) |
+      (d.unsafe_get(p + 2).to_uint().to_uint64() << (n + 16)) |
+      (d.unsafe_get(p + 3).to_uint().to_uint64() << (n + 24)) |
+      (d.unsafe_get(p + 4).to_uint().to_uint64() << (n + 32)) |
+      (d.unsafe_get(p + 5).to_uint().to_uint64() << (n + 40)) |
+      (d.unsafe_get(p + 6).to_uint().to_uint64() << (n + 48))
     self.byte_pos += 7
     self.n_bits += 56
   } else {
     while self.n_bits <= 56 && self.byte_pos < self.data.length() {
       self.bits = self.bits |
-        (self.data[self.byte_pos].to_uint().to_uint64() << self.n_bits)
+        (self.data.unsafe_get(self.byte_pos).to_uint().to_uint64() << self.n_bits)
       self.byte_pos += 1
       self.n_bits += 8
     }
@@ -157,7 +157,7 @@ fn BitWriter::flush(self : BitWriter) -> Unit {
   // At most 8 bytes can be flushed (64 bits / 8)
   self.ensure_capacity(8)
   while self.n_bits >= 8 {
-    self.buf[self.pos] = (self.bits & 0xFFUL).to_uint().to_byte()
+    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_uint().to_byte())
     self.pos += 1
     self.bits = self.bits >> 8
     self.n_bits -= 8
@@ -168,7 +168,7 @@ fn BitWriter::flush(self : BitWriter) -> Unit {
 fn BitWriter::flush_final(self : BitWriter) -> Unit {
   if self.n_bits > 0 {
     self.ensure_capacity(1)
-    self.buf[self.pos] = (self.bits & 0xFFUL).to_uint().to_byte()
+    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_uint().to_byte())
     self.pos += 1
     self.bits = 0UL
     self.n_bits = 0

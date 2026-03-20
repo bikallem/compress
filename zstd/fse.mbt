@@ -23,8 +23,8 @@ fn FseTable::build(
   let mut high_threshold = table_size - 1
   // First pass: place symbols with count == -1 (less than 1)
   for sym in 0..<=max_symbol {
-    if norm_counts[sym] == -1 {
-      symbols[high_threshold] = sym.to_byte()
+    if norm_counts.unsafe_get(sym) == -1 {
+      symbols.unsafe_set(high_threshold, sym.to_byte())
       high_threshold -= 1
     }
   }
@@ -33,12 +33,12 @@ fn FseTable::build(
   let mask = table_size - 1
   let mut pos = 0
   for sym in 0..<=max_symbol {
-    let count = norm_counts[sym]
+    let count = norm_counts.unsafe_get(sym)
     if count <= 0 {
       continue
     }
     for _ in 0..<count {
-      symbols[pos] = sym.to_byte()
+      symbols.unsafe_set(pos, sym.to_byte())
       pos = (pos + step) & mask
       while pos > high_threshold {
         pos = (pos + step) & mask
@@ -51,16 +51,16 @@ fn FseTable::build(
   // based on this per-symbol counter.
   let symbol_next = FixedArray::make(max_symbol + 1, 0)
   for sym in 0..<=max_symbol {
-    symbol_next[sym] = if norm_counts[sym] == -1 { 1 } else { norm_counts[sym] }
+    symbol_next.unsafe_set(sym, if norm_counts.unsafe_get(sym) == -1 { 1 } else { norm_counts.unsafe_get(sym) })
   }
   for i in 0..<table_size {
-    let sym = symbols[i].to_int()
-    let next_state = symbol_next[sym]
-    symbol_next[sym] = next_state + 1
+    let sym = symbols.unsafe_get(i).to_int()
+    let next_state = symbol_next.unsafe_get(sym)
+    symbol_next.unsafe_set(sym, next_state + 1)
     let high_bit = highest_bit(next_state) - 1 // position of highest set bit
     let nb = accuracy_log - high_bit
-    num_bits[i] = nb.to_byte()
-    new_state_base[i] = (next_state << nb) - table_size
+    num_bits.unsafe_set(i, nb.to_byte())
+    new_state_base.unsafe_set(i, (next_state << nb) - table_size)
   }
   {
     symbols,
@@ -87,9 +87,9 @@ fn highest_bit(n_ : Int) -> Int {
 /// Decodes an FSE-encoded stream using the given table.
 fn fse_decode_symbol(table : FseTable, state : Int) -> (Byte, Int, Int) {
   let s = if state >= 0 && state < table.symbols.length() { state } else { 0 }
-  let sym = table.symbols[s]
-  let nb = table.num_bits[s].to_int()
-  let base = table.new_state_base[s]
+  let sym = table.symbols.unsafe_get(s)
+  let nb = table.num_bits.unsafe_get(s).to_int()
+  let base = table.new_state_base.unsafe_get(s)
   (sym, nb, base)
 }
 
@@ -248,7 +248,7 @@ let ll_baselines : FixedArray[Int] = {
   let a = FixedArray::make(36, 0)
   // Codes 0-15 map directly to values 0-15
   for i in 0..<16 {
-    a[i] = i
+    a.unsafe_set(i, i)
   }
   a[16] = 16
   a[17] = 18
@@ -306,7 +306,7 @@ let ml_baselines : FixedArray[Int] = {
   let a = FixedArray::make(53, 0)
   // Codes 0-31 map to values 3-34
   for i in 0..<32 {
-    a[i] = i + 3
+    a.unsafe_set(i, i + 3)
   }
   a[32] = 35
   a[33] = 37

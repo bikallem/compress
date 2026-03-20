@@ -28,5 +28,5 @@ let dict_max_word_length : Int = 24
 /// Look up a dictionary word by length and index.
 /// Returns the offset into brotli_dictionary_data and the word length.
 fn dict_word_offset(length : Int, word_idx : Int) -> Int {
-  dict_offsets_by_length[length] + word_idx * length
+  dict_offsets_by_length.unsafe_get(length) + word_idx * length
 }
