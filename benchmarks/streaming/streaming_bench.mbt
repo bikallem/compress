@@ -75,14 +75,14 @@ fn compress_file_streaming(
       break
     }
     match def.encode(Some(buf[:n])) {
-      Data(out) => fwrite_bytes(oh, out.to_bytes(), out.length())
+      Data(out) => fwrite_bytes(oh, out.data(), out.length())
       Ok | End | Error(_) => ()
     }
   }
   // Finalize
   loop def.encode(None) {
     Data(out) => {
-      fwrite_bytes(oh, out.to_bytes(), out.length())
+      fwrite_bytes(oh, out.data(), out.length())
       continue def.encode(None)
     }
     End | Ok | Error(_) => break
@@ -126,7 +126,7 @@ fn decompress_file_streaming(
       continue inf.decode()
     }
     Data(out) => {
-      fwrite_bytes(oh, out.to_bytes(), out.length())
+      fwrite_bytes(oh, out.data(), out.length())
       continue inf.decode()
     }
     End => break
@@ -170,7 +170,7 @@ fn lzw_decompress_file_streaming(
       continue inf.decode()
     }
     Data(out) => {
-      fwrite_bytes(oh, out.to_bytes(), out.length())
+      fwrite_bytes(oh, out.data(), out.length())
       continue inf.decode()
     }
     @lzw.End => break

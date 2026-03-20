@@ -61,7 +61,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         Data(out) =>
           if !s.header_emitted {
             s.header_emitted = true
-            Data((s.header + out.to_bytes())[:])
+            Data((s.header + out.data())[:])
           } else {
             Data(out)
           }
@@ -74,7 +74,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         Data(out) =>
           if !s.header_emitted {
             s.header_emitted = true
-            Data((s.header + out.to_bytes())[:])
+            Data((s.header + out.data())[:])
           } else {
             Data(out)
           }
