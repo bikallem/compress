@@ -40,9 +40,7 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         let block_len = block_end - src_pos
         let is_last = block_end == src_len
         let last_flag = if is_last { 1 } else { 0 }
-        let block_header = last_flag |
-          (BLOCK_TYPE_RAW << 1) |
-          (block_len << 3)
+        let block_header = last_flag | (BLOCK_TYPE_RAW << 1) | (block_len << 3)
         out[pos] = (block_header & 0xFF).to_byte()
         out[pos + 1] = ((block_header >> 8) & 0xFF).to_byte()
         out[pos + 2] = ((block_header >> 16) & 0xFF).to_byte()
@@ -81,14 +79,12 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
               // Continuation: emit as new offset to avoid lit_len=0 repeat offset ambiguity
               actual_off + 3
             }
-            split_seqs.push(
-              {
-                lit_len,
-                offset,
-                match_len: match_chunk,
-                actual_offset: actual_off,
-              },
-            )
+            split_seqs.push({
+              lit_len,
+              offset,
+              match_len: match_chunk,
+              actual_offset: actual_off,
+            })
             remaining_match -= match_chunk
             first = false
           }
@@ -107,7 +103,8 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         while seq_idx < num_seq {
           let seq = split_seqs[seq_idx]
           let seq_decoded = seq.lit_len + seq.match_len
-          if block_decoded + seq_decoded > MAX_BLOCK_SIZE && block_seqs.length() > 0 {
+          if block_decoded + seq_decoded > MAX_BLOCK_SIZE &&
+            block_seqs.length() > 0 {
             break
           }
           block_seqs.push(seq)
@@ -130,11 +127,7 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         // Encode this block
         let comp_buf = FixedArray::make(block_content_size + 256, b'\x00')
         let comp_size = compress_block_from_sequences(
-          block_seqs,
-          literals,
-          block_lit_start,
-          total_block_lits,
-          comp_buf,
+          block_seqs, literals, block_lit_start, total_block_lits, comp_buf,
         )
         if comp_size > 0 && comp_size < block_content_size {
           let block_header = last_flag |
@@ -309,8 +302,7 @@ fn find_sequences(
         src[ip - rep_off + 2] == src[ip + 2] &&
         src[ip - rep_off + 3] == src[ip + 3] {
         let mut mlen = ZSTD_MIN_MATCH
-        while ip + mlen < src_len &&
-              src[ip - rep_off + mlen] == src[ip + mlen] {
+        while ip + mlen < src_len && src[ip - rep_off + mlen] == src[ip + mlen] {
           mlen += 1
         }
         if mlen > best_match_len {
@@ -355,22 +347,20 @@ fn find_sequences(
       let offset_value = if best_rep_idx >= 0 {
         if lit_len > 0 {
           best_rep_idx + 1
-        } else {
           // lit_len == 0: shift the mapping
-          if best_rep_idx == 0 {
-            // Want rep[0], but val 1 means rep[1] when lit_len==0
-            // Need to check if rep[0] == rep[1]; if so val 1 works
-            // Otherwise emit as new offset to be safe
-            if rep[0] == rep[1] {
-              1
-            } else {
-              rep[0] + 3 // emit as new offset
-            }
-          } else if best_rep_idx == 1 {
-            1 // val 1 with lit_len==0 => rep[1], which is what we want
+        } else if best_rep_idx == 0 {
+          // Want rep[0], but val 1 means rep[1] when lit_len==0
+          // Need to check if rep[0] == rep[1]; if so val 1 works
+          // Otherwise emit as new offset to be safe
+          if rep[0] == rep[1] {
+            1
           } else {
-            2 // val 2 with lit_len==0 => rep[2], which is what we want
+            rep[0] + 3 // emit as new offset
           }
+        } else if best_rep_idx == 1 {
+          1 // val 1 with lit_len==0 => rep[1], which is what we want
+        } else {
+          2 // val 2 with lit_len==0 => rep[2], which is what we want
         }
       } else {
         best_offset + 3 // actual offset + 3 for new offsets
@@ -381,14 +371,12 @@ fn find_sequences(
       } else {
         rep[0] // after rep update, rep[0] is the actual offset used
       }
-      sequences.push(
-        {
-          lit_len,
-          offset: offset_value,
-          match_len: best_match_len,
-          actual_offset: actual_off,
-        },
-      )
+      sequences.push({
+        lit_len,
+        offset: offset_value,
+        match_len: best_match_len,
+        actual_offset: actual_off,
+      })
       // Update repeat offsets same way as decoder
       if offset_value > 3 {
         let actual = offset_value - 3
@@ -413,19 +401,17 @@ fn find_sequences(
           rep[1] = rep[0]
           rep[0] = tmp
         }
-      } else {
         // offset_value == 3
-        if lit_len == 0 {
-          let actual = rep[0] - 1
-          rep[2] = rep[1]
-          rep[1] = rep[0]
-          rep[0] = actual
-        } else {
-          let tmp = rep[2]
-          rep[2] = rep[1]
-          rep[1] = rep[0]
-          rep[0] = tmp
-        }
+      } else if lit_len == 0 {
+        let actual = rep[0] - 1
+        rep[2] = rep[1]
+        rep[1] = rep[0]
+        rep[0] = actual
+      } else {
+        let tmp = rep[2]
+        rep[2] = rep[1]
+        rep[1] = rep[0]
+        rep[0] = tmp
       }
       // Update hash table for positions within the match for better future matches
       let hash_end = if ip + best_match_len < mf_limit {
@@ -479,7 +465,7 @@ fn build_fse_ctable(
   // Spread symbols (same algorithm as decode table)
   let decode_symbols = FixedArray::make(table_size, 0)
   let mut high_threshold = table_size - 1
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     if norm_counts[sym] == -1 {
       decode_symbols[high_threshold] = sym
       high_threshold -= 1
@@ -488,7 +474,7 @@ fn build_fse_ctable(
   let step = (table_size >> 1) + (table_size >> 3) + 3
   let mask = table_size - 1
   let mut pos = 0
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     let count = norm_counts[sym]
     if count <= 0 {
       continue
@@ -502,12 +488,12 @@ fn build_fse_ctable(
     }
   }
   // Build symbolTT (per-symbol transform parameters)
-  let symbol_tt = FixedArray::make(
-    max_symbol + 1,
-    { delta_nb_bits: 0, delta_find_state: 0 },
-  )
+  let symbol_tt = FixedArray::make(max_symbol + 1, {
+    delta_nb_bits: 0,
+    delta_find_state: 0,
+  })
   let mut total = 0
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     let count = norm_counts[sym]
     if count == 0 {
       continue
@@ -533,7 +519,7 @@ fn build_fse_ctable(
   let cum = FixedArray::make(max_symbol + 1, 0)
   // Compute cumulative positions
   let mut c = 0
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     let count = norm_counts[sym]
     if count == 0 {
       cum[sym] = c
@@ -544,7 +530,7 @@ fn build_fse_ctable(
   }
   // Fill state table
   let sym_pos = FixedArray::make(max_symbol + 1, 0)
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     sym_pos[sym] = cum[sym]
   }
   for i in 0..<table_size {
@@ -613,11 +599,7 @@ fn FseBitWriter::add_bits(self : FseBitWriter, value : Int, nb : Int) -> Unit {
   if nb == 0 {
     return
   }
-  let mask = if nb >= 32 {
-    0xFFFFFFFF_U
-  } else {
-    (1U << nb) - 1U
-  }
+  let mask = if nb >= 32 { 0xFFFFFFFF_U } else { (1U << nb) - 1U }
   self.bit_buf = self.bit_buf |
     ((value.reinterpret_as_uint() & mask).to_uint64() << self.bit_pos)
   self.bit_pos += nb

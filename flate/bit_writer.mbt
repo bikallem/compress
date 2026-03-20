@@ -183,8 +183,7 @@ fn BitWriter::write_dynamic_block(
     hclen -= 1
   }
   let dynamic_size = compute_dynamic_block_size(
-    lit_freqs, dist_freqs, dyn_lit_codes, dyn_dist_codes, cl_freqs, cl_codes,
-    hclen,
+    lit_freqs, dist_freqs, dyn_lit_codes, dyn_dist_codes, cl_freqs, cl_codes, hclen,
   )
   // Pre-allocate buffer for worst-case output (avoids repeated resizing)
   self.ensure_capacity(tokens.length() * 6 + 512)

@@ -125,9 +125,7 @@ test "brotli decode Go-compressed level 3 ABC repeat" {
 ///|
 /// Test decoding Go-compressed brotli (level 3, 100 bytes ABCDEFGHIJ repeat).
 test "brotli decode Go-compressed level 3 100bytes" {
-  let compressed = hex_to_bytes(
-    "1b630000c00dc6f6268d0030142828a7b3f7",
-  )
+  let compressed = hex_to_bytes("1b630000c00dc6f6268d0030142828a7b3f7")
   let buf = @buffer.new()
   for _ in 0..<10 {
     buf.write_bytes(b"ABCDEFGHIJ")

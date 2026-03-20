@@ -28,5 +28,7 @@ test "bench brotli decompress text_1kb" (b : @bench.T) {
 ///|
 test "bench brotli compress speed text_1kb" (b : @bench.T) {
   let data = @benchmarks.gen_text(1024)
-  b.bench(name="brotli_compress_speed_1kb", fn() { b.keep(@br.compress(data, level=@br.Level(1))) })
+  b.bench(name="brotli_compress_speed_1kb", fn() {
+    b.keep(@br.compress(data, level=@br.Level(1)))
+  })
 }

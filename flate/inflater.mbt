@@ -78,7 +78,9 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       HuffmanLoop(lit_dec, dist_dec) =>
         self.decode_huffman_loop(lit_dec, dist_dec)
       HuffmanMatchLen(lit_dec, dist_dec, length_code, extra_bits) =>
-        self.decode_huffman_match_len(lit_dec, dist_dec, length_code, extra_bits)
+        self.decode_huffman_match_len(
+          lit_dec, dist_dec, length_code, extra_bits,
+        )
       HuffmanMatchDist(lit_dec, dist_dec, length) =>
         self.decode_huffman_match_dist(lit_dec, dist_dec, length)
       HuffmanMatchDistExtra(lit_dec, dist_dec, length, dist_sym, dextra) =>
@@ -656,9 +658,7 @@ fn Inflater::decode_huffman_loop(
         bb.pos = pos
         dd.wr_pos = wr_pos
         return self.fail(
-          CompressError::CorruptInput(
-            "distance \{dist} exceeds history",
-          ),
+          CompressError::CorruptInput("distance \{dist} exceeds history"),
         )
       }
       // Fast-path copy: no wrapping and room in buffer
@@ -678,9 +678,7 @@ fn Inflater::decode_huffman_loop(
             dp += dist
           }
           if dp < copy_end {
-            @blit.blit_fixed_array(
-              hist, dp, hist, dp - dist, copy_end - dp,
-            )
+            @blit.blit_fixed_array(hist, dp, hist, dp - dist, copy_end - dp)
           }
           wr_pos = copy_end
         }

@@ -64,4 +64,3 @@ const MAX_WINDOW_SIZE : Int = 8388608
 ///|
 /// Maximum block size (128 KB).
 const MAX_BLOCK_SIZE : Int = 131072
-

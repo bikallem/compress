@@ -52,4 +52,3 @@ fn BackwardBitReader::read_bits(self : BackwardBitReader, n : Int) -> UInt {
     (if n >= 32 { 0xFFFFFFFF_U.to_uint64() } else { (1UL << n) - 1UL })
   val.to_uint()
 }
-

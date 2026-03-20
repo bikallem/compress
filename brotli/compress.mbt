@@ -64,6 +64,7 @@ priv struct BrotliCmd {
 }
 
 ///|
+
 ///|
 /// Maximum metablock size (RFC 7932: 2^24 = 16MB).
 const MAX_METABLOCK_SIZE : Int = 1 << 24
@@ -88,7 +89,11 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   let compressed = if level > 1 {
     let fast_cmds = lz77_find_matches(src, src_len)
     let fast = encode_compressed_metablock(src, src_len, fast_cmds, 1, wbits)
-    if fast.length() < compressed.length() { fast } else { compressed }
+    if fast.length() < compressed.length() {
+      fast
+    } else {
+      compressed
+    }
   } else {
     compressed
   }
@@ -116,7 +121,7 @@ fn compress_lz77_chunked(src : BytesView, src_len : Int) -> Bytes {
       MAX_METABLOCK_SIZE
     }
     let is_last = offset + chunk_size >= src_len
-    let chunk = src[offset : offset + chunk_size]
+    let chunk = src[offset:offset + chunk_size]
     let cmds = lz77_find_matches(chunk, chunk_size)
     encode_metablock_into(bw, chunk, chunk_size, cmds, 1, is_last)
     offset += chunk_size
@@ -148,7 +153,11 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
     let match_pos = hash_table[h]
     hash_table[h] = pos
     if match_pos >= 0 && pos - match_pos <= max_distance && pos - match_pos > 0 {
-      let max_len = if src_len - pos < MAX_MATCH_LENGTH { src_len - pos } else { MAX_MATCH_LENGTH }
+      let max_len = if src_len - pos < MAX_MATCH_LENGTH {
+        src_len - pos
+      } else {
+        MAX_MATCH_LENGTH
+      }
       let mlen = count_match(src, pos, match_pos, max_len)
       if mlen >= MIN_MATCH_LENGTH {
         let insert_len = pos - insert_start
@@ -198,8 +207,7 @@ fn brotli_hash4(src : BytesView, pos : Int) -> Int {
     (src[pos + 1].to_int() << 8) |
     (src[pos + 2].to_int() << 16) |
     (src[pos + 3].to_int() << 24)
-  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) &
-  (BROTLI_HASH_SIZE - 1)
+  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & (BROTLI_HASH_SIZE - 1)
 }
 
 ///|
@@ -277,7 +285,11 @@ fn lz77_find_matches_chain(
     let mut best_dist = 0
     let mut candidate = head[h]
     let mut chains = 0
-    let max_len = if src_len - p < MAX_MATCH_LENGTH { src_len - p } else { MAX_MATCH_LENGTH }
+    let max_len = if src_len - p < MAX_MATCH_LENGTH {
+      src_len - p
+    } else {
+      MAX_MATCH_LENGTH
+    }
     while candidate >= 0 && chains < max_chain {
       let dist = p - candidate
       if dist <= 0 || dist > max_distance {
@@ -332,7 +344,11 @@ fn lz77_find_matches_chain(
           src_len - 4
         }
         let rehash_end2 = if mlen2 > rehash_cap {
-          if pos + rehash_cap < match_end2 { pos + rehash_cap } else { match_end2 }
+          if pos + rehash_cap < match_end2 {
+            pos + rehash_cap
+          } else {
+            match_end2
+          }
         } else {
           match_end2
         }
@@ -358,7 +374,11 @@ fn lz77_find_matches_chain(
         src_len - 4
       }
       let rehash_end_c = if mlen > rehash_cap {
-        if pos + rehash_cap < match_end_c { pos + rehash_cap } else { match_end_c }
+        if pos + rehash_cap < match_end_c {
+          pos + rehash_cap
+        } else {
+          match_end_c
+        }
       } else {
         match_end_c
       }
@@ -384,7 +404,11 @@ fn lz77_find_matches_chain(
       src_len - 4
     }
     let rehash_end_n = if mlen > rehash_cap {
-      if pos + rehash_cap < match_end_n { pos + rehash_cap } else { match_end_n }
+      if pos + rehash_cap < match_end_n {
+        pos + rehash_cap
+      } else {
+        match_end_n
+      }
     } else {
       match_end_n
     }
@@ -518,11 +542,25 @@ fn encode_distance_val(distance : Int) -> (Int, Int, Int) {
 fn ilog2(v : Int) -> Int {
   let mut n = 0
   let mut x = v
-  if x >= (1 << 16) { n += 16; x = x >> 16 }
-  if x >= (1 << 8) { n += 8; x = x >> 8 }
-  if x >= (1 << 4) { n += 4; x = x >> 4 }
-  if x >= (1 << 2) { n += 2; x = x >> 2 }
-  if x >= (1 << 1) { n += 1 }
+  if x >= 1 << 16 {
+    n += 16
+    x = x >> 16
+  }
+  if x >= 1 << 8 {
+    n += 8
+    x = x >> 8
+  }
+  if x >= 1 << 4 {
+    n += 4
+    x = x >> 4
+  }
+  if x >= 1 << 2 {
+    n += 2
+    x = x >> 2
+  }
+  if x >= 1 << 1 {
+    n += 1
+  }
   n
 }
 
@@ -593,8 +631,7 @@ fn brotli_code_lengths(
     let mut ip = active
     let mut nn = active
     for _merge_step in 0..<(active - 1) {
-      let left = if lp < active &&
-        (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
+      let left = if lp < active && (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
         let r = lp
         lp += 1
         r
@@ -603,8 +640,7 @@ fn brotli_code_lengths(
         ip += 1
         r
       }
-      let right = if lp < active &&
-        (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
+      let right = if lp < active && (ip >= nn || leaf_freq[lp] <= node_freq[ip]) {
         let r = lp
         lp += 1
         r
@@ -710,7 +746,7 @@ fn rebuild_simple_codes(
   syms_arr : Array[Int],
   nsym : Int,
   codes : FixedArray[Int],
-  code_lengths~ : FixedArray[Int] = FixedArray::make(0, 0),
+  code_lengths? : FixedArray[Int] = FixedArray::make(0, 0),
 ) -> Unit {
   let syms = FixedArray::make(nsym, 0)
   for i in 0..<nsym {
@@ -724,7 +760,7 @@ fn rebuild_simple_codes(
   // Assign codes based on simple prefix tree structure
   match nsym {
     1 => ()
-      // Single symbol: 0 bits per read; codes[syms[0]] stays 0 (len=0)
+    // Single symbol: 0 bits per read; codes[syms[0]] stays 0 (len=0)
     2 => {
       // 2 symbols: each 1 bit
       // sym[0] → code 0, depth 1
@@ -737,9 +773,9 @@ fn rebuild_simple_codes(
       // sym[0] → depth 1, code 0
       // sym[1] → depth 2, code 10 (reversed: 01)
       // sym[2] → depth 2, code 11 (reversed: 11)
-      codes[syms[0]] = (0 << 8) | 1       // 0, 1 bit
-      codes[syms[1]] = (1 << 8) | 2       // 01, 2 bits (reversed 10)
-      codes[syms[2]] = (3 << 8) | 2       // 11, 2 bits (reversed 11)
+      codes[syms[0]] = (0 << 8) | 1 // 0, 1 bit
+      codes[syms[1]] = (1 << 8) | 2 // 01, 2 bits (reversed 10)
+      codes[syms[2]] = (3 << 8) | 2 // 11, 2 bits (reversed 11)
     }
     _ => {
       // 4 symbols: depends on tree_select
@@ -753,21 +789,20 @@ fn rebuild_simple_codes(
       if tree_select == 0 {
         // All depth 2. Code assignment must match decoder's table layout:
         //   table[0]=syms[0], table[1]=syms[2], table[2]=syms[1], table[3]=syms[3]
-        codes[syms[0]] = (0 << 8) | 2  // code 00
-        codes[syms[1]] = (2 << 8) | 2  // code 10 (write_bits(2,2) → index 2)
-        codes[syms[2]] = (1 << 8) | 2  // code 01 (write_bits(1,2) → index 1)
-        codes[syms[3]] = (3 << 8) | 2  // code 11
+        codes[syms[0]] = (0 << 8) | 2 // code 00
+        codes[syms[1]] = (2 << 8) | 2 // code 10 (write_bits(2,2) → index 2)
+        codes[syms[2]] = (1 << 8) | 2 // code 01 (write_bits(1,2) → index 1)
+        codes[syms[3]] = (3 << 8) | 2 // code 11
       } else {
         // sym[0] depth 1, sym[1] depth 2, sym[2] depth 3, sym[3] depth 3
-        codes[syms[0]] = (0 << 8) | 1        // 0, 1 bit
-        codes[syms[1]] = (1 << 8) | 2        // 01, 2 bits (reversed 10)
-        codes[syms[2]] = (3 << 8) | 3        // 011, 3 bits (reversed 110)
-        codes[syms[3]] = (7 << 8) | 3        // 111, 3 bits (reversed 111)
+        codes[syms[0]] = (0 << 8) | 1 // 0, 1 bit
+        codes[syms[1]] = (1 << 8) | 2 // 01, 2 bits (reversed 10)
+        codes[syms[2]] = (3 << 8) | 3 // 011, 3 bits (reversed 110)
+        codes[syms[3]] = (7 << 8) | 3 // 111, 3 bits (reversed 111)
       }
     }
   }
 }
-
 
 ///|
 fn write_symbol(bw : BitWriter, codes : FixedArray[Int], sym : Int) -> Unit {
@@ -796,10 +831,24 @@ fn sym_bits(alphabet_size : Int) -> Int {
 ///|
 let brotli_cl_order : FixedArray[Int] = {
   let a = FixedArray::make(18, 0)
-  a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4; a[4] = 0
-  a[5] = 5; a[6] = 17; a[7] = 6; a[8] = 16; a[9] = 7
-  a[10] = 8; a[11] = 9; a[12] = 10; a[13] = 11
-  a[14] = 12; a[15] = 13; a[16] = 14; a[17] = 15
+  a[0] = 1
+  a[1] = 2
+  a[2] = 3
+  a[3] = 4
+  a[4] = 0
+  a[5] = 5
+  a[6] = 17
+  a[7] = 6
+  a[8] = 16
+  a[9] = 7
+  a[10] = 8
+  a[11] = 9
+  a[12] = 10
+  a[13] = 11
+  a[14] = 12
+  a[15] = 13
+  a[16] = 14
+  a[17] = 15
   a
 }
 
@@ -808,11 +857,11 @@ let brotli_cl_order : FixedArray[Int] = {
 fn write_cl_length(bw : BitWriter, v : Int) -> Unit {
   match v {
     0 => bw.write_bits(0, 2)
-    1 => bw.write_bits(7, 4)   // 0111
-    2 => bw.write_bits(3, 3)   // 011
-    3 => bw.write_bits(2, 2)   // 10
-    4 => bw.write_bits(1, 2)   // 01
-    5 => bw.write_bits(15, 4)  // 1111
+    1 => bw.write_bits(7, 4) // 0111
+    2 => bw.write_bits(3, 3) // 011
+    3 => bw.write_bits(2, 2) // 10
+    4 => bw.write_bits(1, 2) // 01
+    5 => bw.write_bits(15, 4) // 1111
     6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 => bw.write_bits(0, 2)
     _ => bw.write_bits(0, 2) // unreachable for valid code lengths
   }
@@ -844,7 +893,7 @@ fn encode_prefix_code(
     // Rebuild codes to match the simple prefix tree structure.
     // The simple prefix tree assigns codes based on sorted symbol order,
     // not frequency.
-    rebuild_simple_codes(syms, nsym, codes, code_lengths=code_lengths)
+    rebuild_simple_codes(syms, nsym, codes, code_lengths~)
     return
   }
   write_complex_prefix(bw, code_lengths, num_symbols)
@@ -1037,8 +1086,7 @@ fn write_complex_prefix(
     cl_lens[brotli_cl_order[1]] == 0 &&
     cl_lens[brotli_cl_order[2]] == 0 {
     3
-  } else if cl_lens[brotli_cl_order[0]] == 0 &&
-    cl_lens[brotli_cl_order[1]] == 0 {
+  } else if cl_lens[brotli_cl_order[0]] == 0 && cl_lens[brotli_cl_order[1]] == 0 {
     2
   } else {
     0
@@ -1209,7 +1257,13 @@ fn encode_compressed_metablock(
   level : Int,
   wbits : Int,
 ) -> Bytes {
-  let bw = BitWriter::new(if src_len < 1048576 { src_len * 2 + 256 } else { 1048576 })
+  let bw = BitWriter::new(
+    if src_len < 1048576 {
+      src_len * 2 + 256
+    } else {
+      1048576
+    },
+  )
   encode_wbits(bw, wbits)
   encode_metablock_into(bw, src, src_len, cmds, level, true)
   bw.to_bytes()
@@ -1257,9 +1311,7 @@ fn encode_metablock_into(
   let use_context = level >= 5 && src_len >= 256
 
   // Compute context map and per-tree literal histograms
-  let (ntreesl, cmap, tree_freqs) = build_context_model(
-    src, cmds, use_context,
-  )
+  let (ntreesl, cmap, tree_freqs) = build_context_model(src, cmds, use_context)
 
   // ---- Write meta-block header in correct RFC 7932 order ----
 
@@ -1557,22 +1609,22 @@ fn encode_context_map(bw : BitWriter, cmap : FixedArray[Int]) -> Unit {
 /// WBITS 18-24 use 4 bits, WBITS 10-15/17 use 7 bits.
 fn optimal_wbits(src_len : Int) -> Int {
   // WBITS=16 (1 bit header, 64KB window) — best for small inputs
-  if src_len <= (1 << 16) {
+  if src_len <= 1 << 16 {
     16
-  } else if src_len <= (1 << 17) {
+  } else if src_len <= 1 << 17 {
     // WBITS=17 costs 7 bits; WBITS=18 costs 4 bits — use 18 to save 3 header bits
     18
-  } else if src_len <= (1 << 18) {
+  } else if src_len <= 1 << 18 {
     18
-  } else if src_len <= (1 << 19) {
+  } else if src_len <= 1 << 19 {
     19
-  } else if src_len <= (1 << 20) {
+  } else if src_len <= 1 << 20 {
     20
-  } else if src_len <= (1 << 21) {
+  } else if src_len <= 1 << 21 {
     21
-  } else if src_len <= (1 << 22) {
+  } else if src_len <= 1 << 22 {
     22
-  } else if src_len <= (1 << 23) {
+  } else if src_len <= 1 << 23 {
     23
   } else {
     24

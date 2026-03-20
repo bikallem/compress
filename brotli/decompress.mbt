@@ -1,9 +1,7 @@
 ///|
 /// Decompresses Brotli-encoded data.
 pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
-  guard data.length() > 0 else {
-    raise BrotliError::CorruptData("empty input")
-  }
+  guard data.length() > 0 else { raise BrotliError::CorruptData("empty input") }
   let br = BitReader::new(data[:])
   let sink = @output_sink.OutputSink::new(data.length() * 4)
   let wbits = decode_wbits(br)
@@ -98,10 +96,7 @@ fn decode_compressed_block(
   let nbltypesd = decode_block_type_count(br)
 
   // When NBLTYPES > 1, read block type/count prefix codes and first block count
-  let dummy_tree : HuffTree = {
-    table: FixedArray::make(1, 0),
-    max_bits: 0,
-  }
+  let dummy_tree : HuffTree = { table: FixedArray::make(1, 0), max_bits: 0 }
 
   // Literal block types
   let lit_btype_tree : HuffTree = if nbltypesl > 1 {
@@ -271,7 +266,9 @@ fn decode_compressed_block(
           let p1 = if pos > 0 { sink.get_byte(pos - 1).to_int() } else { 0 }
           let p2 = if pos > 1 { sink.get_byte(pos - 2).to_int() } else { 0 }
           let context_id = compute_context_id(
-            context_modes[lit_block_type], p1, p2,
+            context_modes[lit_block_type],
+            p1,
+            p2,
           )
           let tree_idx = cmap_l[lit_block_type * 64 + context_id]
           lit_trees[tree_idx]
@@ -389,11 +386,7 @@ fn decode_context_map(
   let cmap = FixedArray::make(map_size, 0)
   // Read RLEMAX
   let rlemax_flag = br.read_bits(1)
-  let rlemax = if rlemax_flag == 1 {
-    br.read_bits(4) + 1
-  } else {
-    0
-  }
+  let rlemax = if rlemax_flag == 1 { br.read_bits(4) + 1 } else { 0 }
   // Alphabet size for context map = rlemax + num_trees
   let alphabet = rlemax + num_trees
   let cm_tree = decode_prefix_code(br, alphabet)
@@ -452,10 +445,7 @@ fn decode_block_type_count(br : BitReader) -> Int {
 }
 
 ///|
-fn decode_insert_copy(
-  br : BitReader,
-  code : Int,
-) -> (Int, Int, Bool) {
+fn decode_insert_copy(br : BitReader, code : Int) -> (Int, Int, Bool) {
   let block = code >> 6
   let sub = code & 63
   let ir = (sub >> 3) & 7
@@ -478,18 +468,12 @@ fn decode_insert_copy(
   let copy_code = cb + cr
   let insert_base = _insert_baselines[insert_code]
   let insert_extra = _insert_extra_bits[insert_code]
-  let insert_len = insert_base + (if insert_extra > 0 {
-    br.read_bits(insert_extra)
-  } else {
-    0
-  })
+  let insert_len = insert_base +
+    (if insert_extra > 0 { br.read_bits(insert_extra) } else { 0 })
   let copy_base = _copy_baselines[copy_code]
   let copy_extra = _copy_extra_bits[copy_code]
-  let copy_len = copy_base + (if copy_extra > 0 {
-    br.read_bits(copy_extra)
-  } else {
-    0
-  })
+  let copy_len = copy_base +
+    (if copy_extra > 0 { br.read_bits(copy_extra) } else { 0 })
   (insert_len, copy_len, needs_dist)
 }
 
@@ -522,7 +506,11 @@ fn decode_distance(
       _ => (2, 1) // unreachable: codes 4-15 are exhaustively listed
     }
     let d = dist_rb[rb_idx] + delta
-    if d < 1 { 1 } else { d }
+    if d < 1 {
+      1
+    } else {
+      d
+    }
   } else if code < 16 + ndirect {
     code - 16 + 1
   } else {
@@ -702,10 +690,24 @@ fn brotli_sym_bits(alphabet_size : Int) -> Int {
 ///|
 let cl_order : FixedArray[Int] = {
   let a = FixedArray::make(18, 0)
-  a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4; a[4] = 0
-  a[5] = 5; a[6] = 17; a[7] = 6; a[8] = 16; a[9] = 7
-  a[10] = 8; a[11] = 9; a[12] = 10; a[13] = 11
-  a[14] = 12; a[15] = 13; a[16] = 14; a[17] = 15
+  a[0] = 1
+  a[1] = 2
+  a[2] = 3
+  a[3] = 4
+  a[4] = 0
+  a[5] = 5
+  a[6] = 17
+  a[7] = 6
+  a[8] = 16
+  a[9] = 7
+  a[10] = 8
+  a[11] = 9
+  a[12] = 10
+  a[13] = 11
+  a[14] = 12
+  a[15] = 13
+  a[16] = 14
+  a[17] = 15
   a
 }
 

@@ -235,4 +235,3 @@ fn Encoder::close(self : Encoder) -> Bytes {
   @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
   result.unsafe_reinterpret_as_bytes()
 }
-

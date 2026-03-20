@@ -64,7 +64,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
     input[s.input_pos + i]
   })
-  let result = try { decompress(data) } catch {
+  let result = decompress(data) catch {
     e => {
       s.failed = Some(e)
       return Error(e)

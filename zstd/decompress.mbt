@@ -120,7 +120,9 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
       xxh.update(block_data[:])
     } else if block_type == BLOCK_TYPE_COMPRESSED {
       guard pos + block_size <= src_len else { raise ZstdError::UnexpectedEOF }
-      let block_data = decompress_block(src, pos, block_size, window_size, sink, rep)
+      let block_data = decompress_block(
+        src, pos, block_size, window_size, sink, rep,
+      )
       sink.write_bytes(block_data)
       xxh.update(block_data[:])
       pos += block_size
@@ -251,7 +253,11 @@ fn decompress_block(
   let seq_data = Bytes::makei(block_end - pos, fn(i) { src[pos + i] })
   // Execute sequences using a local output sink for this block
   let block_out = @output_sink.OutputSink::new(
-    if num_sequences > 0 { 65536 } else { lit_data.length() },
+    if num_sequences > 0 {
+      65536
+    } else {
+      lit_data.length()
+    },
   )
   let mut lit_pos = 0
   let prev_len = prev_output.length()
@@ -329,21 +335,19 @@ fn decompress_block(
         rep[0] = tmp
         rep[0]
       }
-    } else {
       // offset_value == 3
-      if lit_len == 0 {
-        let actual = rep[0] - 1
-        rep[2] = rep[1]
-        rep[1] = rep[0]
-        rep[0] = actual
-        actual
-      } else {
-        let tmp = rep[2]
-        rep[2] = rep[1]
-        rep[1] = rep[0]
-        rep[0] = tmp
-        rep[0]
-      }
+    } else if lit_len == 0 {
+      let actual = rep[0] - 1
+      rep[2] = rep[1]
+      rep[1] = rep[0]
+      rep[0] = actual
+      actual
+    } else {
+      let tmp = rep[2]
+      rep[2] = rep[1]
+      rep[1] = rep[0]
+      rep[0] = tmp
+      rep[0]
     }
     // Copy literals
     for j in 0..<lit_len {

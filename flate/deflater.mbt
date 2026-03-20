@@ -344,7 +344,11 @@ fn Deflater::emit_uniform_tokens(
       }
       break
     }
-    let len = if remaining < MAX_MATCH_LENGTH { remaining } else { MAX_MATCH_LENGTH }
+    let len = if remaining < MAX_MATCH_LENGTH {
+      remaining
+    } else {
+      MAX_MATCH_LENGTH
+    }
     self.tokens.push(Token::match_(len, 1))
     pos += len
   }
@@ -400,11 +404,7 @@ fn Deflater::step_greedy(self : Deflater) -> Unit {
         self.tokens.push(Token::match_(length, offset))
         // Rehash a capped number of intermediate positions.
         let mi = max_insert(self.level)
-        let n_insert = if length - 1 < mi {
-          length - 1
-        } else {
-          mi
-        }
+        let n_insert = if length - 1 < mi { length - 1 } else { mi }
         let rehash_end = if i + n_insert + 4 < end {
           i + 1 + n_insert
         } else {
@@ -553,9 +553,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
         self.prev_literal = window.unsafe_get(i)
         i += 1
       } else {
-        tokens.push(
-          Token::match_(self.prev_match_len, self.prev_match_dist),
-        )
+        tokens.push(Token::match_(self.prev_match_len, self.prev_match_dist))
         let start = i
         let skip_end = start + self.prev_match_len - 1
         // Rehash a capped number of intermediate positions.

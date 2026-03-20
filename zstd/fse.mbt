@@ -50,7 +50,7 @@ fn FseTable::build(
   // (or 1 for -1 entries). Each table entry gets nbBits and newState
   // based on this per-symbol counter.
   let symbol_next = FixedArray::make(max_symbol + 1, 0)
-  for sym in 0..=max_symbol {
+  for sym in 0..<=max_symbol {
     symbol_next[sym] = if norm_counts[sym] == -1 { 1 } else { norm_counts[sym] }
   }
   for i in 0..<table_size {
@@ -62,7 +62,13 @@ fn FseTable::build(
     num_bits[i] = nb.to_byte()
     new_state_base[i] = (next_state << nb) - table_size
   }
-  { symbols, num_bits, new_state_base, _accuracy_log: accuracy_log, _table_size: table_size }
+  {
+    symbols,
+    num_bits,
+    new_state_base,
+    _accuracy_log: accuracy_log,
+    _table_size: table_size,
+  }
 }
 
 ///|

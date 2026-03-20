@@ -73,7 +73,6 @@ const MIN_MATCH_LENGTH : Int = 4
 /// Number of literal contexts per block type (2^LITERAL_CONTEXT_BITS).
 const NUM_LITERAL_CONTEXTS : Int = 64
 
-
 ///|
 /// Insert-and-copy length code prefix lengths (Table in RFC 7932 section 5).
 /// For simplicity, we define the baselines and extra bits for insert lengths.
