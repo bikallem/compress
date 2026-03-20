@@ -23,10 +23,16 @@ fn Deflater::hash4(self : Deflater, pos : Int, hash_mask : Int) -> Int {
 /// SAFETY: caller must ensure pos+3 < window.length().
 fn Deflater::insert_hash(self : Deflater, pos : Int, hash_mask : Int) -> Int {
   let h = self.hash4(pos, hash_mask)
+  let abs_pos = pos + self.base
   let match_head = self.head.unsafe_get(h)
   self.prev.unsafe_set(pos & WINDOW_MASK, match_head)
-  self.head.unsafe_set(h, pos)
-  match_head
+  self.head.unsafe_set(h, abs_pos)
+  // Return window-relative position, or -1 if stale
+  if match_head >= self.base {
+    match_head - self.base
+  } else {
+    -1
+  }
 }
 
 ///|
@@ -69,9 +75,11 @@ struct Deflater {
   window : FixedArray[Byte]
   mut window_end : Int
   mut index : Int
-  // Hash tables
+  // Hash tables — positions are absolute (never shifted)
   head : FixedArray[Int]
   prev : FixedArray[Int]
+  // Generation base: entries < base are stale
+  mut base : Int
   // Token buffer
   tokens : Array[Token]
   // Lazy match state (levels 4+)
@@ -100,6 +108,7 @@ pub fn Deflater::new(
     index: 0,
     head,
     prev: prev_arr,
+    base: 0,
     tokens: [],
     prev_match_len: 0,
     prev_match_dist: 0,
@@ -206,16 +215,9 @@ fn Deflater::shift_window(self : Deflater) -> Unit {
   @blit.blit_fixed_array(self.window, 0, self.window, WINDOW_SIZE, WINDOW_SIZE)
   self.window_end -= WINDOW_SIZE
   self.index -= WINDOW_SIZE
-  let head = self.head
-  for i, h in head {
-    let v = h - WINDOW_SIZE
-    head.unsafe_set(i, if v < 0 { -1 } else { v })
-  }
-  let prev = self.prev
-  for i, p in prev {
-    let v = p - WINDOW_SIZE
-    prev.unsafe_set(i, if v < 0 { -1 } else { v })
-  }
+  // Bump base instead of adjusting head/prev arrays.
+  // Entries < base are treated as stale (-1 equivalent).
+  self.base += WINDOW_SIZE
 }
 
 ///|
@@ -254,12 +256,14 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
     return
   }
   let head = self.head
+  let base = self.base
   while i < safe_end {
     // i < safe_end guarantees i+3 < end, safe for hash4/unsafe_get
     let h = self.hash4(i, hash_mask)
-    let match_pos = head.unsafe_get(h)
-    head.unsafe_set(h, i)
-    if match_pos >= 0 && i - match_pos <= MAX_MATCH_OFFSET {
+    let match_abs = head.unsafe_get(h)
+    head.unsafe_set(h, i + base)
+    let match_pos = match_abs - base
+    if match_abs >= base && i - match_pos <= MAX_MATCH_OFFSET {
       let max_len = if end - i < MAX_MATCH_LENGTH {
         end - i
       } else {
@@ -273,7 +277,7 @@ fn Deflater::step_fast(self : Deflater) -> Unit {
         let match_end = i + length
         if match_end - 2 > i && match_end + 2 < end {
           for j in (match_end - 3)..<match_end {
-            head.unsafe_set(self.hash4(j, hash_mask), j)
+            head.unsafe_set(self.hash4(j, hash_mask), j + base)
           }
         }
         i = match_end
@@ -478,6 +482,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
   let head = self.head
   let prev = self.prev
   let tokens = self.tokens
+  let base = self.base
   while i < safe_end {
     // i < safe_end guarantees i+3 < end
     let mut cur_len = 0
@@ -488,12 +493,13 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       (window.unsafe_get(i + 2).to_int() << 16) |
       (window.unsafe_get(i + 3).to_int() << 24)
     let h = ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & hash_mask
-    let match_head = head.unsafe_get(h)
-    prev.unsafe_set(i & WINDOW_MASK, match_head)
-    head.unsafe_set(h, i)
+    let match_head_abs = head.unsafe_get(h)
+    prev.unsafe_set(i & WINDOW_MASK, match_head_abs)
+    head.unsafe_set(h, i + base)
+    let match_head = match_head_abs - base
     // Skip match-finding when previous match exceeds lazy threshold
     if !(self.has_prev && self.prev_match_len >= lazy_thresh) &&
-      match_head >= 0 &&
+      match_head_abs >= base &&
       i - match_head <= MAX_MATCH_OFFSET {
       // Inlined find_best_match to reuse cached window/prev locals
       let mut best_len = MIN_MATCH_LENGTH - 1
@@ -516,7 +522,11 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
       while pos >= 0 && i - pos <= MAX_MATCH_OFFSET && chain_count < chain_limit {
         // Skip check: compare byte at best_len position first
         if window.unsafe_get(pos + best_len) != w_end {
-          let next = prev.unsafe_get(pos & WINDOW_MASK)
+          let next_abs = prev.unsafe_get(pos & WINDOW_MASK)
+          if next_abs < base {
+            break
+          }
+          let next = next_abs - base
           if next >= pos {
             break
           }
@@ -533,7 +543,11 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
           }
           w_end = window.unsafe_get(i + best_len)
         }
-        let next = prev.unsafe_get(pos & WINDOW_MASK)
+        let next_abs = prev.unsafe_get(pos & WINDOW_MASK)
+        if next_abs < base {
+          break
+        }
+        let next = next_abs - base
         if next >= pos {
           break
         }
@@ -576,7 +590,7 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
           let rh = ((rv & 0xFFFFFF) ^ (((rv >> 16) & 0xFF) * 0x1e35a7bd)) &
             hash_mask
           prev.unsafe_set(j & WINDOW_MASK, head.unsafe_get(rh))
-          head.unsafe_set(rh, j)
+          head.unsafe_set(rh, j + base)
         }
         i = skip_end
         self.has_prev = false
@@ -665,12 +679,17 @@ fn Deflater::find_best_match(
   } else {
     MAX_MATCH_LENGTH
   }
+  let base = self.base
   while pos >= 0 && cur - pos <= MAX_MATCH_OFFSET && chain_count < max_chain {
     // Early exit: check the byte at best_len position first to skip
     // non-matching chain entries without calling match_len.
     if best_len > 0 &&
       window.unsafe_get(pos + best_len) != window.unsafe_get(cur + best_len) {
-      let next = prev.unsafe_get(pos & WINDOW_MASK)
+      let next_abs = prev.unsafe_get(pos & WINDOW_MASK)
+      if next_abs < base {
+        break
+      }
+      let next = next_abs - base
       if next >= pos {
         break
       }
@@ -686,7 +705,11 @@ fn Deflater::find_best_match(
         break
       }
     }
-    let next = prev.unsafe_get(pos & WINDOW_MASK)
+    let next_abs = prev.unsafe_get(pos & WINDOW_MASK)
+    if next_abs < base {
+      break
+    }
+    let next = next_abs - base
     if next >= pos {
       break
     }
