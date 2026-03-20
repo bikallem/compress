@@ -82,7 +82,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       match s.inflater.decode() {
         @flate.Await => Await
         @flate.Data(out) => {
-          s.crc.update(out[:])
+          s.crc.update(out)
           s.size = (s.size + out.length().reinterpret_as_uint()) & 0xFFFFFFFF_U
           Data(out)
         }

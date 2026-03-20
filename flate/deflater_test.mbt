@@ -45,7 +45,7 @@ test "encode signal protocol" {
   loop e.encode(None) {
     Ok | End => ()
     Data(chunk) => {
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue e.encode(None)
     }
     Error(e) => raise e

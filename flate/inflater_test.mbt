@@ -70,7 +70,7 @@ test "signal protocol - Await then Data then End" {
     }
     Data(chunk) => {
       got_data = true
-      buf.write_bytes(chunk)
+      buf.write_bytesview(chunk)
       continue d.decode()
     }
     End => {

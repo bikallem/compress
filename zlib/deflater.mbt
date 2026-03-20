@@ -54,14 +54,14 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         Ok =>
           if !s.header_emitted {
             s.header_emitted = true
-            Data(s.header)
+            Data(s.header[:])
           } else {
             Ok
           }
         Data(out) =>
           if !s.header_emitted {
             s.header_emitted = true
-            Data(s.header + out)
+            Data((s.header + out.to_bytes())[:])
           } else {
             Data(out)
           }
@@ -74,7 +74,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         Data(out) =>
           if !s.header_emitted {
             s.header_emitted = true
-            Data(s.header + out)
+            Data((s.header + out.to_bytes())[:])
           } else {
             Data(out)
           }
@@ -83,9 +83,9 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
           let trailer = adler32_trailer(s.adler.checksum())
           if !s.header_emitted {
             s.header_emitted = true
-            Data(s.header + trailer)
+            Data((s.header + trailer)[:])
           } else {
-            Data(trailer)
+            Data(trailer[:])
           }
         }
         Ok => Ok

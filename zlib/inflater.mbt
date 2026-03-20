@@ -88,7 +88,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       match s.inflater.decode() {
         @flate.Await => Await
         @flate.Data(out) => {
-          s.adler.update(out[:])
+          s.adler.update(out)
           Data(out)
         }
         @flate.End => {

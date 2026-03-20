@@ -37,12 +37,12 @@ fn run() -> Unit raise {
   let deflater = @zliblib.Deflater::new()
   let cbuf = @buffer.new()
   match deflater.encode(Some(original[:])) {
-    Data(out) => cbuf.write_bytes(out)
+    Data(out) => cbuf.write_bytesview(out)
     Ok | End | Error(_) => ()
   }
   loop deflater.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue deflater.encode(None)
     }
     End | Ok | Error(_) => break
@@ -55,7 +55,7 @@ fn run() -> Unit raise {
   loop inflater.decode() {
     Await => break
     Data(out) => {
-      dbuf.write_bytes(out)
+      dbuf.write_bytesview(out)
       continue inflater.decode()
     }
     End => break

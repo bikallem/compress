@@ -34,12 +34,12 @@ fn deflate_with_dict(data : Bytes, dict : Bytes) -> Bytes {
   let d = @fl.Deflater::new(dict~)
   let buf = @buffer.new()
   match d.encode(Some(data[:])) {
-    Data(out) => buf.write_bytes(out)
+    Data(out) => buf.write_bytesview(out)
     Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.encode(None)
     }
     End | Ok | Error(_) => break

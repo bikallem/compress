@@ -95,14 +95,14 @@ fn DictDecoder::write_copy(self : DictDecoder, dist : Int, length : Int) -> Int 
 
 ///|
 /// Flush readable bytes as a Bytes value and reset read pointer.
-fn DictDecoder::flush(self : DictDecoder) -> Bytes {
+fn DictDecoder::flush(self : DictDecoder) -> BytesView {
   if self.wr_pos <= self.rd_pos {
     if self.wr_pos == self.hist.length() {
       self.wr_pos = 0
       self.full = true
     }
     self.rd_pos = self.wr_pos
-    return Bytes::default()
+    return b""[:]
   }
   let len = self.wr_pos - self.rd_pos
   let result = @blit.make_uninit(len)
@@ -112,7 +112,7 @@ fn DictDecoder::flush(self : DictDecoder) -> Bytes {
     self.full = true
   }
   self.rd_pos = self.wr_pos
-  result.unsafe_reinterpret_as_bytes()
+  result.unsafe_reinterpret_as_bytes()[:]
 }
 
 ///|

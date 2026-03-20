@@ -8,7 +8,7 @@ pub fn decompress(data : Bytes) -> Bytes raise CompressError {
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
     Data(_) => continue d.decode()
-    End => d.take_output()
+    End => d.take_output().to_bytes()
     Error(e) => raise e
   }
 }
@@ -26,7 +26,7 @@ pub fn decompress_with_dict(
   loop d.decode() {
     Await => raise CompressError::UnexpectedEOF
     Data(_) => continue d.decode()
-    End => d.take_output()
+    End => d.take_output().to_bytes()
     Error(e) => raise e
   }
 }
@@ -52,7 +52,7 @@ fn drain(
 ) -> Unit raise CompressError {
   match e.encode(input) {
     Ok | End => ()
-    Data(chunk) => buf.write_bytes(chunk)
+    Data(chunk) => buf.write_bytesview(chunk)
     Error(e) => raise e
   }
 }

@@ -329,19 +329,19 @@ fn BitWriter::write_dynamic_header_precomputed(
 /// Extract accumulated complete bytes without flushing partial bits.
 /// Partial bits stay in the accumulator so the next block continues
 /// from the correct bit position (DEFLATE blocks are not byte-aligned).
-fn BitWriter::take_output(self : BitWriter) -> Bytes {
+fn BitWriter::take_output(self : BitWriter) -> BytesView {
   if self.pos == 0 {
-    return Bytes::default()
+    return b""[:]
   }
   let result = @blit.make_uninit(self.pos)
   @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
   self.pos = 0
-  result.unsafe_reinterpret_as_bytes()
+  result.unsafe_reinterpret_as_bytes()[:]
 }
 
 ///|
 /// Finalize: flush remaining partial bits, return final output.
-fn BitWriter::finish(self : BitWriter) -> Bytes {
+fn BitWriter::finish(self : BitWriter) -> BytesView {
   if self.n_bits > 0 {
     if self.pos == self.buf.length() {
       self.ensure_capacity(1)

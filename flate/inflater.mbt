@@ -28,7 +28,7 @@ struct Inflater {
   dd : DictDecoder
   mut phase : InflatePhase
   mut final_block : Bool
-  mut pending_output : Bytes // buffered Data to emit before resuming
+  mut pending_output : BytesView // buffered Data to emit before resuming
   mut sink : @output_sink.OutputSink? // None = streaming, Some = direct output
   mut redispatch : Bool // trampoline flag: phase changed, re-dispatch in decode() loop
 }
@@ -45,7 +45,7 @@ pub fn Inflater::new(dict? : Bytes) -> Inflater {
     dd,
     phase: BlockHeader,
     final_block: false,
-    pending_output: Bytes::default(),
+    pending_output: b""[:],
     sink: None,
     redispatch: false,
   }
@@ -64,7 +64,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
     // Emit pending output first
     if self.pending_output.length() > 0 {
       let out = self.pending_output
-      self.pending_output = Bytes::default()
+      self.pending_output = b""[:]
       return Data(out)
     }
     self.redispatch = false
@@ -110,21 +110,21 @@ fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
 }
 
 ///|
-fn Inflater::emit_output(self : Inflater) -> Bytes {
+fn Inflater::emit_output(self : Inflater) -> BytesView {
   match self.sink {
     Some(sink) => {
       self.dd.flush_to(sink)
-      Bytes::default()
+      b""[:]
     }
     None => self.dd.flush()
   }
 }
 
 ///|
-fn Inflater::take_output(self : Inflater) -> Bytes {
+fn Inflater::take_output(self : Inflater) -> BytesView {
   match self.sink {
-    Some(sink) => sink.to_bytes()
-    None => Bytes::default()
+    Some(sink) => sink.to_bytes()[:]
+    None => b""[:]
   }
 }
 
@@ -187,7 +187,7 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
     if self.final_block {
       self.phase = Done
       if flushed.length() > 0 {
-        self.pending_output = Bytes::default()
+        self.pending_output = b""[:]
         return Data(flushed)
       }
       return End
@@ -233,7 +233,7 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
       // Flush any pending output before requesting more input
       let flushed = self.emit_output()
       if flushed.length() > 0 {
-        self.pending_output = Bytes::default()
+        self.pending_output = b""[:]
         return Data(flushed)
       }
       return Await

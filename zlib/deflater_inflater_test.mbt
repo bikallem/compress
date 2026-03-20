@@ -5,13 +5,13 @@ test "streaming zlib deflater round-trip" {
   let buf = @buffer.new()
   // Feed data
   match d.encode(Some(original[:])) {
-    Data(out) => buf.write_bytes(out)
+    Data(out) => buf.write_bytesview(out)
     Ok | End | Error(_) => ()
   }
   // Finish
   loop d.encode(None) {
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
@@ -39,7 +39,7 @@ test "streaming zlib inflater round-trip" {
       break
     }
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -76,7 +76,7 @@ test "streaming zlib inflater with chunked input" {
       continue d.decode()
     }
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.decode()
     }
     End => break
@@ -95,12 +95,12 @@ test "streaming zlib deflater + inflater round-trip" {
   let d = @zlib.Deflater::new()
   let cbuf = @buffer.new()
   match d.encode(Some(original[:])) {
-    Data(out) => cbuf.write_bytes(out)
+    Data(out) => cbuf.write_bytesview(out)
     Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
-      cbuf.write_bytes(out)
+      cbuf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
@@ -120,7 +120,7 @@ test "streaming zlib deflater + inflater round-trip" {
       break
     }
     Data(out) => {
-      dbuf.write_bytes(out)
+      dbuf.write_bytesview(out)
       continue inf.decode()
     }
     End => break
@@ -138,12 +138,12 @@ test "streaming zlib deflater with compression levels" {
   let d = @zlib.Deflater::new(level=NoCompression)
   let buf = @buffer.new()
   match d.encode(Some(original[:])) {
-    Data(out) => buf.write_bytes(out)
+    Data(out) => buf.write_bytesview(out)
     Ok | End | Error(_) => ()
   }
   loop d.encode(None) {
     Data(out) => {
-      buf.write_bytes(out)
+      buf.write_bytesview(out)
       continue d.encode(None)
     }
     End => break
