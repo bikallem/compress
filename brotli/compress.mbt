@@ -44,9 +44,7 @@ fn compress_uncompressed(src : BytesView, src_len : Int) -> Bytes {
     }
     // Bulk copy bytes directly into the BitWriter buffer
     bw.flush_final() // ensure bit buffer is fully flushed
-    bw.ensure_capacity(chunk_size)
-    @blit.blit_bytesview(bw.buf, bw.pos, src, offset, chunk_size)
-    bw.pos += chunk_size
+    bw.buf.write_bytesview(src[offset:offset + chunk_size])
     offset += chunk_size
   }
   // Trailing empty last metablock

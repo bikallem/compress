@@ -125,25 +125,14 @@ fn BitReader::read_bytes_to_sink(
 ///|
 /// LSB-first bit writer for Brotli compression.
 priv struct BitWriter {
-  mut buf : FixedArray[Byte]
-  mut pos : Int
+  buf : @blit.Buffer
   mut bits : UInt64
   mut n_bits : Int
 }
 
 ///|
 fn BitWriter::new(capacity : Int) -> BitWriter {
-  { buf: FixedArray::make(capacity, b'\x00'), pos: 0, bits: 0UL, n_bits: 0 }
-}
-
-///|
-fn BitWriter::ensure_capacity(self : BitWriter, additional : Int) -> Unit {
-  while self.pos + additional >= self.buf.length() {
-    let old = self.buf
-    let new_buf = FixedArray::make(old.length() * 2, b'\x00')
-    FixedArray::unsafe_blit(new_buf, 0, old, 0, self.pos)
-    self.buf = new_buf
-  }
+  { buf: @blit.Buffer::new(size_hint=capacity), bits: 0UL, n_bits: 0 }
 }
 
 ///|
@@ -165,22 +154,23 @@ fn BitWriter::flush(self : BitWriter) -> Unit {
   if self.n_bits < 8 {
     return
   }
-  // At most 8 bytes can be flushed (64 bits / 8)
-  self.ensure_capacity(8)
+  self.buf.ensure_capacity(8)
+  let out = self.buf.data()
+  let initial_pos = self.buf.length()
+  let mut pos = initial_pos
   while self.n_bits >= 8 {
-    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_uint().to_byte())
-    self.pos += 1
+    out.unsafe_set(pos, (self.bits & 0xFFUL).to_uint().to_byte())
+    pos += 1
     self.bits = self.bits >> 8
     self.n_bits -= 8
   }
+  self.buf.unsafe_advance(pos - initial_pos)
 }
 
 ///|
 fn BitWriter::flush_final(self : BitWriter) -> Unit {
   if self.n_bits > 0 {
-    self.ensure_capacity(1)
-    self.buf.unsafe_set(self.pos, (self.bits & 0xFFUL).to_uint().to_byte())
-    self.pos += 1
+    self.buf.write_byte((self.bits & 0xFFUL).to_uint().to_byte())
     self.bits = 0UL
     self.n_bits = 0
   }
@@ -189,7 +179,5 @@ fn BitWriter::flush_final(self : BitWriter) -> Unit {
 ///|
 fn BitWriter::to_bytes(self : BitWriter) -> Bytes {
   self.flush_final()
-  let result = @blit.make_uninit(self.pos)
-  @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
-  result.unsafe_reinterpret_as_bytes()
+  self.buf.to_bytes()
 }

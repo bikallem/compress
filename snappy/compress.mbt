@@ -9,28 +9,15 @@ pub fn compress(data : Bytes) -> Bytes {
 ///|
 /// Internal Snappy compression state.
 priv struct Encoder {
-  mut out_buf : FixedArray[Byte]
-  mut out_pos : Int
+  buf : @blit.Buffer
   table : FixedArray[Int] // hash table: hash -> position in input
 }
 
 ///|
 fn Encoder::new() -> Encoder {
   {
-    out_buf: FixedArray::make(4096, b'\x00'),
-    out_pos: 0,
+    buf: @blit.Buffer::new(size_hint=4096),
     table: FixedArray::make(HASH_TABLE_SIZE, 0),
-  }
-}
-
-///|
-fn Encoder::ensure_capacity(self : Encoder, additional : Int) -> Unit {
-  while self.out_pos + additional >= self.out_buf.length() {
-    let old = self.out_buf
-    let new_len = old.length() * 2
-    let new_buf = FixedArray::make(new_len, b'\x00')
-    FixedArray::unsafe_blit(new_buf, 0, old, 0, self.out_pos)
-    self.out_buf = new_buf
   }
 }
 
@@ -38,14 +25,12 @@ fn Encoder::ensure_capacity(self : Encoder, additional : Int) -> Unit {
 /// Encodes the uncompressed length as a varint at the start.
 fn Encoder::emit_varint(self : Encoder, n_ : Int) -> Unit {
   let mut n = n_
-  self.ensure_capacity(5)
+  self.buf.ensure_capacity(5)
   while n >= 128 {
-    self.out_buf.unsafe_set(self.out_pos, ((n & 0x7F) | 0x80).to_byte())
-    self.out_pos += 1
+    self.buf.write_byte_unchecked(((n & 0x7F) | 0x80).to_byte())
     n = n >> 7
   }
-  self.out_buf.unsafe_set(self.out_pos, n.to_byte())
-  self.out_pos += 1
+  self.buf.write_byte_unchecked(n.to_byte())
 }
 
 ///|
@@ -57,88 +42,82 @@ fn Encoder::emit_literal(
   length : Int,
 ) -> Unit {
   let n = length - 1
-  if n < 60 {
-    self.ensure_capacity(1 + length)
-    self.out_buf.unsafe_set(self.out_pos, ((n << 2) | TAG_LITERAL).to_byte())
-    self.out_pos += 1
+  let hdr_size = if n < 60 {
+    1
   } else if n < 0x100 {
-    self.ensure_capacity(2 + length)
-    self.out_buf.unsafe_set(self.out_pos, ((60 << 2) | TAG_LITERAL).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 1, n.to_byte())
-    self.out_pos += 2
+    2
   } else if n < 0x10000 {
-    self.ensure_capacity(3 + length)
-    self.out_buf.unsafe_set(self.out_pos, ((61 << 2) | TAG_LITERAL).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 1, (n & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 2, ((n >> 8) & 0xFF).to_byte())
-    self.out_pos += 3
+    3
   } else if n < 0x1000000 {
-    self.ensure_capacity(4 + length)
-    self.out_buf.unsafe_set(self.out_pos, ((62 << 2) | TAG_LITERAL).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 1, (n & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 2, ((n >> 8) & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 3, ((n >> 16) & 0xFF).to_byte())
-    self.out_pos += 4
+    4
   } else {
-    self.ensure_capacity(5 + length)
-    self.out_buf.unsafe_set(self.out_pos, ((63 << 2) | TAG_LITERAL).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 1, (n & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 2, ((n >> 8) & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 3, ((n >> 16) & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 4, ((n >> 24) & 0xFF).to_byte())
-    self.out_pos += 5
+    5
   }
-  // Copy literal bytes
+  self.buf.ensure_capacity(hdr_size + length)
+  let out = self.buf.data()
+  let pos = self.buf.length()
+  if n < 60 {
+    out.unsafe_set(pos, ((n << 2) | TAG_LITERAL).to_byte())
+  } else if n < 0x100 {
+    out.unsafe_set(pos, ((60 << 2) | TAG_LITERAL).to_byte())
+    out.unsafe_set(pos + 1, n.to_byte())
+  } else if n < 0x10000 {
+    out.unsafe_set(pos, ((61 << 2) | TAG_LITERAL).to_byte())
+    out.unsafe_set(pos + 1, (n & 0xFF).to_byte())
+    out.unsafe_set(pos + 2, ((n >> 8) & 0xFF).to_byte())
+  } else if n < 0x1000000 {
+    out.unsafe_set(pos, ((62 << 2) | TAG_LITERAL).to_byte())
+    out.unsafe_set(pos + 1, (n & 0xFF).to_byte())
+    out.unsafe_set(pos + 2, ((n >> 8) & 0xFF).to_byte())
+    out.unsafe_set(pos + 3, ((n >> 16) & 0xFF).to_byte())
+  } else {
+    out.unsafe_set(pos, ((63 << 2) | TAG_LITERAL).to_byte())
+    out.unsafe_set(pos + 1, (n & 0xFF).to_byte())
+    out.unsafe_set(pos + 2, ((n >> 8) & 0xFF).to_byte())
+    out.unsafe_set(pos + 3, ((n >> 16) & 0xFF).to_byte())
+    out.unsafe_set(pos + 4, ((n >> 24) & 0xFF).to_byte())
+  }
+  let lit_pos = pos + hdr_size
   for i in 0..<length {
-    self.out_buf.unsafe_set(self.out_pos + i, data.unsafe_get(offset + i))
+    out.unsafe_set(lit_pos + i, data.unsafe_get(offset + i))
   }
-  self.out_pos += length
+  self.buf.unsafe_advance(hdr_size + length)
 }
 
 ///|
 /// Emits a copy (back-reference).
-fn Encoder::emit_copy(self : Encoder, offset_ : Int, length_ : Int) -> Unit {
-  let offset = offset_
+fn Encoder::emit_copy(self : Encoder, offset : Int, length_ : Int) -> Unit {
   let mut length = length_
   // Emit copy2 for lengths > 64 or offsets > 2047
-  while length >= 68 {
-    self.ensure_capacity(3)
-    self.out_buf.unsafe_set(self.out_pos, ((63 << 2) | TAG_COPY2).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
-    self.out_pos += 3
-    length -= 64
+  if length >= 68 {
+    let num_full = (length - 4) / 64
+    self.buf.ensure_capacity(num_full * 3 + 3)
+    while length >= 68 {
+      self.buf.write_byte_unchecked(((63 << 2) | TAG_COPY2).to_byte())
+      self.buf.write_byte_unchecked((offset & 0xFF).to_byte())
+      self.buf.write_byte_unchecked(((offset >> 8) & 0xFF).to_byte())
+      length -= 64
+    }
   }
   if length > 64 {
-    self.ensure_capacity(3)
+    self.buf.ensure_capacity(3)
     let len_field = length - 61
-    self.out_buf.unsafe_set(
-      self.out_pos,
-      ((len_field << 2) | TAG_COPY2).to_byte(),
-    )
-    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
-    self.out_pos += 3
+    self.buf.write_byte_unchecked(((len_field << 2) | TAG_COPY2).to_byte())
+    self.buf.write_byte_unchecked((offset & 0xFF).to_byte())
+    self.buf.write_byte_unchecked(((offset >> 8) & 0xFF).to_byte())
     return
   }
   if length >= 12 || offset >= 2048 {
-    self.ensure_capacity(3)
-    self.out_buf.unsafe_set(
-      self.out_pos,
-      (((length - 1) << 2) | TAG_COPY2).to_byte(),
-    )
-    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
-    self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
-    self.out_pos += 3
+    self.buf.ensure_capacity(3)
+    self.buf.write_byte_unchecked((((length - 1) << 2) | TAG_COPY2).to_byte())
+    self.buf.write_byte_unchecked((offset & 0xFF).to_byte())
+    self.buf.write_byte_unchecked(((offset >> 8) & 0xFF).to_byte())
   } else {
-    // Use copy1 (2-byte encoding) for short copies with small offsets
-    self.ensure_capacity(2)
-    self.out_buf.unsafe_set(
-      self.out_pos,
+    self.buf.ensure_capacity(2)
+    self.buf.write_byte_unchecked(
       ((offset >> 8 << 5) | ((length - 4) << 2) | TAG_COPY1).to_byte(),
     )
-    self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
-    self.out_pos += 2
+    self.buf.write_byte_unchecked((offset & 0xFF).to_byte())
   }
 }
 
@@ -239,7 +218,5 @@ fn Encoder::compress_block(
 
 ///|
 fn Encoder::close(self : Encoder) -> Bytes {
-  let result = @blit.make_uninit(self.out_pos)
-  @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
-  result.unsafe_reinterpret_as_bytes()
+  self.buf.to_bytes()
 }

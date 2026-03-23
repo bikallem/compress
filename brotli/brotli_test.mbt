@@ -195,13 +195,11 @@ test "debug repeated encoding size" {
     phrase[i % 16]
   })
   let compressed = @brotli.compress(data)
-  println("repeated 4KB: \{compressed.length()} bytes")
-  // Try level 1 (fast, fewer Huffman tree symbols)
+  guard compressed.length() < data.length()
   let c1 = @brotli.compress(data, level=@brotli.Level(1))
-  println("repeated 4KB level1: \{c1.length()} bytes")
-  // Try level 0 (uncompressed)
+  guard c1.length() < data.length()
   let c0 = @brotli.compress(data, level=@brotli.Level(0))
-  println("repeated 4KB level0: \{c0.length()} bytes")
+  guard c0.length() > 0
 }
 
 ///|
@@ -210,8 +208,8 @@ test "debug text_1mb levels" {
   let data = Bytes::makei(1048576, fn(i) { phrase[i % phrase.length()] })
   for lvl in [0, 1, 2, 4, 6, 9] {
     let compressed = @brotli.compress(data, level=@brotli.Level(lvl))
-    println("MB Q\{lvl}: \{compressed.length()} bytes")
+    guard compressed.length() > 0
   }
   let default_compressed = @brotli.compress(data)
-  println("MB default: \{default_compressed.length()} bytes")
+  guard default_compressed.length() < data.length()
 }

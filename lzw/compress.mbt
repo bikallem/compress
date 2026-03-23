@@ -25,8 +25,7 @@ pub fn compress(
 priv struct Encoder {
   order : BitOrder
   lit_width : Int
-  mut out_buf : FixedArray[Byte]
-  mut out_pos : Int
+  buf : @blit.Buffer
   table : FixedArray[UInt]
   mut width : Int
   mut hi : Int
@@ -42,8 +41,7 @@ fn Encoder::new(order : BitOrder, lit_width : Int) -> Encoder {
   {
     order,
     lit_width: lw,
-    out_buf: FixedArray::make(4096, b'\x00'),
-    out_pos: 0,
+    buf: @blit.Buffer::new(size_hint=4096),
     table: FixedArray::make(TABLE_SIZE, 0U),
     width: 1 + lw,
     hi: (1 << lw) + 1,
@@ -55,49 +53,35 @@ fn Encoder::new(order : BitOrder, lit_width : Int) -> Encoder {
 }
 
 ///|
-fn Encoder::grow_out_buf(self : Encoder) -> Unit {
-  let old = self.out_buf
-  let new_len = old.length() * 2
-  let new_buf = FixedArray::make(new_len, b'\x00')
-  FixedArray::unsafe_blit(new_buf, 0, old, 0, self.out_pos)
-  self.out_buf = new_buf
-}
-
-///|
 fn Encoder::write_code(self : Encoder, code : Int) -> Unit {
   let c = code.reinterpret_as_uint()
+  self.buf.ensure_capacity(16)
+  let out = self.buf.data()
+  let initial_pos = self.buf.length()
+  let mut pos = initial_pos
   match self.order {
     LSB => {
       self.bits = self.bits | (c << self.n_bits)
       self.n_bits += self.width
-      let out = self.out_buf
-      let mut pos = self.out_pos
       while self.n_bits >= 8 {
         out.unsafe_set(pos, (self.bits & 0xFFU).to_byte())
         pos += 1
         self.bits = self.bits >> 8
         self.n_bits -= 8
       }
-      self.out_pos = pos
     }
     MSB => {
       self.bits = self.bits | (c << (32 - self.width - self.n_bits))
       self.n_bits += self.width
-      let out = self.out_buf
-      let mut pos = self.out_pos
       while self.n_bits >= 8 {
         out.unsafe_set(pos, (self.bits >> 24).to_byte())
         pos += 1
         self.bits = self.bits << 8
         self.n_bits -= 8
       }
-      self.out_pos = pos
     }
   }
-  // Grow output buffer if needed
-  if self.out_pos + 16 >= self.out_buf.length() {
-    self.grow_out_buf()
-  }
+  self.buf.unsafe_advance(pos - initial_pos)
 }
 
 ///|
@@ -179,13 +163,12 @@ fn Encoder::write(self : Encoder, data : BytesView) -> Unit {
 ///|
 /// Take accumulated output so far without closing the encoder.
 fn Encoder::take_output(self : Encoder) -> BytesView {
-  if self.out_pos == 0 {
+  if self.buf.length() == 0 {
     return b""[:]
   }
-  let result = @blit.make_uninit(self.out_pos)
-  @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
-  self.out_pos = 0
-  result.unsafe_reinterpret_as_bytes()[:]
+  let result = self.buf.to_bytes()
+  self.buf.reset()
+  result[:]
 }
 
 ///|
@@ -204,17 +187,11 @@ fn Encoder::close(self : Encoder) -> BytesView {
   self.write_code(eof)
   // Flush remaining bits
   if self.n_bits > 0 {
-    if self.out_pos >= self.out_buf.length() {
-      self.grow_out_buf()
-    }
     match self.order {
-      MSB => self.out_buf.unsafe_set(self.out_pos, (self.bits >> 24).to_byte())
-      LSB =>
-        self.out_buf.unsafe_set(self.out_pos, (self.bits & 0xFFU).to_byte())
+      MSB => self.buf.write_byte((self.bits >> 24).to_byte())
+      LSB => self.buf.write_byte((self.bits & 0xFFU).to_byte())
     }
-    self.out_pos += 1
   }
-  let result = @blit.make_uninit(self.out_pos)
-  @blit.blit_fixed_array(result, 0, self.out_buf, 0, self.out_pos)
-  result.unsafe_reinterpret_as_bytes()[:]
+  let result = self.buf.to_bytes()
+  result[:]
 }

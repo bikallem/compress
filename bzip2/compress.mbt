@@ -434,8 +434,7 @@ fn bzip2_crc32_range(data : Bytes, start : Int, end : Int) -> UInt {
 ///|
 /// Bit writer for bzip2 (MSB-first).
 priv struct Bzip2BitWriter {
-  mut buf : FixedArray[Byte]
-  mut pos : Int
+  buf : @blit.Buffer
   mut bits : UInt
   mut n_bits : Int
 }
@@ -443,21 +442,7 @@ priv struct Bzip2BitWriter {
 ///|
 fn Bzip2BitWriter::new(size_hint? : Int = 256) -> Bzip2BitWriter {
   let cap = if size_hint > 256 { size_hint } else { 256 }
-  { buf: FixedArray::make(cap, b'\x00'), pos: 0, bits: 0U, n_bits: 0 }
-}
-
-///|
-fn Bzip2BitWriter::ensure_capacity(self : Bzip2BitWriter, needed : Int) -> Unit {
-  if self.pos + needed > self.buf.length() {
-    let new_cap = if self.buf.length() * 2 > self.pos + needed {
-      self.buf.length() * 2
-    } else {
-      self.pos + needed
-    }
-    let new_buf = FixedArray::make(new_cap, b'\x00')
-    @blit.blit_fixed_array(new_buf, 0, self.buf, 0, self.pos)
-    self.buf = new_buf
-  }
+  { buf: @blit.Buffer::new(size_hint=cap), bits: 0U, n_bits: 0 }
 }
 
 ///|
@@ -466,7 +451,8 @@ fn Bzip2BitWriter::write_bits(
   val : UInt,
   n : Int,
 ) -> Unit {
-  // MSB-first: pack bits from left
+  // MSB-first: pack bits from left. At most 5 bytes can be emitted per call.
+  self.buf.ensure_capacity(5)
   let mut remaining = n
   let mut v = val
   while remaining > 0 {
@@ -475,11 +461,7 @@ fn Bzip2BitWriter::write_bits(
       self.bits = (self.bits << space) | (v >> (remaining - space))
       v = v & ((1U << (remaining - space)) - 1U)
       remaining -= space
-      if self.pos == self.buf.length() {
-        self.ensure_capacity(1)
-      }
-      self.buf.unsafe_set(self.pos, self.bits.to_byte())
-      self.pos += 1
+      self.buf.write_byte_unchecked(self.bits.to_byte())
       self.bits = 0U
       self.n_bits = 0
     } else {
@@ -499,11 +481,7 @@ fn Bzip2BitWriter::write_byte(self : Bzip2BitWriter, b : Byte) -> Unit {
 fn Bzip2BitWriter::flush(self : Bzip2BitWriter) -> Unit {
   if self.n_bits > 0 {
     self.bits = self.bits << (8 - self.n_bits)
-    if self.pos == self.buf.length() {
-      self.ensure_capacity(1)
-    }
-    self.buf.unsafe_set(self.pos, self.bits.to_byte())
-    self.pos += 1
+    self.buf.write_byte(self.bits.to_byte())
     self.bits = 0U
     self.n_bits = 0
   }
@@ -512,21 +490,15 @@ fn Bzip2BitWriter::flush(self : Bzip2BitWriter) -> Unit {
 ///|
 /// Extract accumulated complete bytes without flushing partial bits.
 fn Bzip2BitWriter::take_output(self : Bzip2BitWriter) -> BytesView {
-  if self.pos == 0 {
+  if self.buf.length() == 0 {
     return b""[:]
   }
-  let result = @blit.make_uninit(self.pos)
-  @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
-  self.pos = 0
-  result.unsafe_reinterpret_as_bytes()[:]
+  let result = self.buf.to_bytes()
+  self.buf.reset()
+  result[:]
 }
 
 ///|
 fn Bzip2BitWriter::to_bytes(self : Bzip2BitWriter) -> Bytes {
-  if self.pos == self.buf.length() {
-    return self.buf.unsafe_reinterpret_as_bytes()
-  }
-  let result = @blit.make_uninit(self.pos)
-  @blit.blit_fixed_array(result, 0, self.buf, 0, self.pos)
-  result.unsafe_reinterpret_as_bytes()
+  self.buf.to_bytes()
 }
