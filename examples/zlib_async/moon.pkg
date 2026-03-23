@@ -1,8 +1,8 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/zlib" @zliblib,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
-  "moonbitlang/core/buffer",
 }
 
 options(

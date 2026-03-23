@@ -1,8 +1,6 @@
 import {
   "bikallem/compress/checksum",
   "bikallem/blit",
-  "bikallem/compress/internal/output_sink",
-  "moonbitlang/core/buffer",
 }
 
 import {

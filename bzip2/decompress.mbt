@@ -4,11 +4,11 @@ pub fn decompress(data : Bytes) -> Bytes raise Bzip2Error {
   let inf = Inflater::new()
   inf.src(data[:])
   let capacity = (data.length() * 4).max(32768)
-  let sink = @output_sink.OutputSink::new(capacity)
+  let sink = @blit.Buffer::new(size_hint=capacity)
   loop inf.decode() {
     Await => raise Bzip2Error::UnexpectedEOF
     Data(chunk) => {
-      sink.write_bytesview(chunk, 0, chunk.length())
+      sink.write_bytesview(chunk)
       continue inf.decode()
     }
     End => break

@@ -26,7 +26,7 @@ test "round-trip: all compression levels" {
 
 ///|
 test "round-trip: large repetitive data" {
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<500 {
     buf.write_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
   }
@@ -120,7 +120,7 @@ test "signal protocol: chunked input" {
   let data : Bytes = b"Hello, World!"
   let compressed = @gzip.compress(data)
   let d = @gzip.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut pos = 0
   loop d.decode() {
     Await =>
@@ -145,7 +145,7 @@ test "signal protocol: chunked input 1KB" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @gzip.compress(data)
   let d = @gzip.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut pos = 0
   // Feed in 16-byte chunks
   loop d.decode() {

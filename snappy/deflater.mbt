@@ -7,7 +7,7 @@
 ///   match d.encode(None) { Data(out) => ...; End => ... }
 priv struct DeflaterState {
   state : Encoder
-  input_buf : @buffer.Buffer
+  input_buf : @blit.Buffer
   mut finished : Bool
 }
 
@@ -16,7 +16,11 @@ struct Deflater(DeflaterState)
 
 ///|
 pub fn Deflater::new() -> Deflater {
-  Deflater({ state: Encoder::new(), input_buf: @buffer.new(), finished: false })
+  Deflater({
+    state: Encoder::new(),
+    input_buf: @blit.Buffer::new(),
+    finished: false,
+  })
 }
 
 ///|
@@ -30,10 +34,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       if chunk.length() == 0 {
         return Ok
       }
-      // Buffer input — Snappy needs the full data for varint header
-      for x in chunk {
-        s.input_buf.write_byte(x)
-      }
+      s.input_buf.write_bytesview(chunk)
       Ok
     }
     None => {

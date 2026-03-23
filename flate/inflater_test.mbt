@@ -60,7 +60,7 @@ test "signal protocol - Await then Data then End" {
   // Should get Await again since stored block needs all bytes
   let mut got_await = false
   let mut got_data = false
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   // Drive to completion with both chunks
   loop d.decode() {
     Await => {

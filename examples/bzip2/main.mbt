@@ -17,7 +17,7 @@ fn run() -> Unit raise {
   match d.encode(Some(original[:])) {
     Ok | Data(_) | End | Error(_) => ()
   }
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   loop d.encode(None) {
     Data(out) => {
       cbuf.write_bytesview(out)
@@ -28,7 +28,7 @@ fn run() -> Unit raise {
   let rt_compressed = cbuf.to_bytes()
   let inf = @bz2.Inflater::new()
   inf.src(rt_compressed[:])
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   loop inf.decode() {
     Await => break
     Data(out) => {

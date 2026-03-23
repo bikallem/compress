@@ -302,7 +302,8 @@ fn find_sequences(
         src.unsafe_get(ip - rep_off + 2) == src.unsafe_get(ip + 2) &&
         src.unsafe_get(ip - rep_off + 3) == src.unsafe_get(ip + 3) {
         let mut mlen = ZSTD_MIN_MATCH
-        while ip + mlen < src_len && src.unsafe_get(ip - rep_off + mlen) == src.unsafe_get(ip + mlen) {
+        while ip + mlen < src_len &&
+              src.unsafe_get(ip - rep_off + mlen) == src.unsafe_get(ip + mlen) {
           mlen += 1
         }
         if mlen > best_match_len {
@@ -321,7 +322,8 @@ fn find_sequences(
       src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
       let mut match_len = ZSTD_MIN_MATCH
       while ip + match_len < src_len &&
-            src.unsafe_get(ref_pos + match_len) == src.unsafe_get(ip + match_len) {
+            src.unsafe_get(ref_pos + match_len) ==
+            src.unsafe_get(ip + match_len) {
         match_len += 1
       }
       let hash_offset = ip - ref_pos
@@ -609,7 +611,10 @@ fn FseBitWriter::add_bits(self : FseBitWriter, value : Int, nb : Int) -> Unit {
 ///|
 fn FseBitWriter::flush(self : FseBitWriter) -> Unit {
   while self.bit_pos >= 8 {
-    self.buf.unsafe_set(self.byte_pos, (self.bit_buf & 0xFFUL).to_uint().to_byte())
+    self.buf.unsafe_set(
+      self.byte_pos,
+      (self.bit_buf & 0xFFUL).to_uint().to_byte(),
+    )
     self.byte_pos += 1
     self.bit_buf = self.bit_buf >> 8
     self.bit_pos -= 8
@@ -621,7 +626,10 @@ fn FseBitWriter::flush(self : FseBitWriter) -> Unit {
 fn FseBitWriter::close(self : FseBitWriter) -> Unit {
   self.add_bits(1, 1)
   if self.bit_pos > 0 {
-    self.buf.unsafe_set(self.byte_pos, (self.bit_buf & 0xFFUL).to_uint().to_byte())
+    self.buf.unsafe_set(
+      self.byte_pos,
+      (self.bit_buf & 0xFFUL).to_uint().to_byte(),
+    )
     self.byte_pos += 1
   }
 }
@@ -659,7 +667,11 @@ fn get_ll_code(ll : Int) -> (Int, Int, Int) {
   }
   for code = 35; code >= 16; code = code - 1 {
     if ll >= ll_baselines.unsafe_get(code) {
-      return (code, ll_extra_bits.unsafe_get(code), ll - ll_baselines.unsafe_get(code))
+      return (
+        code,
+        ll_extra_bits.unsafe_get(code),
+        ll - ll_baselines.unsafe_get(code),
+      )
     }
   }
   (0, 0, 0)
@@ -672,7 +684,11 @@ fn get_ml_code(ml : Int) -> (Int, Int, Int) {
   }
   for code = 52; code >= 32; code = code - 1 {
     if ml >= ml_baselines.unsafe_get(code) {
-      return (code, ml_extra_bits.unsafe_get(code), ml - ml_baselines.unsafe_get(code))
+      return (
+        code,
+        ml_extra_bits.unsafe_get(code),
+        ml - ml_baselines.unsafe_get(code),
+      )
     }
   }
   (0, 0, 0)

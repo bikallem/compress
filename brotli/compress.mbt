@@ -434,13 +434,21 @@ fn lz77_find_matches_chain(
 ///|
 fn encode_insert_len(insert_len : Int) -> (Int, Int, Int) {
   let code = bsearch_baselines(_insert_baselines, insert_len)
-  (code, insert_len - _insert_baselines.unsafe_get(code), _insert_extra_bits.unsafe_get(code))
+  (
+    code,
+    insert_len - _insert_baselines.unsafe_get(code),
+    _insert_extra_bits.unsafe_get(code),
+  )
 }
 
 ///|
 fn encode_copy_len(copy_len : Int) -> (Int, Int, Int) {
   let code = bsearch_baselines(_copy_baselines, copy_len)
-  (code, copy_len - _copy_baselines.unsafe_get(code), _copy_extra_bits.unsafe_get(code))
+  (
+    code,
+    copy_len - _copy_baselines.unsafe_get(code),
+    _copy_extra_bits.unsafe_get(code),
+  )
 }
 
 ///|
@@ -631,7 +639,8 @@ fn brotli_code_lengths(
     let mut ip = active
     let mut nn = active
     for _merge_step in 0..<(active - 1) {
-      let left = if lp < active && (ip >= nn || leaf_freq.unsafe_get(lp) <= node_freq.unsafe_get(ip)) {
+      let left = if lp < active &&
+        (ip >= nn || leaf_freq.unsafe_get(lp) <= node_freq.unsafe_get(ip)) {
         let r = lp
         lp += 1
         r
@@ -640,7 +649,8 @@ fn brotli_code_lengths(
         ip += 1
         r
       }
-      let right = if lp < active && (ip >= nn || leaf_freq.unsafe_get(lp) <= node_freq.unsafe_get(ip)) {
+      let right = if lp < active &&
+        (ip >= nn || leaf_freq.unsafe_get(lp) <= node_freq.unsafe_get(ip)) {
         let r = lp
         lp += 1
         r
@@ -649,7 +659,10 @@ fn brotli_code_lengths(
         ip += 1
         r
       }
-      node_freq.unsafe_set(nn, node_freq.unsafe_get(left) + node_freq.unsafe_get(right))
+      node_freq.unsafe_set(
+        nn,
+        node_freq.unsafe_get(left) + node_freq.unsafe_get(right),
+      )
       parent.unsafe_set(left, nn)
       parent.unsafe_set(right, nn)
       nn += 1
@@ -931,7 +944,11 @@ fn write_simple_prefix(
       bw.write_bits(syms.unsafe_get(1), sb)
       bw.write_bits(syms.unsafe_get(2), sb)
       bw.write_bits(syms.unsafe_get(3), sb)
-      let tree_select = if code_lengths.unsafe_get(syms.unsafe_get(0)) == 1 { 1 } else { 0 }
+      let tree_select = if code_lengths.unsafe_get(syms.unsafe_get(0)) == 1 {
+        1
+      } else {
+        0
+      }
       bw.write_bits(tree_select, 1)
     }
   }
@@ -1022,7 +1039,11 @@ fn write_complex_prefix(
   let cl_extra : Array[Int] = []
   let mut i = 0
   while i < rle_end {
-    let cl = if i < code_lengths.length() { code_lengths.unsafe_get(i) } else { 0 }
+    let cl = if i < code_lengths.length() {
+      code_lengths.unsafe_get(i)
+    } else {
+      0
+    }
     if cl == 0 {
       let mut run = 1
       while i + run < rle_end {
@@ -1086,7 +1107,8 @@ fn write_complex_prefix(
     cl_lens.unsafe_get(brotli_cl_order.unsafe_get(1)) == 0 &&
     cl_lens.unsafe_get(brotli_cl_order.unsafe_get(2)) == 0 {
     3
-  } else if cl_lens.unsafe_get(brotli_cl_order.unsafe_get(0)) == 0 && cl_lens.unsafe_get(brotli_cl_order.unsafe_get(1)) == 0 {
+  } else if cl_lens.unsafe_get(brotli_cl_order.unsafe_get(0)) == 0 &&
+    cl_lens.unsafe_get(brotli_cl_order.unsafe_get(1)) == 0 {
     2
   } else {
     0
@@ -1298,7 +1320,10 @@ fn encode_metablock_into(
   let dist_freqs = FixedArray::make(dist_size, 0)
 
   for i in 0..<ec.count {
-    iac_freqs.unsafe_set(ec.iac.unsafe_get(i), iac_freqs.unsafe_get(ec.iac.unsafe_get(i)) + 1)
+    iac_freqs.unsafe_set(
+      ec.iac.unsafe_get(i),
+      iac_freqs.unsafe_get(ec.iac.unsafe_get(i)) + 1,
+    )
   }
   for i in 0..<ec.count {
     let dc = ec.dc.unsafe_get(i)
@@ -1382,7 +1407,9 @@ fn encode_metablock_into(
     } else {
       let codes = lit_codes_arr.unsafe_get(0)
       for j in 0..<cmd.insert_len {
-        let entry = codes.unsafe_get(src.unsafe_get(cmd.insert_pos + j).to_int())
+        let entry = codes.unsafe_get(
+          src.unsafe_get(cmd.insert_pos + j).to_int(),
+        )
         bw.write_bits(entry >> 8, entry & 0xFF)
       }
     }
@@ -1467,7 +1494,10 @@ fn build_context_model(
     let lit_freqs = tree_freqs.unsafe_get(0)
     let other = tree_freqs.unsafe_get(1)
     for sym in 0..<256 {
-      lit_freqs.unsafe_set(sym, lit_freqs.unsafe_get(sym) + other.unsafe_get(sym))
+      lit_freqs.unsafe_set(
+        sym,
+        lit_freqs.unsafe_get(sym) + other.unsafe_get(sym),
+      )
     }
     return (1, FixedArray::make(64, 0), [lit_freqs])
   }
@@ -1542,7 +1572,10 @@ fn cluster_contexts(
     for j in 0..<256 {
       merged.unsafe_get(best_a)[j] += merged.unsafe_get(best_b)[j]
     }
-    counts.unsafe_set(best_a, counts.unsafe_get(best_a) + counts.unsafe_get(best_b))
+    counts.unsafe_set(
+      best_a,
+      counts.unsafe_get(best_a) + counts.unsafe_get(best_b),
+    )
     alive.unsafe_set(best_b, false)
     // Reassign all contexts from best_b to best_a
     for i in 0..<n {

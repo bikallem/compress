@@ -1,6 +1,6 @@
 ///|
 fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
-  let buf = @buffer.new(size_hint=b.length() * n)
+  let buf = @blit.Buffer::new(size_hint=b.length() * n)
   for _ in 0..<n {
     buf.write_bytes(b)
   }
@@ -32,7 +32,7 @@ fn run() -> Unit raise {
 
   // --- Streaming API ---
   let d = @lzwlib.Deflater::new(LSB, 8)
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Ok | End | Error(_) => ()
     Data(out) => cbuf.write_bytesview(out)
@@ -47,7 +47,7 @@ fn run() -> Unit raise {
   let stream_compressed = cbuf.to_bytes()
   let inf = @lzwlib.Inflater::new(LSB, 8)
   inf.src(stream_compressed[:])
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   loop inf.decode() {
     Await => break
     Data(out) => {

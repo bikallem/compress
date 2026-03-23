@@ -2,7 +2,7 @@
 test "streaming zlib deflater round-trip" {
   let original = b"Hello, World! This is a test of zlib streaming."
   let d = @zlib.Deflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   // Feed data
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytesview(out)
@@ -30,7 +30,7 @@ test "streaming zlib inflater round-trip" {
   let original = b"Hello, World! This is a test of zlib streaming decompression."
   let compressed = @zlib.compress(original)
   let d = @zlib.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   // Feed all compressed data at once
   d.src(compressed[:])
   loop d.decode() {
@@ -56,7 +56,7 @@ test "streaming zlib inflater with chunked input" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   let compressed = @zlib.compress(original)
   let d = @zlib.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let chunk_size = 64
   let mut offset = 0
   loop d.decode() {
@@ -93,7 +93,7 @@ test "streaming zlib deflater + inflater round-trip" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   // Compress with deflater
   let d = @zlib.Deflater::new()
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytesview(out)
     Ok | End | Error(_) => ()
@@ -112,7 +112,7 @@ test "streaming zlib deflater + inflater round-trip" {
   let compressed = cbuf.to_bytes()
   // Decompress with inflater
   let inf = @zlib.Inflater::new()
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   inf.src(compressed[:])
   loop inf.decode() {
     Await => {
@@ -136,7 +136,7 @@ test "streaming zlib deflater + inflater round-trip" {
 test "streaming zlib deflater with compression levels" {
   let original = Bytes::makei(1000, fn(i) { (i % 26 + 65).to_byte() })
   let d = @zlib.Deflater::new(level=NoCompression)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytesview(out)
     Ok | End | Error(_) => ()

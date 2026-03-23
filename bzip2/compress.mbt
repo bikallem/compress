@@ -324,7 +324,10 @@ fn bzip2_compute_lengths(
   let mut next_node = n
   for _ in 0..<(n - 1) {
     let left = if leaf_ptr < n &&
-      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
+      (
+        int_ptr >= next_node ||
+        leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)
+      ) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -334,7 +337,10 @@ fn bzip2_compute_lengths(
       r
     }
     let right = if leaf_ptr < n &&
-      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
+      (
+        int_ptr >= next_node ||
+        leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)
+      ) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -343,7 +349,10 @@ fn bzip2_compute_lengths(
       int_ptr += 1
       r
     }
-    node_freq.unsafe_set(next_node, node_freq.unsafe_get(left) + node_freq.unsafe_get(right))
+    node_freq.unsafe_set(
+      next_node,
+      node_freq.unsafe_get(left) + node_freq.unsafe_get(right),
+    )
     parent.unsafe_set(left, next_node)
     parent.unsafe_set(right, next_node)
     next_node += 1
@@ -374,7 +383,12 @@ fn build_canonical_codes(
   n : Int,
 ) -> FixedArray[UInt] {
   let max_len = for i = 0, max_len = 0; i < n; i = i + 1 {
-    continue i + 1, if lengths.unsafe_get(i) > max_len { lengths.unsafe_get(i) } else { max_len }
+    continue i + 1,
+      if lengths.unsafe_get(i) > max_len {
+        lengths.unsafe_get(i)
+      } else {
+        max_len
+      }
   } nobreak {
     max_len
   }
@@ -382,7 +396,10 @@ fn build_canonical_codes(
   let count = FixedArray::make(max_len + 1, 0)
   for i in 0..<n {
     if lengths.unsafe_get(i) > 0 {
-      count.unsafe_set(lengths.unsafe_get(i), count.unsafe_get(lengths.unsafe_get(i)) + 1)
+      count.unsafe_set(
+        lengths.unsafe_get(i),
+        count.unsafe_get(lengths.unsafe_get(i)) + 1,
+      )
     }
   }
   // Assign codes

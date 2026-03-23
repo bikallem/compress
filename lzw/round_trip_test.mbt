@@ -71,7 +71,7 @@ test "round-trip: litWidth 2 to 8 MSB" {
 
 ///|
 test "round-trip: large repetitive data" {
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<500 {
     buf.write_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
   }
@@ -120,7 +120,7 @@ test "signal protocol: chunked input LSB" {
   let data : Bytes = b"Hello, World!"
   let compressed = @lzw.compress(data, LSB, 8)
   let d = @lzw.Inflater::new(LSB, 8)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut pos = 0
   loop d.decode() {
     Await =>
@@ -145,7 +145,7 @@ test "signal protocol: chunked input MSB" {
   let data : Bytes = b"Hello, World!"
   let compressed = @lzw.compress(data, MSB, 8)
   let d = @lzw.Inflater::new(MSB, 8)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut pos = 0
   loop d.decode() {
     Await =>
@@ -170,7 +170,7 @@ test "signal protocol: chunked 1KB input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @lzw.compress(data, LSB, 8)
   let d = @lzw.Inflater::new(LSB, 8)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut pos = 0
   // Feed in 16-byte chunks
   loop d.decode() {

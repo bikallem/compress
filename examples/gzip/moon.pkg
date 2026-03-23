@@ -1,6 +1,6 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/gzip" @gz,
-  "moonbitlang/core/buffer",
 }
 
 options(

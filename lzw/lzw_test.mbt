@@ -160,7 +160,7 @@ test "compress round-trip all zeros" {
 ///|
 test "compress round-trip repeated pattern" {
   let pattern : Bytes = b"abcdefghij"
-  let buf = @buffer.new(size_hint=1000)
+  let buf = @blit.Buffer::new(size_hint=1000)
   for _ in 0..<100 {
     buf.write_bytes(pattern)
   }
@@ -197,7 +197,7 @@ test "compress round-trip large data MSB 8" {
 ///|
 test "compress round-trip litWidth 2 LSB" {
   // Only values 0-3 for litWidth 2
-  let buf = @buffer.new(size_hint=100)
+  let buf = @blit.Buffer::new(size_hint=100)
   for _ in 0..<100 {
     buf.write_byte(b'\x00')
     buf.write_byte(b'\x01')

@@ -8,7 +8,7 @@ priv struct Decoder {
   mut size : UInt
   mut phase : InflatePhase
   // Header accumulator
-  hdr_buf : @buffer.Buffer
+  hdr_buf : @blit.Buffer
   mut header : Header
 }
 
@@ -31,7 +31,7 @@ pub fn Inflater::new() -> Inflater {
     crc: @checksum.CRC32::new(),
     size: 0U,
     phase: ParseHeader,
-    hdr_buf: @buffer.new(),
+    hdr_buf: @blit.Buffer::new(),
     header: Header::default(),
   })
 }

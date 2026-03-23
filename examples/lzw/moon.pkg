@@ -1,6 +1,6 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/lzw" @lzwlib,
-  "moonbitlang/core/buffer",
 }
 
 options(

@@ -2,7 +2,7 @@
 test "streaming bzip2 deflater" {
   let original = b"Hello, World! This is a test of bzip2 streaming."
   let d = @bzip2.Deflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Ok | Data(_) | End | Error(_) => ()
   }
@@ -25,7 +25,7 @@ test "streaming bzip2 inflater" {
   let compressed = @bzip2.compress(original)
   let d = @bzip2.Inflater::new()
   d.src(compressed[:])
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   loop d.decode() {
     Await => fail("unexpected Await: all data should be available")
     Data(out) => {
@@ -43,7 +43,7 @@ test "streaming bzip2 inflater with chunked input" {
   let original = Bytes::makei(3000, fn(i) { (i % 251).to_byte() })
   let compressed = @bzip2.compress(original)
   let d = @bzip2.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let chunk_size = 64
   let mut offset = 0
   loop d.decode() {
@@ -92,7 +92,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
     offset = end
   }
   // Finish
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   loop d.encode(None) {
     Data(out) => {
       cbuf.write_bytesview(out)
@@ -105,7 +105,7 @@ test "streaming bzip2 deflater + inflater round-trip" {
   let compressed = cbuf.to_bytes()
   let inf = @bzip2.Inflater::new()
   inf.src(compressed[:])
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   loop inf.decode() {
     Await => fail("unexpected Await")
     Data(out) => {
@@ -123,7 +123,7 @@ test "streaming bzip2 inflater byte-at-a-time" {
   let original = b"Byte-at-a-time streaming stress test for bzip2 inflater!"
   let compressed = @bzip2.compress(original)
   let d = @bzip2.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut offset = 0
   loop d.decode() {
     Await => {
@@ -150,7 +150,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
   // Use level 1 (100KB blocks) and feed 250KB to get at least 2 block flushes
   let d = @bzip2.Deflater::new(level=1)
   let chunk = Bytes::makei(50000, fn(i) { (i % 251).to_byte() })
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   let mut data_signals = 0
   // Feed 5 chunks of 50KB = 250KB total, triggers 2 block flushes
   for _ in 0..<5 {
@@ -176,7 +176,7 @@ test "streaming bzip2 deflater emits blocks incrementally" {
   }
   // Verify round-trip
   let original = {
-    let b = @buffer.new()
+    let b = @blit.Buffer::new()
     for _ in 0..<5 {
       b.write_bytes(chunk)
     }

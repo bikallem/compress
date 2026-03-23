@@ -5,6 +5,6 @@ fn main {
   let _ : @zliblib.Deflater? = None
   let _ : @moonasync.Task[Unit]? = None
   let _ : @io.PipeRead? = None
-  let _ : @buffer.Buffer? = None
+  let _ : @blit.Buffer? = None
   println("This example requires --target native")
 }

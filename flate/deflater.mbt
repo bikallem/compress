@@ -16,7 +16,8 @@ fn Deflater::hash4(self : Deflater, pos : Int, hash_mask : Int) -> Int {
     (w.unsafe_get(pos + 1).to_int() << 8) |
     (w.unsafe_get(pos + 2).to_int() << 16) |
     (w.unsafe_get(pos + 3).to_int() << 24)
-  ((v.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >> 17) & hash_mask
+  ((v.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >> 17) &
+  hash_mask
 }
 
 ///|
@@ -589,8 +590,10 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
             (window.unsafe_get(j + 1).to_int() << 8) |
             (window.unsafe_get(j + 2).to_int() << 16) |
             (window.unsafe_get(j + 3).to_int() << 24)
-          let rh = ((rv.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >>
-            17) &
+          let rh = (
+              (rv.reinterpret_as_uint() * 0x1e35a7bdU).reinterpret_as_int() >>
+              17
+            ) &
             hash_mask
           prev.unsafe_set(j & WINDOW_MASK, head.unsafe_get(rh))
           head.unsafe_set(rh, j + base)
@@ -615,7 +618,6 @@ fn Deflater::step_lazy(self : Deflater) -> Unit {
   }
   self.index = i
 }
-
 
 ///|
 fn Deflater::flush_tokens(self : Deflater) -> Unit {

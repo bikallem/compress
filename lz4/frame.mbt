@@ -38,7 +38,9 @@ fn write_frame_header(
   // Header checksum: (xxh32(header_bytes) >> 8) & 0xFF
   let header_start = start + 4 // after magic
   let header_len = pos - header_start
-  let header_bytes = Bytes::makei(header_len, fn(i) { dst.unsafe_get(header_start + i) })
+  let header_bytes = Bytes::makei(header_len, fn(i) {
+    dst.unsafe_get(header_start + i)
+  })
   let hc = @checksum.xxh32(header_bytes[:])
   dst.unsafe_set(pos, ((hc >> 8) & 0xFFU).to_byte())
   pos += 1
@@ -123,7 +125,9 @@ fn parse_frame_header(
   // Verify header checksum
   let header_start = 4 // after magic
   let header_len = pos - header_start
-  let header_bytes = Bytes::makei(header_len, fn(i) { data.unsafe_get(header_start + i) })
+  let header_bytes = Bytes::makei(header_len, fn(i) {
+    data.unsafe_get(header_start + i)
+  })
   let expected_hc = (@checksum.xxh32(header_bytes[:]) >> 8) & 0xFFU
   guard pos < data.length() else { raise Lz4Error::UnexpectedEOF }
   let actual_hc = data.unsafe_get(pos).to_uint()

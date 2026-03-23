@@ -63,8 +63,11 @@ fn HuffmanDecoder::build(
         let link_bits = max_bits - HUFFMAN_CHUNK_BITS
         let link_size = 1 << link_bits
         links.push(FixedArray::make(link_size, 0U))
-        chunks.unsafe_set(prefix, (link_idx.reinterpret_as_uint() << 8) |
-          ((HUFFMAN_CHUNK_BITS + link_bits).reinterpret_as_uint() | 0x80U))
+        chunks.unsafe_set(
+          prefix,
+          (link_idx.reinterpret_as_uint() << 8) |
+          ((HUFFMAN_CHUNK_BITS + link_bits).reinterpret_as_uint() | 0x80U),
+        )
       }
       let link_info = chunks.unsafe_get(prefix)
       let link_idx = (link_info >> 8).reinterpret_as_int()

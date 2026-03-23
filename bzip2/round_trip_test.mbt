@@ -52,7 +52,7 @@ test "round-trip: all compression levels" {
 
 ///|
 test "round-trip: large repetitive data" {
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<500 {
     buf.write_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
   }
@@ -85,7 +85,7 @@ test "round-trip: all 0xFF" {
 ///|
 test "round-trip: RLE1 heavy data" {
   // Long runs of the same byte to exercise RLE1 encoding
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for b_val in [b'\x00', b'\x41', b'\xFF'] {
     for _ in 0..<300 {
       buf.write_byte(b_val)
@@ -121,7 +121,7 @@ test "signal protocol: chunked input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @bzip2.compress(data)
   let d = @bzip2.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut pos = 0
   // Feed in 16-byte chunks
   loop d.decode() {

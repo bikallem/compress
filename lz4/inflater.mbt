@@ -15,7 +15,7 @@ priv struct InflaterState {
   mut input_pos : Int
   mut finished : Bool
   mut failed : Lz4Error?
-  mut sink : @output_sink.OutputSink?
+  mut sink : @blit.Buffer?
 }
 
 ///|
@@ -45,7 +45,7 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
 ///|
 /// Stub for streaming direct-output mode (to be wired up in convenience API).
 pub fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
-  self.0.sink = Some(@output_sink.OutputSink::new(capacity))
+  self.0.sink = Some(@blit.Buffer::new(size_hint=capacity))
 }
 
 ///|

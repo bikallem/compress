@@ -1,6 +1,6 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/lz4" @lz4_codec,
-  "moonbitlang/core/buffer",
 }
 
 options(

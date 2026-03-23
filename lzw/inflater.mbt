@@ -33,7 +33,7 @@ priv struct InflaterState {
   mut out_pos : Int
   mut finished : Bool
   mut failed : LzwError?
-  mut sink : @output_sink.OutputSink? // None = streaming, Some = direct output
+  mut sink : @blit.Buffer? // None = streaming, Some = direct output
 }
 
 ///|
@@ -132,7 +132,7 @@ fn flush_output(s : InflaterState) -> BytesView {
 
 ///|
 fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
-  self.0.sink = Some(@output_sink.OutputSink::new(capacity))
+  self.0.sink = Some(@blit.Buffer::new(size_hint=capacity))
 }
 
 ///|

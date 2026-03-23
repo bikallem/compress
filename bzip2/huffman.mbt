@@ -39,7 +39,10 @@ fn Bzip2HuffmanDecoder::build(
   let count = FixedArray::make(BZIP2_MAX_CODE_LEN + 2, 0)
   for i in 0..<num_symbols {
     if lengths.unsafe_get(i) > 0 {
-      count.unsafe_set(lengths.unsafe_get(i), count.unsafe_get(lengths.unsafe_get(i)) + 1)
+      count.unsafe_set(
+        lengths.unsafe_get(i),
+        count.unsafe_get(lengths.unsafe_get(i)) + 1,
+      )
     }
   }
   // Build bases (cumulative count) and limits

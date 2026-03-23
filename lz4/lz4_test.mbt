@@ -32,7 +32,7 @@ test "lz4 round-trip abcabc" {
 
 ///|
 test "lz4 round-trip larger text" {
-  let sb = @buffer.new(size_hint=500)
+  let sb = @blit.Buffer::new(size_hint=500)
   for _ in 0..<10 {
     sb.write_bytes(b"The quick brown fox jumps over the lazy dog. ")
   }

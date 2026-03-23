@@ -47,7 +47,10 @@ fn BitReader::refill(self : BitReader) -> Unit {
   } else {
     while self.n_bits <= 56 && self.byte_pos < self.data.length() {
       self.bits = self.bits |
-        (self.data.unsafe_get(self.byte_pos).to_uint().to_uint64() << self.n_bits)
+        (
+          self.data.unsafe_get(self.byte_pos).to_uint().to_uint64() <<
+          self.n_bits
+        )
       self.byte_pos += 1
       self.n_bits += 8
     }
@@ -78,7 +81,7 @@ fn BitReader::read_bool(self : BitReader) -> Bool {
 /// read_bits(8) calls for uncompressed metablocks.
 fn BitReader::read_bytes_to_sink(
   self : BitReader,
-  sink : @output_sink.OutputSink,
+  sink : @blit.Buffer,
   len : Int,
 ) -> Unit {
   // First, drain any buffered bits as individual bytes
@@ -97,7 +100,15 @@ fn BitReader::read_bytes_to_sink(
   // which shouldn't happen after byte alignment, but handle gracefully.
   if self.n_bits == 0 {
     // Bulk copy directly from input data to sink
-    sink.write_bytesview(self.data, self.byte_pos, remaining)
+    sink.ensure_capacity(remaining)
+    @blit.blit_bytes(
+      sink.data(),
+      sink.length(),
+      self.data.data(),
+      self.byte_pos,
+      remaining,
+    )
+    sink.unsafe_advance(remaining)
     self.byte_pos += remaining
   } else {
     // Fallback: read byte by byte

@@ -2,7 +2,7 @@
 /// Streaming Zstandard compressor using signal protocol.
 priv struct EncoderState {
   level : CompressionLevel
-  input_buf : @buffer.Buffer
+  input_buf : @blit.Buffer
   mut finished : Bool
 }
 
@@ -11,7 +11,7 @@ struct Deflater(EncoderState)
 
 ///|
 pub fn Deflater::new(level? : CompressionLevel = Default) -> Deflater {
-  Deflater({ level, input_buf: @buffer.new(), finished: false })
+  Deflater({ level, input_buf: @blit.Buffer::new(), finished: false })
 }
 
 ///|
@@ -25,9 +25,7 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       if chunk.length() == 0 {
         return Ok
       }
-      for x in chunk {
-        s.input_buf.write_byte(x)
-      }
+      s.input_buf.write_bytesview(chunk)
       Ok
     }
     None => {

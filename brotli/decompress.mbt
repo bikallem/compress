@@ -3,7 +3,7 @@
 pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
   guard data.length() > 0 else { raise BrotliError::CorruptData("empty input") }
   let br = BitReader::new(data[:])
-  let sink = @output_sink.OutputSink::new(data.length() * 4)
+  let sink = @blit.Buffer::new(size_hint=data.length() * 4)
   let wbits = decode_wbits(br)
   let window_size = 1 << wbits
   let max_backward = window_size
@@ -88,7 +88,7 @@ fn decode_wbits(br : BitReader) -> Int {
 fn decode_compressed_block(
   br : BitReader,
   mlen : Int,
-  sink : @output_sink.OutputSink,
+  sink : @blit.Buffer,
   max_backward : Int,
 ) -> Unit {
   let nbltypesl = decode_block_type_count(br)
@@ -373,7 +373,8 @@ fn decode_compressed_block(
 /// Uses the official context lookup table for all 4 modes.
 fn compute_context_id(mode : Int, p1 : Int, p2 : Int) -> Int {
   let lut_offset = mode * 512
-  context_lut.unsafe_get(lut_offset + p1) | context_lut.unsafe_get(lut_offset + 256 + p2)
+  context_lut.unsafe_get(lut_offset + p1) |
+  context_lut.unsafe_get(lut_offset + 256 + p2)
 }
 
 ///|

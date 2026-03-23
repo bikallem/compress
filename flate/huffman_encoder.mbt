@@ -29,8 +29,11 @@ fn HuffmanCode::from_freqs(
     if len > 0 {
       let c = next_code.unsafe_get(len)
       next_code.unsafe_set(len, c + 1)
-      codes.unsafe_set(sym, (reverse_uint(c.reinterpret_as_uint(), len) << 5) |
-        len.reinterpret_as_uint())
+      codes.unsafe_set(
+        sym,
+        (reverse_uint(c.reinterpret_as_uint(), len) << 5) |
+        len.reinterpret_as_uint(),
+      )
     }
   }
   { codes, }
@@ -109,7 +112,10 @@ fn compute_bit_lengths(
   let mut next_node = active
   for _ in 0..<(active - 1) {
     let left = if leaf_ptr < active &&
-      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
+      (
+        int_ptr >= next_node ||
+        leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)
+      ) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -119,7 +125,10 @@ fn compute_bit_lengths(
       r
     }
     let right = if leaf_ptr < active &&
-      (int_ptr >= next_node || leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)) {
+      (
+        int_ptr >= next_node ||
+        leaf_freq.unsafe_get(leaf_ptr) <= node_freq.unsafe_get(int_ptr)
+      ) {
       let r = leaf_ptr
       leaf_ptr += 1
       r
@@ -128,7 +137,10 @@ fn compute_bit_lengths(
       int_ptr += 1
       r
     }
-    node_freq.unsafe_set(next_node, node_freq.unsafe_get(left) + node_freq.unsafe_get(right))
+    node_freq.unsafe_set(
+      next_node,
+      node_freq.unsafe_get(left) + node_freq.unsafe_get(right),
+    )
     parent.unsafe_set(left, next_node)
     parent.unsafe_set(right, next_node)
     next_node += 1
@@ -158,9 +170,7 @@ fn compute_bit_lengths(
     }
     let mut kraft = for i = 0, kraft = 0; i < n; i = i + 1 {
       let bl = bit_lengths.unsafe_get(i)
-      continue i + 1,
-        kraft +
-        (if bl > 0 { 1 << (max_bits - bl) } else { 0 })
+      continue i + 1, kraft + (if bl > 0 { 1 << (max_bits - bl) } else { 0 })
     } nobreak {
       kraft
     }
@@ -331,10 +341,16 @@ fn rle_count_freqs(
       while run > 0 {
         if run >= 11 {
           let count = if run > 138 { 138 } else { run }
-          cl_freqs.unsafe_set(CL_REPEAT_ZERO_LONG, cl_freqs.unsafe_get(CL_REPEAT_ZERO_LONG) + 1)
+          cl_freqs.unsafe_set(
+            CL_REPEAT_ZERO_LONG,
+            cl_freqs.unsafe_get(CL_REPEAT_ZERO_LONG) + 1,
+          )
           run -= count
         } else if run >= 3 {
-          cl_freqs.unsafe_set(CL_REPEAT_ZERO_SHORT, cl_freqs.unsafe_get(CL_REPEAT_ZERO_SHORT) + 1)
+          cl_freqs.unsafe_set(
+            CL_REPEAT_ZERO_SHORT,
+            cl_freqs.unsafe_get(CL_REPEAT_ZERO_SHORT) + 1,
+          )
           run = 0
         } else {
           cl_freqs.unsafe_set(0, cl_freqs.unsafe_get(0) + 1)
@@ -352,7 +368,10 @@ fn rle_count_freqs(
       while run > 0 {
         if run >= 3 {
           let count = if run > 6 { 6 } else { run }
-          cl_freqs.unsafe_set(CL_REPEAT_PREV, cl_freqs.unsafe_get(CL_REPEAT_PREV) + 1)
+          cl_freqs.unsafe_set(
+            CL_REPEAT_PREV,
+            cl_freqs.unsafe_get(CL_REPEAT_PREV) + 1,
+          )
           run -= count
         } else {
           cl_freqs.unsafe_set(cur, cl_freqs.unsafe_get(cur) + 1)

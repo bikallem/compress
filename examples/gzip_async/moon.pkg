@@ -1,8 +1,8 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/gzip" @gz,
   "moonbitlang/async" @moonasync,
   "moonbitlang/async/io",
-  "moonbitlang/core/buffer",
 }
 
 options(

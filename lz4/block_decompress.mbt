@@ -41,7 +41,8 @@ fn block_decompress(
     }
     // Decode offset (little-endian 16-bit)
     guard src_pos + 2 <= src_end else { raise Lz4Error::UnexpectedEOF }
-    let offset = src.unsafe_get(src_pos).to_int() | (src.unsafe_get(src_pos + 1).to_int() << 8)
+    let offset = src.unsafe_get(src_pos).to_int() |
+      (src.unsafe_get(src_pos + 1).to_int() << 8)
     src_pos += 2
     guard offset > 0 else { raise Lz4Error::CorruptData("zero match offset") }
     guard offset <= dst_pos else {

@@ -16,7 +16,7 @@ test "zlib round-trip hello" {
 
 ///|
 test "zlib round-trip repeated data" {
-  let buf = @buffer.new(size_hint=1000)
+  let buf = @blit.Buffer::new(size_hint=1000)
   for i in 0..<1000 {
     buf.write_byte((i % 256).to_byte())
   }
@@ -28,7 +28,7 @@ test "zlib round-trip repeated data" {
 
 ///|
 test "zlib round-trip all zeros" {
-  let buf = @buffer.new(size_hint=500)
+  let buf = @blit.Buffer::new(size_hint=500)
   for _ in 0..<500 {
     buf.write_byte(b'\x00')
   }
@@ -119,7 +119,7 @@ test "zlib header validation - bad method" {
   let cmf = 0x74 // method=4, cinfo=7
   let remainder = cmf * 256 % 31
   let flg = if remainder == 0 { 0 } else { 31 - remainder }
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   buf.write_byte(cmf.to_byte())
   buf.write_byte(flg.to_byte())
   for _ in 0..<4 {
@@ -142,7 +142,7 @@ test "zlib checksum mismatch" {
   let data = b"test"
   let compressed = @zlib.compress(data)
   // Corrupt the last byte (part of Adler-32 checksum)
-  let buf = @buffer.new(size_hint=compressed.length())
+  let buf = @blit.Buffer::new(size_hint=compressed.length())
   for i in 0..<(compressed.length() - 1) {
     buf.write_byte(compressed[i])
   }
@@ -166,7 +166,7 @@ test "zlib decompress known vector" {
 
 ///|
 test "zlib round-trip larger data" {
-  let buf = @buffer.new(size_hint=10000)
+  let buf = @blit.Buffer::new(size_hint=10000)
   for i in 0..<10000 {
     let b = match i % 4 {
       0 => b'A'
@@ -216,7 +216,7 @@ test "zlib empty data" {
 
 ///|
 test "zlib compression actually reduces size" {
-  let buf = @buffer.new(size_hint=5000)
+  let buf = @blit.Buffer::new(size_hint=5000)
   for _ in 0..<5000 {
     buf.write_byte(b'x')
   }

@@ -58,7 +58,8 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
       Some(v)
     }
     2 => {
-      let v = src.unsafe_get(pos).to_int() | (src.unsafe_get(pos + 1).to_int() << 8)
+      let v = src.unsafe_get(pos).to_int() |
+        (src.unsafe_get(pos + 1).to_int() << 8)
       pos += 2
       Some(v + 256)
     }
@@ -92,7 +93,7 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
     Some(cs) => cs
     None => (src_len * 4).max(65536)
   }
-  let sink = @output_sink.OutputSink::new(capacity)
+  let sink = @blit.Buffer::new(size_hint=capacity)
   let xxh = @checksum.XXH64::new()
   // Repeat offsets persist across blocks within a frame
   let rep = [1, 4, 8]
@@ -107,7 +108,9 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
     let block_size = bh >> 3
     if block_type == BLOCK_TYPE_RAW {
       guard pos + block_size <= src_len else { raise ZstdError::UnexpectedEOF }
-      let block_data = Bytes::makei(block_size, fn(i) { src.unsafe_get(pos + i) })
+      let block_data = Bytes::makei(block_size, fn(i) {
+        src.unsafe_get(pos + i)
+      })
       sink.write_bytes(block_data)
       xxh.update(block_data[:])
       pos += block_size
@@ -157,7 +160,7 @@ fn decompress_block(
   block_start : Int,
   block_size : Int,
   _window_size : Int,
-  prev_output : @output_sink.OutputSink,
+  prev_output : @blit.Buffer,
   rep : Array[Int],
 ) -> Bytes raise ZstdError {
   let mut pos = block_start
@@ -232,12 +235,15 @@ fn decompress_block(
     n
   } else if src.unsafe_get(pos).to_int() < 255 {
     guard pos + 1 < block_end else { raise ZstdError::UnexpectedEOF }
-    let n = ((src.unsafe_get(pos).to_int() - 128) << 8) + src.unsafe_get(pos + 1).to_int()
+    let n = ((src.unsafe_get(pos).to_int() - 128) << 8) +
+      src.unsafe_get(pos + 1).to_int()
     pos += 2
     n
   } else {
     guard pos + 2 < block_end else { raise ZstdError::UnexpectedEOF }
-    let n = src.unsafe_get(pos + 1).to_int() + (src.unsafe_get(pos + 2).to_int() << 8) + 0x7F00
+    let n = src.unsafe_get(pos + 1).to_int() +
+      (src.unsafe_get(pos + 2).to_int() << 8) +
+      0x7F00
     pos += 3
     n
   }
@@ -252,12 +258,8 @@ fn decompress_block(
   // The remaining bytes [pos..block_end) contain the sequence bitstream (backward)
   let seq_data = Bytes::makei(block_end - pos, fn(i) { src.unsafe_get(pos + i) })
   // Execute sequences using a local output sink for this block
-  let block_out = @output_sink.OutputSink::new(
-    if num_sequences > 0 {
-      65536
-    } else {
-      lit_data.length()
-    },
+  let block_out = @blit.Buffer::new(
+    size_hint=if num_sequences > 0 { 65536 } else { lit_data.length() },
   )
   let mut lit_pos = 0
   let prev_len = prev_output.length()

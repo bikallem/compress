@@ -17,7 +17,7 @@ priv struct Decoder {
   dict : Bytes
   mut phase : InflatePhase
   // Header accumulator — collects bytes until header is parsed
-  hdr_buf : @buffer.Buffer
+  hdr_buf : @blit.Buffer
 }
 
 ///|
@@ -44,7 +44,7 @@ pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
     adler: @checksum.Adler32::new(),
     dict,
     phase: ParseHeader,
-    hdr_buf: @buffer.new(),
+    hdr_buf: @blit.Buffer::new(),
   })
 }
 

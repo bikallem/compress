@@ -1,6 +1,6 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/zstd" @zstd_codec,
-  "moonbitlang/core/buffer",
 }
 
 options(

@@ -35,7 +35,8 @@ fn block_compress(src : BytesView, dst : FixedArray[Byte]) -> Int {
       // Extend match forward (ref_pos < ip, so ref bound is implied by ip bound)
       let mut match_len = MIN_MATCH
       while ip + match_len < mf_limit &&
-            src.unsafe_get(ref_pos + match_len) == src.unsafe_get(ip + match_len) {
+            src.unsafe_get(ref_pos + match_len) ==
+            src.unsafe_get(ip + match_len) {
         match_len += 1
       }
       // Encode sequence

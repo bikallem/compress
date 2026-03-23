@@ -1,4 +1,5 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/brotli",
   "bikallem/compress/bzip2",
   "bikallem/compress/flate",
@@ -8,7 +9,6 @@ import {
   "bikallem/compress/snappy",
   "bikallem/compress/zlib",
   "bikallem/compress/zstd",
-  "moonbitlang/core/buffer",
   "moonbitlang/core/env",
 }
 

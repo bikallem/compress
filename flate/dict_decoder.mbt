@@ -116,10 +116,7 @@ fn DictDecoder::flush(self : DictDecoder) -> BytesView {
 }
 
 ///|
-fn DictDecoder::flush_to(
-  self : DictDecoder,
-  sink : @output_sink.OutputSink,
-) -> Unit {
+fn DictDecoder::flush_to(self : DictDecoder, sink : @blit.Buffer) -> Unit {
   if self.wr_pos > self.rd_pos {
     let len = self.wr_pos - self.rd_pos
     sink.write_fixed(self.hist, self.rd_pos, len)

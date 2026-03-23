@@ -1,6 +1,6 @@
 ///|
 fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
-  let buf = @buffer.new(size_hint=b.length() * n)
+  let buf = @blit.Buffer::new(size_hint=b.length() * n)
   for _ in 0..<n {
     buf.write_bytes(b)
   }

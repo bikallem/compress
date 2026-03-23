@@ -57,7 +57,8 @@ fn decode_block(
         src_pos += 1
       } else if lit_len == 62 {
         guard src_pos + 1 < src_len else { raise SnappyError::UnexpectedEOF }
-        lit_len = src.unsafe_get(src_pos).to_int() | (src.unsafe_get(src_pos + 1).to_int() << 8)
+        lit_len = src.unsafe_get(src_pos).to_int() |
+          (src.unsafe_get(src_pos + 1).to_int() << 8)
         lit_len += 1
         src_pos += 2
       } else if lit_len == 63 {
@@ -110,7 +111,8 @@ fn decode_block(
       src_pos += 1
       guard src_pos + 1 < src_len else { raise SnappyError::UnexpectedEOF }
       let length = (tag >> 2) + 1
-      let offset = src.unsafe_get(src_pos).to_int() | (src.unsafe_get(src_pos + 1).to_int() << 8)
+      let offset = src.unsafe_get(src_pos).to_int() |
+        (src.unsafe_get(src_pos + 1).to_int() << 8)
       src_pos += 2
       guard offset > 0 && offset <= dst_pos else {
         raise SnappyError::CorruptInput("invalid copy offset \{offset}")

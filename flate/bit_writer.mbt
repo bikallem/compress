@@ -150,7 +150,10 @@ fn BitWriter::write_dynamic_block(
       lit_freqs.unsafe_set(llit, lit_freqs.unsafe_get(llit) + 1)
     }
   }
-  lit_freqs.unsafe_set(END_BLOCK_MARKER, lit_freqs.unsafe_get(END_BLOCK_MARKER) + 1)
+  lit_freqs.unsafe_set(
+    END_BLOCK_MARKER,
+    lit_freqs.unsafe_get(END_BLOCK_MARKER) + 1,
+  )
   if dist_freqs.unsafe_get(0) == 0 {
     let mut has_dist = false
     for i in 0..<30 {
@@ -264,7 +267,10 @@ fn BitWriter::write_dynamic_header_precomputed(
   self.write_bits_lsb((hdist - 1).reinterpret_as_uint(), 5)
   self.write_bits_lsb((hclen - 4).reinterpret_as_uint(), 4)
   for i in 0..<hclen {
-    self.write_bits_lsb(cl_bl.unsafe_get(code_order.unsafe_get(i)).reinterpret_as_uint(), 3)
+    self.write_bits_lsb(
+      cl_bl.unsafe_get(code_order.unsafe_get(i)).reinterpret_as_uint(),
+      3,
+    )
   }
   let total = hlit + hdist
   let all = @blit.make_uninit_int(total)

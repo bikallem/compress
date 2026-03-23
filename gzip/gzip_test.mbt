@@ -16,7 +16,7 @@ test "gzip round-trip hello" {
 
 ///|
 test "gzip round-trip repeated data" {
-  let buf = @buffer.new(size_hint=1000)
+  let buf = @blit.Buffer::new(size_hint=1000)
   for i in 0..<1000 {
     buf.write_byte((i % 256).to_byte())
   }
@@ -163,7 +163,7 @@ test "gzip checksum mismatch" {
   let data = b"test"
   let compressed = @gzip.compress(data)
   // Corrupt CRC-32 in footer (last 8 bytes: 4 CRC + 4 ISIZE)
-  let buf = @buffer.new(size_hint=compressed.length())
+  let buf = @blit.Buffer::new(size_hint=compressed.length())
   for i in 0..<(compressed.length() - 8) {
     buf.write_byte(compressed[i])
   }
@@ -181,7 +181,7 @@ test "gzip checksum mismatch" {
 
 ///|
 test "gzip compression reduces size" {
-  let buf = @buffer.new(size_hint=5000)
+  let buf = @blit.Buffer::new(size_hint=5000)
   for _ in 0..<5000 {
     buf.write_byte(b'x')
   }
@@ -227,7 +227,7 @@ test "gzip invalid method" {
 test "gzip size mismatch" {
   let data = b"test"
   let compressed = @gzip.compress(data)
-  let buf = @buffer.new(size_hint=compressed.length())
+  let buf = @blit.Buffer::new(size_hint=compressed.length())
   for i in 0..<(compressed.length() - 4) {
     buf.write_byte(compressed[i])
   }
@@ -242,7 +242,7 @@ test "gzip size mismatch" {
 
 ///|
 test "gzip round-trip larger data" {
-  let buf = @buffer.new(size_hint=10000)
+  let buf = @blit.Buffer::new(size_hint=10000)
   for i in 0..<10000 {
     buf.write_byte((i % 256).to_byte())
   }

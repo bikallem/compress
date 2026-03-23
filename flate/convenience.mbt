@@ -38,7 +38,7 @@ pub fn compress(
   level? : CompressionLevel = DefaultCompression,
 ) -> Bytes raise CompressError {
   let e = Deflater::new(level~)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   drain(e, buf, Some(data[:]))
   drain(e, buf, None)
   buf.to_bytes()
@@ -47,7 +47,7 @@ pub fn compress(
 ///|
 fn drain(
   e : Deflater,
-  buf : @buffer.Buffer,
+  buf : @blit.Buffer,
   input : BytesView?,
 ) -> Unit raise CompressError {
   match e.encode(input) {

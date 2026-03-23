@@ -31,7 +31,9 @@ fn BitBuf::fill(self : BitBuf) -> Unit {
   let (buf, count, pos) = for buf = self.buf, count = self.count, pos = self.pos; count <=
                              56 &&
                              pos < input_len; {
-    continue buf | (input.unsafe_get(pos).to_uint64() << (56 - count)), count + 8, pos + 1
+    continue buf | (input.unsafe_get(pos).to_uint64() << (56 - count)),
+      count + 8,
+      pos + 1
   } nobreak {
     (buf, count, pos)
   }

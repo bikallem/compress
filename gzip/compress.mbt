@@ -5,7 +5,7 @@ pub fn compress(
   level? : @flate.CompressionLevel = DefaultCompression,
   header? : Header = { ..Header::default() },
 ) -> Bytes raise GzipError {
-  let buf = @buffer.new(size_hint=data.length() + 32)
+  let buf = @blit.Buffer::new(size_hint=data.length() + 32)
   buf.write_bytes(build_gzip_header(header, level))
   // Compress with DEFLATE
   let compressed = @flate.compress(data, level~) catch {
@@ -14,16 +14,16 @@ pub fn compress(
   buf.write_bytes(compressed)
   // CRC-32 (4 bytes LE)
   let crc = @checksum.crc32(data[:])
-  buf.write_uint_le(crc)
+  write_uint_le(buf, crc)
   // ISIZE (4 bytes LE) - original size mod 2^32
   let isize = data.length().reinterpret_as_uint() & 0xFFFFFFFF_U
-  buf.write_uint_le(isize)
+  write_uint_le(buf, isize)
   buf.to_bytes()
 }
 
 ///|
 fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes {
-  let buf = @buffer.new(size_hint=32)
+  let buf = @blit.Buffer::new(size_hint=32)
   // Magic bytes
   buf.write_byte(GZIP_MAGIC1)
   buf.write_byte(GZIP_MAGIC2)
@@ -42,7 +42,7 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
   }
   buf.write_byte(flg.to_byte())
   // MTIME (4 bytes LE)
-  buf.write_uint_le(header.mod_time)
+  write_uint_le(buf, header.mod_time)
   // XFL (extra flags based on compression level)
   let xfl : Byte = match level {
     BestCompression => 2
@@ -74,4 +74,12 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
     buf.write_byte(b'\x00')
   }
   buf.to_bytes()
+}
+
+///|
+fn write_uint_le(buf : @blit.Buffer, v : UInt) -> Unit {
+  buf.write_byte((v & 0xFF_U).to_byte())
+  buf.write_byte(((v >> 8) & 0xFF_U).to_byte())
+  buf.write_byte(((v >> 16) & 0xFF_U).to_byte())
+  buf.write_byte(((v >> 24) & 0xFF_U).to_byte())
 }

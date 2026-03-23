@@ -2,7 +2,7 @@
 test "streaming gzip deflater round-trip" {
   let original = b"Hello, World! This is a test of gzip streaming."
   let d = @gzip.Deflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytesview(out)
     Ok | End | Error(_) => ()
@@ -28,7 +28,7 @@ test "streaming gzip inflater round-trip" {
   let original = b"Hello, World! This is a test of gzip streaming decompression."
   let compressed = @gzip.compress(original)
   let d = @gzip.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   d.src(compressed[:])
   loop d.decode() {
     Await => {
@@ -53,7 +53,7 @@ test "streaming gzip inflater with chunked input" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   let compressed = @gzip.compress(original)
   let d = @gzip.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let chunk_size = 64
   let mut offset = 0
   loop d.decode() {
@@ -90,7 +90,7 @@ test "streaming gzip deflater + inflater round-trip" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   // Compress with deflater
   let d = @gzip.Deflater::new()
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytesview(out)
     Ok | End | Error(_) => ()
@@ -109,7 +109,7 @@ test "streaming gzip deflater + inflater round-trip" {
   let compressed = cbuf.to_bytes()
   // Decompress with inflater
   let inf = @gzip.Inflater::new()
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   inf.src(compressed[:])
   loop inf.decode() {
     Await => {
@@ -141,7 +141,7 @@ test "streaming gzip inflater exposes header" {
   }
   let compressed = @gzip.compress(original, header~)
   let d = @gzip.Inflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   d.src(compressed[:])
   loop d.decode() {
     Await => {
@@ -175,7 +175,7 @@ test "streaming gzip deflater with header" {
     os: b'\xFF',
   }
   let d = @gzip.Deflater::new(header~)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Data(out) => buf.write_bytesview(out)
     Ok | End | Error(_) => ()

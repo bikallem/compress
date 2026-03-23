@@ -1,6 +1,6 @@
 ///|
 fn repeat_bytes(b : Bytes, n : Int) -> Bytes {
-  let buf = @buffer.new(size_hint=b.length() * n)
+  let buf = @blit.Buffer::new(size_hint=b.length() * n)
   for _ in 0..<n {
     buf.write_bytes(b)
   }
@@ -51,7 +51,7 @@ fn run() -> Unit raise {
     mod_time: 0U,
     os: b'\xFF',
   })
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   match deflater.encode(Some(original[:])) {
     Data(out) => cbuf.write_bytesview(out)
     Ok | End | Error(_) => ()
@@ -66,7 +66,7 @@ fn run() -> Unit raise {
   let stream_compressed = cbuf.to_bytes()
 
   let inflater = @gz.Inflater::new()
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   inflater.src(stream_compressed[:])
   loop inflater.decode() {
     Await => break

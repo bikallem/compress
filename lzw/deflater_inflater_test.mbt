@@ -2,7 +2,7 @@
 test "streaming lzw deflater LSB" {
   let original = b"TOBEORNOTTOBEORTOBEORNOT"
   let d = @lzw.Deflater::new(LSB, 8)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Ok | End | Error(_) => ()
     Data(out) => buf.write_bytesview(out)
@@ -26,7 +26,7 @@ test "streaming lzw inflater LSB" {
   let compressed = @lzw.compress(original, LSB, 8)
   let d = @lzw.Inflater::new(LSB, 8)
   d.src(compressed[:])
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   loop d.decode() {
     Await => fail("unexpected Await: all data should be available")
     Data(out) => {
@@ -44,7 +44,7 @@ test "streaming lzw inflater with chunked input" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   let compressed = @lzw.compress(original, LSB, 8)
   let d = @lzw.Inflater::new(LSB, 8)
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let chunk_size = 64
   let mut offset = 0
   loop d.decode() {
@@ -77,7 +77,7 @@ test "streaming lzw deflater + inflater round-trip" {
   let original = Bytes::makei(5000, fn(i) { (i % 251).to_byte() })
   // Compress with deflater in chunks
   let d = @lzw.Deflater::new(LSB, 8)
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   let chunk_size = 500
   let mut offset = 0
   while offset < original.length() {
@@ -106,7 +106,7 @@ test "streaming lzw deflater + inflater round-trip" {
   let compressed = cbuf.to_bytes()
   let inf = @lzw.Inflater::new(LSB, 8)
   inf.src(compressed[:])
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   loop inf.decode() {
     Await => fail("unexpected Await")
     Data(out) => {
@@ -123,7 +123,7 @@ test "streaming lzw deflater + inflater round-trip" {
 test "streaming lzw MSB round-trip" {
   let original = Bytes::makei(3000, fn(i) { (i % 256).to_byte() })
   let d = @lzw.Deflater::new(MSB, 8)
-  let cbuf = @buffer.new()
+  let cbuf = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Ok | End | Error(_) => ()
     Data(out) => cbuf.write_bytesview(out)
@@ -139,7 +139,7 @@ test "streaming lzw MSB round-trip" {
   let compressed = cbuf.to_bytes()
   let inf = @lzw.Inflater::new(MSB, 8)
   inf.src(compressed[:])
-  let dbuf = @buffer.new()
+  let dbuf = @blit.Buffer::new()
   loop inf.decode() {
     Await => fail("unexpected Await")
     Data(out) => {

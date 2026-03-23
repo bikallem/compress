@@ -42,7 +42,7 @@ test "round-trip: 100KB data" {
 
 ///|
 test "round-trip: large repetitive data" {
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<500 {
     buf.write_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
   }
@@ -74,7 +74,7 @@ test "signal protocol: chunked input" {
   let compressed = @brotli.compress(data)
   let d = @brotli.Inflater::new()
   d.src(compressed[:])
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   loop d.decode() {
     Await => {
       inspect(false, content="true")
@@ -103,7 +103,7 @@ test "signal protocol: deflater streaming" {
     Data(_) | End => ()
     Error(e) => raise e
   }
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(None) {
     Data(out) => buf.write_bytesview(out)
     End => ()

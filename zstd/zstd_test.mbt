@@ -24,7 +24,7 @@ test "zstd round-trip repeated" {
 
 ///|
 test "zstd round-trip larger text" {
-  let sb = @buffer.new(size_hint=500)
+  let sb = @blit.Buffer::new(size_hint=500)
   for _ in 0..<10 {
     sb.write_bytes(b"The quick brown fox jumps over the lazy dog. ")
   }
@@ -86,7 +86,7 @@ test "zstd all 0xFF" {
 test "zstd compression ratio on repeated pattern" {
   // 4KB of "abcdefghijklmnop" repeated (256 times)
   let pattern = b"abcdefghijklmnop"
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<256 {
     buf.write_bytes(pattern)
   }

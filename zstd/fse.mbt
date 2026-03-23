@@ -51,7 +51,14 @@ fn FseTable::build(
   // based on this per-symbol counter.
   let symbol_next = FixedArray::make(max_symbol + 1, 0)
   for sym in 0..<=max_symbol {
-    symbol_next.unsafe_set(sym, if norm_counts.unsafe_get(sym) == -1 { 1 } else { norm_counts.unsafe_get(sym) })
+    symbol_next.unsafe_set(
+      sym,
+      if norm_counts.unsafe_get(sym) == -1 {
+        1
+      } else {
+        norm_counts.unsafe_get(sym)
+      },
+    )
   }
   for i in 0..<table_size {
     let sym = symbols.unsafe_get(i).to_int()

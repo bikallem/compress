@@ -131,7 +131,7 @@ test "bzip2 round-trip empty" {
 
 ///|
 test "bzip2 round-trip larger" {
-  let sb = @buffer.new(size_hint=500)
+  let sb = @blit.Buffer::new(size_hint=500)
   for _ in 0..<10 {
     sb.write_bytes(b"The quick brown fox jumps over the lazy dog. ")
   }
@@ -160,7 +160,7 @@ test "bzip2 round-trip level 1" {
 ///|
 test "bzip2 round-trip RLE1 trigger" {
   // 10 copies of the same byte should trigger RLE1 encoding
-  let sb = @buffer.new(size_hint=100)
+  let sb = @blit.Buffer::new(size_hint=100)
   for _ in 0..<10 {
     sb.write_byte(b'X')
   }

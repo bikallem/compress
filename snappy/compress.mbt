@@ -112,7 +112,10 @@ fn Encoder::emit_copy(self : Encoder, offset_ : Int, length_ : Int) -> Unit {
   if length > 64 {
     self.ensure_capacity(3)
     let len_field = length - 61
-    self.out_buf.unsafe_set(self.out_pos, ((len_field << 2) | TAG_COPY2).to_byte())
+    self.out_buf.unsafe_set(
+      self.out_pos,
+      ((len_field << 2) | TAG_COPY2).to_byte(),
+    )
     self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
     self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
     self.out_pos += 3
@@ -120,16 +123,20 @@ fn Encoder::emit_copy(self : Encoder, offset_ : Int, length_ : Int) -> Unit {
   }
   if length >= 12 || offset >= 2048 {
     self.ensure_capacity(3)
-    self.out_buf.unsafe_set(self.out_pos, (((length - 1) << 2) | TAG_COPY2).to_byte())
+    self.out_buf.unsafe_set(
+      self.out_pos,
+      (((length - 1) << 2) | TAG_COPY2).to_byte(),
+    )
     self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
     self.out_buf.unsafe_set(self.out_pos + 2, ((offset >> 8) & 0xFF).to_byte())
     self.out_pos += 3
   } else {
     // Use copy1 (2-byte encoding) for short copies with small offsets
     self.ensure_capacity(2)
-    self.out_buf.unsafe_set(self.out_pos, ((offset >> 8 << 5) |
-    ((length - 4) << 2) |
-    TAG_COPY1).to_byte())
+    self.out_buf.unsafe_set(
+      self.out_pos,
+      ((offset >> 8 << 5) | ((length - 4) << 2) | TAG_COPY1).to_byte(),
+    )
     self.out_buf.unsafe_set(self.out_pos + 1, (offset & 0xFF).to_byte())
     self.out_pos += 2
   }
@@ -213,7 +220,8 @@ fn Encoder::compress_block(
     // Extend the match
     let mut match_len = 4
     while ip + match_len < block_end &&
-          data.unsafe_get(ip + match_len) == data.unsafe_get(candidate + match_len) {
+          data.unsafe_get(ip + match_len) ==
+          data.unsafe_get(candidate + match_len) {
       match_len += 1
     }
     self.emit_copy(ip - candidate, match_len)

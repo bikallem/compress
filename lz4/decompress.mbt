@@ -9,7 +9,7 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
     Some(size) => size
     None => (data.length() * 2).max(block_max_size)
   }
-  let sink = @output_sink.OutputSink::new(initial_capacity)
+  let sink = @blit.Buffer::new(size_hint=initial_capacity)
   // Temporary buffer for decompressed blocks
   let block_buf = FixedArray::make(block_max_size, b'\x00')
   let mut pos = data_pos
@@ -31,7 +31,9 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
       raise Lz4Error::UnexpectedEOF
     }
     if is_uncompressed {
-      let block_bytes = Bytes::makei(block_size, fn(i) { data.unsafe_get(pos + i) })
+      let block_bytes = Bytes::makei(block_size, fn(i) {
+        data.unsafe_get(pos + i)
+      })
       sink.write_bytes(block_bytes)
       xxh.update(block_bytes[:])
     } else {
@@ -43,7 +45,9 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
         0,
         block_max_size,
       )
-      let decoded_bytes = Bytes::makei(decoded_len, fn(i) { block_buf.unsafe_get(i) })
+      let decoded_bytes = Bytes::makei(decoded_len, fn(i) {
+        block_buf.unsafe_get(i)
+      })
       sink.write_bytes(decoded_bytes)
       xxh.update(decoded_bytes[:])
     }

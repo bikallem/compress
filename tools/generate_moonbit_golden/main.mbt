@@ -80,7 +80,7 @@ struct Entry {
 
 ///|
 fn Entry::to_json(self : Entry) -> String {
-  let buf = @buffer.new()
+  let buf = StringBuilder::new()
   buf.write_string("  {\n")
   buf.write_string("    \"name\": \"\{self.name}\",\n")
   buf.write_string("    \"algorithm\": \"\{self.algorithm}\",\n")
@@ -318,7 +318,7 @@ fn main {
     })
   }
   // Write manifest
-  let manifest = @buffer.new()
+  let manifest = StringBuilder::new()
   manifest.write_string("[\n")
   for i, e in entries {
     if i > 0 {
@@ -327,10 +327,11 @@ fn main {
     manifest.write_string(e.to_json())
   }
   manifest.write_string("\n]\n")
+  let manifest_str = manifest.to_string()
   write_file(
     "\{out_dir}/manifest.json",
-    Bytes::makei(manifest.to_string().length(), fn(i) {
-      manifest.to_string()[i].to_int().to_byte()
+    Bytes::makei(manifest_str.length(), fn(i) {
+      manifest_str[i].to_int().to_byte()
     }),
   )
   println("Generated \{entries.length()} MoonBit golden files in \{out_dir}")

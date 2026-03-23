@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "deps": {
     "moonbitlang/async": "0.16.7",
-    "bikallem/blit": "0.1.0"
+    "bikallem/blit": "0.2.2"
   },
   "readme": "README.md",
   "repository": "https://github.com/bikallem/compress.git",

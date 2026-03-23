@@ -1,6 +1,6 @@
 import {
+  "bikallem/blit",
   "bikallem/compress/snappy" @snappy_codec,
-  "moonbitlang/core/buffer",
 }
 
 options(

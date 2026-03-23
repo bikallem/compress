@@ -37,7 +37,7 @@ test "compress levels" {
 test "encode signal protocol" {
   let data : Bytes = b"Hello"
   let e = @flate.Deflater::new()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   // Feed data
   let s1 = e.encode(Some(data[:]))
   inspect(s1 is Ok, content="true")
@@ -59,7 +59,7 @@ test "encode signal protocol" {
 ///|
 test "round-trip repetitive data" {
   // Build repetitive data that exercises LZ77 matching
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<100 {
     buf.write_bytes(b"The quick brown fox jumps over the lazy dog. ")
   }

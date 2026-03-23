@@ -42,7 +42,7 @@ test "round-trip: 100KB data" {
 
 ///|
 test "round-trip: large repetitive data" {
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<500 {
     buf.write_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
   }
@@ -76,10 +76,10 @@ test "round-trip: 1MB repeating text" {
   let pattern = "The quick brown fox jumps over the lazy dog. "
   let pattern_bytes = @utf8.encode(pattern[:])
   let plen = pattern_bytes.length()
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   let mut written = 0
   while written + plen <= 1048576 {
-    buf.write_string_utf8(pattern[:])
+    buf.write_bytes(pattern_bytes)
     written += plen
   }
   let remaining = 1048576 - written
@@ -101,7 +101,7 @@ test "signal protocol: chunked input" {
   let compressed = @zstd.compress(data)
   let d = @zstd.Inflater::new()
   d.src(compressed[:])
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   loop d.decode() {
     Await => {
       inspect(false, content="true")
@@ -130,7 +130,7 @@ test "signal protocol: deflater streaming" {
     Data(_) | End => ()
     Error(e) => raise e
   }
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   match d.encode(None) {
     Data(out) => buf.write_bytesview(out)
     End => ()

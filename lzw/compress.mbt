@@ -8,7 +8,7 @@ pub fn compress(
   lit_width : Int,
 ) -> Bytes raise LzwError {
   let def = Deflater::new(order, lit_width)
-  let buf = @buffer.new(size_hint=256)
+  let buf = @blit.Buffer::new(size_hint=256)
   match def.encode(Some(data[:])) {
     Data(chunk) => buf.write_bytesview(chunk)
     Ok | End | Error(_) => ()

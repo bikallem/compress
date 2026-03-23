@@ -5,13 +5,13 @@ pub fn compress(
   dict? : Bytes = Bytes::default(),
   level? : @flate.CompressionLevel = DefaultCompression,
 ) -> Bytes raise ZlibError {
-  let buf = @buffer.new(size_hint=data.length() + 12)
+  let buf = @blit.Buffer::new(size_hint=data.length() + 12)
   buf.write_bytes(build_zlib_header(level, dict))
   // Compress with DEFLATE
   let compressed = try {
     if dict.length() > 0 {
       let def = @flate.Deflater::new(level~, dict~)
-      let buf = @buffer.new()
+      let buf = @blit.Buffer::new()
       match def.encode(Some(data[:])) {
         Data(chunk) => buf.write_bytesview(chunk)
         Ok | End | Error(_) => ()
@@ -30,13 +30,13 @@ pub fn compress(
   buf.write_bytes(compressed)
   // Adler-32 of original data (big-endian)
   let checksum = @checksum.adler32(data[:])
-  buf.write_uint_be(checksum)
+  write_uint_be(buf, checksum)
   buf.to_bytes()
 }
 
 ///|
 fn build_zlib_header(level : @flate.CompressionLevel, dict : Bytes) -> Bytes {
-  let buf = @buffer.new(size_hint=6)
+  let buf = @blit.Buffer::new(size_hint=6)
   let cmf = (ZLIB_DEFAULT_CINFO << 4) | ZLIB_DEFLATE_METHOD
   let flevel = match level {
     NoCompression | HuffmanOnly => 0
@@ -55,7 +55,15 @@ fn build_zlib_header(level : @flate.CompressionLevel, dict : Bytes) -> Bytes {
   buf.write_byte(flg.to_byte())
   if dict.length() > 0 {
     let dict_checksum = @checksum.adler32(dict[:])
-    buf.write_uint_be(dict_checksum)
+    write_uint_be(buf, dict_checksum)
   }
   buf.to_bytes()
+}
+
+///|
+fn write_uint_be(buf : @blit.Buffer, v : UInt) -> Unit {
+  buf.write_byte(((v >> 24) & 0xFF_U).to_byte())
+  buf.write_byte(((v >> 16) & 0xFF_U).to_byte())
+  buf.write_byte(((v >> 8) & 0xFF_U).to_byte())
+  buf.write_byte((v & 0xFF_U).to_byte())
 }

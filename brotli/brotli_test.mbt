@@ -24,7 +24,7 @@ test "brotli round-trip repeated" {
 
 ///|
 test "brotli round-trip larger text" {
-  let sb = @buffer.new(size_hint=500)
+  let sb = @blit.Buffer::new(size_hint=500)
   for _ in 0..<10 {
     sb.write_bytes(b"The quick brown fox jumps over the lazy dog. ")
   }
@@ -113,7 +113,7 @@ test "brotli decode Go-compressed level 1 simple" {
 /// Test decoding Go-compressed brotli (level 3, ABC repeat).
 test "brotli decode Go-compressed level 3 ABC repeat" {
   let compressed = hex_to_bytes("1b3b000020838486e29b204603")
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<20 {
     buf.write_bytes(b"ABC")
   }
@@ -126,7 +126,7 @@ test "brotli decode Go-compressed level 3 ABC repeat" {
 /// Test decoding Go-compressed brotli (level 3, 100 bytes ABCDEFGHIJ repeat).
 test "brotli decode Go-compressed level 3 100bytes" {
   let compressed = hex_to_bytes("1b630000c00dc6f6268d0030142828a7b3f7")
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<10 {
     buf.write_bytes(b"ABCDEFGHIJ")
   }
@@ -141,7 +141,7 @@ test "brotli decode Go-compressed level 2 100bytes" {
   let compressed = hex_to_bytes(
     "1b63000080aaaaaaeaff7ce655960138180b2231490c70a7cd05a0a09ccede53",
   )
-  let buf = @buffer.new()
+  let buf = @blit.Buffer::new()
   for _ in 0..<10 {
     buf.write_bytes(b"ABCDEFGHIJ")
   }
@@ -166,7 +166,7 @@ test "brotli decode Go-compressed with dictionary" {
 ///|
 fn hex_to_bytes(hex : String) -> Bytes {
   let len = hex.length() / 2
-  let buf = @buffer.new(size_hint=len)
+  let buf = @blit.Buffer::new(size_hint=len)
   for i in 0..<len {
     let hi = hex_digit(hex[i * 2].to_int())
     let lo = hex_digit(hex[i * 2 + 1].to_int())

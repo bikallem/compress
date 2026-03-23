@@ -26,8 +26,11 @@ let crc32_tables : FixedArray[FixedArray[UInt]] = {
   for k in 1..<8 {
     let tk = FixedArray::make(256, 0U)
     for i in 0..<256 {
-      tk.unsafe_set(i, (tables.unsafe_get(k - 1).unsafe_get(i) >> 8) ^
-        t0[(tables.unsafe_get(k - 1).unsafe_get(i) & 0xFFU).reinterpret_as_int()])
+      tk.unsafe_set(
+        i,
+        (tables.unsafe_get(k - 1).unsafe_get(i) >> 8) ^
+        t0[(tables.unsafe_get(k - 1).unsafe_get(i) & 0xFFU).reinterpret_as_int()],
+      )
     }
     tables.unsafe_set(k, tk)
   }
