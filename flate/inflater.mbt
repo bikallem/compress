@@ -674,6 +674,18 @@ fn Inflater::decode_huffman_loop(
           }
           wr_pos = copy_end
         }
+        if wr_pos == hist_len {
+          bb.buf = buf
+          bb.count = count
+          bb.pos = pos
+          dd.wr_pos = wr_pos
+          let flushed = self.emit_output()
+          wr_pos = dd.wr_pos
+          self.phase = HuffmanLoop(lit_dec, dist_dec)
+          if flushed.length() > 0 {
+            return Data(flushed)
+          }
+        }
         continue
       } else {
         bb.buf = buf
