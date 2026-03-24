@@ -1,6 +1,6 @@
 {
   "name": "bikallem/compress",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "deps": {
     "moonbitlang/async": "0.16.7",
     "bikallem/blit": "0.2.2"
