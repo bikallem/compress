@@ -17,8 +17,7 @@ pub async fn decompress(
       if n == 0 {
         raise @flate.CompressError::UnexpectedEOF
       }
-      let chunk = Bytes::makei(n, fn(i) { buf[i] })
-      inf.src(chunk[:])
+      inf.src(buf.unsafe_reinterpret_as_bytes()[:n])
       continue inf.decode()
     }
     Data(out) => {

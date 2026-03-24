@@ -223,14 +223,9 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
   }
   // Copy from input directly
   while rem > 0 {
-    let chunk = bb.next_bytes(
-      if rem < dd.avail_write() {
-        rem
-      } else {
-        dd.avail_write()
-      },
-    )
-    if chunk.length() == 0 {
+    let max_copy = if rem < dd.avail_write() { rem } else { dd.avail_write() }
+    let n = bb.copy_bytes(hist, dd.wr_pos, max_copy)
+    if n == 0 {
       self.phase = StoredCopy(rem)
       // Flush any pending output before requesting more input
       let flushed = self.emit_output()
@@ -240,11 +235,8 @@ fn Inflater::decode_stored_copy(self : Inflater, remaining : Int) -> Decode {
       }
       return Await
     }
-    for i, b in chunk {
-      hist.unsafe_set(dd.wr_pos + i, b)
-    }
-    dd.wr_pos += chunk.length()
-    rem -= chunk.length()
+    dd.wr_pos += n
+    rem -= n
     if dd.wr_pos == hist_len {
       let flushed = self.emit_output()
       self.phase = StoredCopy(rem)

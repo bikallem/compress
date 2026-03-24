@@ -80,9 +80,15 @@ fn BitBuf::align_to_byte(self : BitBuf) -> Unit {
 }
 
 ///|
-/// Returns a view of up to max_len unconsumed input bytes.
-/// Drains buffered whole bytes first, then reads from input.
-fn BitBuf::next_bytes(self : BitBuf, max_len : Int) -> Bytes {
+/// Copy up to max_len unconsumed input bytes directly into dst at dst_offset.
+/// Drains buffered whole bytes first, then copies from input.
+/// Returns the number of bytes copied.
+fn BitBuf::copy_bytes(
+  self : BitBuf,
+  dst : FixedArray[Byte],
+  dst_offset : Int,
+  max_len : Int,
+) -> Int {
   // First drain any whole bytes from the bit buffer
   if self.count >= 8 && max_len > 0 {
     let n_from_buf = if self.count / 8 < max_len {
@@ -90,23 +96,25 @@ fn BitBuf::next_bytes(self : BitBuf, max_len : Int) -> Bytes {
     } else {
       max_len
     }
-    let result = FixedArray::make(n_from_buf, b'\x00')
     for i in 0..<n_from_buf {
-      result.unsafe_set(i, (self.buf & 0xFFUL).to_byte())
+      dst.unsafe_set(dst_offset + i, (self.buf & 0xFFUL).to_byte())
       self.buf = self.buf >> 8
       self.count -= 8
     }
-    return result.unsafe_reinterpret_as_bytes()
+    return n_from_buf
   }
-  // Read from input
+  // Copy from input
   let avail = self.input.length() - self.pos
   if avail <= 0 {
-    return Bytes::default()
+    return 0
   }
   let n = if avail < max_len { avail } else { max_len }
   let start = self.pos
   self.pos += n
-  Bytes::makei(n, fn(i) { self.input.unsafe_get(start + i) })
+  for i in 0..<n {
+    dst.unsafe_set(dst_offset + i, self.input.unsafe_get(start + i))
+  }
+  n
 }
 
 ///|
