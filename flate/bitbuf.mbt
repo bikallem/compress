@@ -111,9 +111,7 @@ fn BitBuf::copy_bytes(
   let n = if avail < max_len { avail } else { max_len }
   let start = self.pos
   self.pos += n
-  for i in 0..<n {
-    dst.unsafe_set(dst_offset + i, self.input.unsafe_get(start + i))
-  }
+  @blit.blit_bytesview(dst, dst_offset, self.input, self.input.start_offset() + start, n)
   n
 }
 
