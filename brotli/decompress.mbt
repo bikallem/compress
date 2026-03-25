@@ -7,6 +7,13 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
   let wbits = decode_wbits(br)
   let window_size = 1 << wbits
   let max_backward = window_size
+  // Distance ring buffer persists across metablocks (RFC 7932)
+  let dist_rb = FixedArray::make(4, 0)
+  dist_rb.unsafe_set(0, 16)
+  dist_rb.unsafe_set(1, 15)
+  dist_rb.unsafe_set(2, 11)
+  dist_rb.unsafe_set(3, 4)
+  let mut dist_rb_idx = 0
   while true {
     let is_last = br.read_bool()
     if is_last {
@@ -31,8 +38,10 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     }
     let mlen_bits = mnibbles * 4
     let mlen = br.read_bits(mlen_bits) + 1
+    let dist_rb_ref = Ref::new(dist_rb_idx)
     if is_last {
-      decode_compressed_block(br, mlen, sink, max_backward)
+      decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_ref)
+      dist_rb_idx = dist_rb_ref.val
       break
     }
     let is_uncompressed = br.read_bool()
@@ -44,7 +53,8 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
       br.read_bytes_to_sink(sink, mlen)
       continue
     }
-    decode_compressed_block(br, mlen, sink, max_backward)
+    decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_ref)
+    dist_rb_idx = dist_rb_ref.val
   }
   sink.to_bytes()
 }
@@ -90,6 +100,8 @@ fn decode_compressed_block(
   mlen : Int,
   sink : @blit.Buffer,
   max_backward : Int,
+  dist_rb : FixedArray[Int],
+  dist_rb_idx : Ref[Int],
 ) -> Unit {
   let nbltypesl = decode_block_type_count(br)
   let nbltypesi = decode_block_type_count(br)
@@ -199,15 +211,6 @@ fn decode_compressed_block(
     dist_trees.unsafe_set(i, decode_prefix_code(br, dist_alphabet))
   }
 
-  // Distance ring buffer: circular with index, matching C reference layout.
-  // C reference: dist_rb[0]=16, dist_rb[1]=15, dist_rb[2]=11, dist_rb[3]=4, idx=0
-  // Last distance = dist_rb[(idx-1)&3] = dist_rb[3] = 4
-  let dist_rb = FixedArray::make(4, 0)
-  dist_rb.unsafe_set(0, 16)
-  dist_rb.unsafe_set(1, 15)
-  dist_rb.unsafe_set(2, 11)
-  dist_rb.unsafe_set(3, 4)
-  let mut dist_rb_idx = 0
   let mut distance_context = 0
 
   // Previous block type per category (for block type ring buffer)
@@ -236,6 +239,8 @@ fn decode_compressed_block(
 
     let iac_code = read_huffman_symbol(br, iac_tree)
     let (insert_len, copy_len, needs_dist) = decode_insert_copy(br, iac_code)
+    if produced < 30 {
+    }
     let ilimit = if insert_len > mlen - produced {
       mlen - produced
     } else {
@@ -312,14 +317,14 @@ fn decode_compressed_block(
       }
       let dist_code = read_huffman_symbol(br, dist_tree)
       let (d, ctx) = decode_distance_circ(
-        br, dist_code, ndirect, dist_rb, dist_rb_idx, npostfix,
+        br, dist_code, ndirect, dist_rb, dist_rb_idx.val, npostfix,
       )
       distance_context = ctx
       d
     } else {
       // Implicit distance: reuse last distance
       distance_context = 1
-      dist_rb.unsafe_get((dist_rb_idx - 1) & 3)
+      dist_rb.unsafe_get((dist_rb_idx.val - 1) & 3)
     }
     let climit = if copy_len > mlen - produced {
       mlen - produced
@@ -336,7 +341,7 @@ fn decode_compressed_block(
       copy_len >= dict_min_word_length &&
       copy_len <= dict_max_word_length {
       // Static dictionary reference — no ring buffer write, only compensate
-      dist_rb_idx += distance_context
+      dist_rb_idx.val += distance_context
       let address = distance - max_dist - 1
       let shift = dict_size_bits_by_length.unsafe_get(copy_len)
       let mask = (1 << shift) - 1
@@ -354,8 +359,8 @@ fn decode_compressed_block(
       // Backward reference — write distance to ring buffer and advance
       // Only for explicit distances (needs_dist=true)
       if needs_dist {
-        dist_rb.unsafe_set(dist_rb_idx & 3, distance)
-        dist_rb_idx += 1
+        dist_rb.unsafe_set(dist_rb_idx.val & 3, distance)
+        dist_rb_idx.val += 1
       }
       let copy_src = start_pos + produced - distance
       if copy_src >= 0 {
@@ -730,27 +735,29 @@ fn decode_complex_prefix(
 ) -> HuffTree {
   let cl_lengths = FixedArray::make(18, 0)
   let mut space = 32
+  let mut num_codes = 0
   for j in hskip..<18 {
     let sym = cl_order.unsafe_get(j)
     let cl = read_cl_code_length(br)
     cl_lengths.unsafe_set(sym, cl)
     if cl > 0 {
       space -= 32 >> cl
-    }
-    if space == 0 {
-      break
+      num_codes += 1
+      if space <= 0 {
+        break
+      }
     }
   }
   let cl_tree = build_hufftree(cl_lengths, 18)
   let code_lengths = FixedArray::make(alphabet_size, 0)
   let mut i = 0
   let mut prev_cl = 8
-  let mut space = 32768
+  let mut space : UInt = 32768
   // Repeat state for RFC 7932 section 3.5:
   // Consecutive repeat symbols (16 or 17) accumulate their repeat count.
   let mut repeat = 0
   let mut repeat_code_len = 8
-  while i < alphabet_size && space > 0 {
+  while i < alphabet_size && space > 0U {
     let sym = read_huffman_symbol(br, cl_tree)
     if sym >= 0 && sym <= 15 {
       // Regular code length symbol
@@ -758,7 +765,7 @@ fn decode_complex_prefix(
       code_lengths.unsafe_set(i, sym)
       if sym > 0 {
         prev_cl = sym
-        space -= 32768 >> sym
+        space -= (32768U >> sym)
       }
       i += 1
     } else if sym == 16 {
@@ -779,7 +786,7 @@ fn decode_complex_prefix(
       for _repeat_idx in 0..<delta {
         if i < alphabet_size {
           code_lengths.unsafe_set(i, repeat_code_len)
-          space -= 32768 >> repeat_code_len
+          space -= (32768U >> repeat_code_len)
           i += 1
         }
       }
@@ -880,8 +887,9 @@ fn build_hufftree(
     let cl = code_lengths.unsafe_get(sym)
     if cl > 0 && cl <= max_len {
       let code = next_code.unsafe_get(cl)
-      next_code.unsafe_set(cl, next_code.unsafe_get(cl) + 1)
-      let rev = brotli_reverse_dec(code, cl)
+      next_code.unsafe_set(cl, code + 1)
+      // Mask code to cl bits to handle overcomplete Huffman codes
+      let rev = brotli_reverse_dec(code & ((1 << cl) - 1), cl)
       let step = 1 << cl
       let mut idx = rev
       while idx < table_size {
