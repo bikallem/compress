@@ -111,7 +111,13 @@ fn BitBuf::copy_bytes(
   let n = if avail < max_len { avail } else { max_len }
   let start = self.pos
   self.pos += n
-  @blit.blit_bytesview(dst, dst_offset, self.input, self.input.start_offset() + start, n)
+  @blit.blit_bytesview(
+    dst,
+    dst_offset,
+    self.input,
+    self.input.start_offset() + start,
+    n,
+  )
   n
 }
 
