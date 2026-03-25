@@ -87,13 +87,13 @@ fn pump_encoder(s : EncoderState, finish : Bool) -> Bytes? {
       while remaining > MAX_BLOCK_SIZE {
         let chunk = bytes_slice(input, s.input_pos, MAX_BLOCK_SIZE)
         write_encoded_block(out, chunk, encoder_prefix(s), s.rep, false)
-        append_history(s, chunk)
+        append_encode_history(s, chunk)
         s.input_pos += MAX_BLOCK_SIZE
         remaining -= MAX_BLOCK_SIZE
       }
       let chunk = bytes_slice(input, s.input_pos, remaining)
       write_encoded_block(out, chunk, encoder_prefix(s), s.rep, true)
-      append_history(s, chunk)
+      append_encode_history(s, chunk)
       s.input_pos += remaining
     }
     let cs32 = s.checksum.checksum64().to_uint()
@@ -105,7 +105,7 @@ fn pump_encoder(s : EncoderState, finish : Bool) -> Bytes? {
     while remaining >= MAX_BLOCK_SIZE {
       let chunk = bytes_slice(input, s.input_pos, MAX_BLOCK_SIZE)
       write_encoded_block(out, chunk, encoder_prefix(s), s.rep, false)
-      append_history(s, chunk)
+      append_encode_history(s, chunk)
       s.input_pos += MAX_BLOCK_SIZE
       remaining -= MAX_BLOCK_SIZE
     }
@@ -142,7 +142,7 @@ fn encoder_prefix(s : EncoderState) -> Bytes {
 }
 
 ///|
-fn append_history(s : EncoderState, chunk : Bytes) -> Unit {
+fn append_encode_history(s : EncoderState, chunk : Bytes) -> Unit {
   if chunk.length() == 0 {
     return
   }

@@ -22,6 +22,7 @@ priv struct InflaterState {
   mut prev_seq_tables : SeqTables?
   mut rep : Array[Int]
   mut history : @blit.Buffer
+  mut total_output : Int
   xxh : @checksum.XXH64
 }
 
@@ -46,6 +47,7 @@ pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
         prev_seq_tables: None,
         rep: default_rep_offsets(),
         history: @blit.Buffer::new(),
+        total_output: 0,
         xxh: @checksum.XXH64::new(),
       })
     Err(e) =>
@@ -62,6 +64,7 @@ pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
         prev_seq_tables: None,
         rep: default_rep_offsets(),
         history: @blit.Buffer::new(),
+        total_output: 0,
         xxh: @checksum.XXH64::new(),
       })
   }
@@ -140,7 +143,14 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
               Some(cs) => cs
               None => (input.length() * 4).max(65536)
             }
-            s.history = @blit.Buffer::new(size_hint=cap)
+            let history_cap = if header.window_size > 0 &&
+              header.window_size < cap {
+              header.window_size
+            } else {
+              cap
+            }
+            s.history = @blit.Buffer::new(size_hint=history_cap)
+            s.total_output = 0
             s.phase = BlockHeader
             compact_input(s)
             continue
@@ -212,7 +222,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
         }
         match header.content_size {
           Some(cs) =>
-            if s.history.length() != cs {
+            if s.total_output != cs {
               return fail_inflater(
                 s,
                 ZstdError::CorruptData("frame content size mismatch"),
@@ -305,7 +315,8 @@ fn emit_block(s : InflaterState, block : Bytes) -> Bytes? {
   if block.length() == 0 {
     return None
   }
-  s.history.write_bytes(block)
+  append_decode_history(s, block)
+  s.total_output += block.length()
   s.xxh.update(block[:])
   match s.sink {
     Some(sink) => {
@@ -314,6 +325,44 @@ fn emit_block(s : InflaterState, block : Bytes) -> Bytes? {
     }
     None => Some(block)
   }
+}
+
+///|
+fn append_decode_history(s : InflaterState, block : Bytes) -> Unit {
+  let header = match s.header {
+    Some(header) => header
+    None => {
+      s.history.write_bytes(block)
+      return
+    }
+  }
+  let limit = if header.window_size > 0 {
+    header.window_size
+  } else {
+    s.total_output + block.length()
+  }
+  if limit <= 0 {
+    return
+  }
+  let history = s.history.to_bytes()
+  let total = history.length() + block.length()
+  if total <= limit {
+    s.history.write_bytes(block)
+    return
+  }
+  let keep = limit
+  let skip = total - keep
+  let next = @blit.Buffer::new(size_hint=keep)
+  if skip < history.length() {
+    next.write_bytesview(history[skip:])
+    next.write_bytes(block)
+  } else {
+    let block_skip = skip - history.length()
+    if block_skip < block.length() {
+      next.write_bytesview(block[block_skip:])
+    }
+  }
+  s.history = next
 }
 
 ///|

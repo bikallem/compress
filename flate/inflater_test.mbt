@@ -115,6 +115,16 @@ fn streaming_decompress(compressed : Bytes, chunk_size : Int) -> (Int, Bool) {
 }
 
 ///|
+fn dynamic_repeat_fixture_expected() -> Bytes {
+  let line = b"alpha token group one. beta token group two. gamma token group three.\n"
+  let buf = @blit.Buffer::new()
+  for _ in 0..<64 {
+    buf.write_bytes(line)
+  }
+  buf.to_bytes()
+}
+
+///|
 test "streaming decompress with chunk boundaries on compressible data" {
   let pattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@"
   let size = 256 * 1024
@@ -150,6 +160,31 @@ test "inflate dynamic header split across chunks" {
       continue d.decode()
     }
     End => assert_eq(buf.to_bytes(), b"Hello, World!")
+    Error(e) => raise e
+  }
+}
+
+///|
+test "inflate dynamic repeat header across byte chunks" {
+  let compressed : Bytes = b"\xed\xcc\xc1\x09\xc0\x20\x0c\x40\xd1\x7b\xa7\xc8\x04\xd9\x29\x85\xa0\x60\x35\x22\x29\x5d\xdf\x73\x0b\xdd\xe0\x5f\xdf\xe1\xd9\x35\xab\x49\x46\xf3\x21\x65\xc5\x3d\x25\x86\xab\x9c\x9e\x6f\xcd\x27\x54\x8a\xf5\xfe\xe1\xba\xdc\xf5\x30\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x96\x9f\x65\x03"
+  let expected = dynamic_repeat_fixture_expected()
+  let d = @flate.Inflater::new()
+  let buf = @blit.Buffer::new()
+  let mut pos = 0
+  loop d.decode() {
+    Await =>
+      if pos >= compressed.length() {
+        fail("unexpected Await after full input")
+      } else {
+        d.src(compressed[pos:pos + 1])
+        pos += 1
+        continue d.decode()
+      }
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => assert_eq(buf.to_bytes(), expected)
     Error(e) => raise e
   }
 }

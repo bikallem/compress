@@ -7,6 +7,7 @@ priv enum InflatePhase {
   DynamicHeader
   DynamicHeaderCodeLengths(Int, Int, Int, FixedArray[Int], Int) // hlit, hdist, hclen, cl_lengths, next index
   DynamicHeaderCodeTable(Int, Int, HuffmanDecoder, FixedArray[Int], Int) // hlit, hdist, cl_decoder, lengths, next index
+  DynamicHeaderCodeRepeat(Int, Int, HuffmanDecoder, FixedArray[Int], Int, Int) // hlit, hdist, cl_decoder, lengths, next index, repeat symbol
   HuffmanLoop(HuffmanDecoder, HuffmanDecoder)
   // Partial match decode states (suspended mid-symbol)
   HuffmanMatchLen(HuffmanDecoder, HuffmanDecoder, Int, Int) // lit_dec, dist_dec, length_code, extra_bits
@@ -84,6 +85,10 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       DynamicHeaderCodeTable(hlit, hdist, cl_decoder, lengths, next_idx) =>
         self.decode_dynamic_header_code_table(
           hlit, hdist, cl_decoder, lengths, next_idx,
+        )
+      DynamicHeaderCodeRepeat(hlit, hdist, cl_decoder, lengths, next_idx, sym) =>
+        self.decode_dynamic_header_code_repeat(
+          hlit, hdist, cl_decoder, lengths, next_idx, sym,
         )
       HuffmanLoop(lit_dec, dist_dec) =>
         self.decode_huffman_loop(lit_dec, dist_dec)
@@ -354,23 +359,17 @@ fn Inflater::decode_dynamic_header_code_table(
         }
         let count = match bb.read(2) {
           None => {
-            self.phase = DynamicHeaderCodeTable(
-              hlit, hdist, cl_decoder, lengths, i,
+            self.phase = DynamicHeaderCodeRepeat(
+              hlit, hdist, cl_decoder, lengths, i, sym,
             )
             return Await
           }
           Some(v) => v + 3
         }
-        let prev = lengths.unsafe_get(i - 1)
-        for _ in 0..<count {
-          guard i < total else {
-            return self.fail(
-              CompressError::CorruptInput("too many code lengths"),
-            )
-          }
-          lengths.unsafe_set(i, prev)
-          i += 1
+        let next_i = apply_dynamic_header_repeat(lengths, i, total, sym, count) catch {
+          e => return self.fail(e)
         }
+        i = next_i
       }
       CL_REPEAT_ZERO_SHORT | CL_REPEAT_ZERO_LONG => {
         let (bits, base) = if sym == CL_REPEAT_ZERO_SHORT {
@@ -380,22 +379,17 @@ fn Inflater::decode_dynamic_header_code_table(
         }
         let count = match bb.read(bits) {
           None => {
-            self.phase = DynamicHeaderCodeTable(
-              hlit, hdist, cl_decoder, lengths, i,
+            self.phase = DynamicHeaderCodeRepeat(
+              hlit, hdist, cl_decoder, lengths, i, sym,
             )
             return Await
           }
           Some(v) => v + base
         }
-        for _ in 0..<count {
-          guard i < total else {
-            return self.fail(
-              CompressError::CorruptInput("too many code lengths"),
-            )
-          }
-          lengths.unsafe_set(i, 0)
-          i += 1
+        let next_i = apply_dynamic_header_repeat(lengths, i, total, sym, count) catch {
+          e => return self.fail(e)
         }
+        i = next_i
       }
       _ =>
         return self.fail(
@@ -420,6 +414,71 @@ fn Inflater::decode_dynamic_header_code_table(
   self.phase = HuffmanLoop(lit_dec, dist_dec)
   self.redispatch = true
   Await
+}
+
+///|
+fn Inflater::decode_dynamic_header_code_repeat(
+  self : Inflater,
+  hlit : Int,
+  hdist : Int,
+  cl_decoder : HuffmanDecoder,
+  lengths : FixedArray[Int],
+  next_idx : Int,
+  sym : Int,
+) -> Decode {
+  let bb = self.bb
+  let total = hlit + hdist
+  let (bits, base) = match sym {
+    CL_REPEAT_PREV => (2, 3)
+    CL_REPEAT_ZERO_SHORT => (3, 3)
+    CL_REPEAT_ZERO_LONG => (7, 11)
+    _ =>
+      return self.fail(
+        CompressError::CorruptInput("invalid repeat symbol \{sym}"),
+      )
+  }
+  let count = match bb.read(bits) {
+    None => {
+      self.phase = DynamicHeaderCodeRepeat(
+        hlit, hdist, cl_decoder, lengths, next_idx, sym,
+      )
+      return Await
+    }
+    Some(v) => v + base
+  }
+  let i = apply_dynamic_header_repeat(lengths, next_idx, total, sym, count) catch {
+    e => return self.fail(e)
+  }
+  self.phase = DynamicHeaderCodeTable(hlit, hdist, cl_decoder, lengths, i)
+  self.redispatch = true
+  Await
+}
+
+///|
+fn apply_dynamic_header_repeat(
+  lengths : FixedArray[Int],
+  start : Int,
+  total : Int,
+  sym : Int,
+  count : Int,
+) -> Int raise CompressError {
+  let mut i = start
+  let value = if sym == CL_REPEAT_PREV {
+    guard i > 0 else {
+      raise CompressError::CorruptInput("repeat with no previous length")
+    }
+    lengths.unsafe_get(i - 1)
+  } else {
+    0
+  }
+  for _ in 0..<count {
+    guard i < total else {
+      raise CompressError::CorruptInput("too many code lengths")
+    }
+    lengths.unsafe_set(i, value)
+    i += 1
+  }
+  i
 }
 
 ///|

@@ -33,8 +33,14 @@ fn parse_dictionary_bytes(dict : Bytes) -> ZstdDictionary raise ZstdError {
   if dict.length() == 0 {
     return empty_dictionary()
   }
-  guard dict.length() >= 8 else {
-    raise ZstdError::InvalidHeader("zstd dictionary must be at least 8 bytes")
+  if dict.length() < 4 {
+    return {
+      content: dict,
+      dict_id: 0U,
+      rep: default_rep_offsets(),
+      lit_table: None,
+      seq_tables: None,
+    }
   }
   let src = dict[:]
   let magic = read_u32_le(src, 0)
@@ -97,17 +103,21 @@ fn parse_dictionary_for_encoder(dict : Bytes) -> ZstdDictionary {
   let parsed = try? parse_dictionary_bytes(dict)
   match parsed {
     Ok(parsed) => parsed
-    Err(_) =>
-      if dict.length() >= 8 {
-        {
+    Err(_) => {
+      if dict.length() == 0 {
+        return empty_dictionary()
+      }
+      let src = dict[:]
+      if dict.length() < 4 || read_u32_le(src, 0) != 0xEC30A437_U {
+        return {
           content: dict,
           dict_id: 0U,
           rep: default_rep_offsets(),
           lit_table: None,
           seq_tables: None,
         }
-      } else {
-        empty_dictionary()
       }
+      empty_dictionary()
+    }
   }
 }

@@ -180,3 +180,38 @@ test "streaming zlib inflater handles dynamic header split" {
     Error(e) => raise e
   }
 }
+
+///|
+fn dynamic_repeat_fixture_expected() -> Bytes {
+  let line = b"alpha token group one. beta token group two. gamma token group three.\n"
+  let buf = @blit.Buffer::new()
+  for _ in 0..<64 {
+    buf.write_bytes(line)
+  }
+  buf.to_bytes()
+}
+
+///|
+test "streaming zlib inflater preserves repeat state across byte chunks" {
+  let compressed : Bytes = b"\x78\x9c\xed\xcc\xc1\x09\xc0\x20\x0c\x40\xd1\x7b\xa7\xc8\x04\xd9\x29\x85\xa0\x60\x35\x22\x29\x5d\xdf\x73\x0b\xdd\xe0\x5f\xdf\xe1\xd9\x35\xab\x49\x46\xf3\x21\x65\xc5\x3d\x25\x86\xab\x9c\x9e\x6f\xcd\x27\x54\x8a\xf5\xfe\xe1\xba\xdc\xf5\x30\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x16\x96\x9f\x65\x03\x2b\xae\x4e\x1b"
+  let expected = dynamic_repeat_fixture_expected()
+  let d = @zlib.Inflater::new()
+  let buf = @blit.Buffer::new()
+  let mut pos = 0
+  loop d.decode() {
+    Await =>
+      if pos >= compressed.length() {
+        fail("unexpected Await after full input")
+      } else {
+        d.src(compressed[pos:pos + 1])
+        pos += 1
+        continue d.decode()
+      }
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => assert_eq(buf.to_bytes(), expected)
+    Error(e) => raise e
+  }
+}

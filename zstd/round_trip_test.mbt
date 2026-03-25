@@ -176,6 +176,28 @@ test "round-trip: with raw dictionary" {
 }
 
 ///|
+test "round-trip: with short raw dictionary" {
+  let dict = b"abc"
+  let data = b"abcabcabcabcxyzabcabc"
+  let compressed = @zstd.compress(data, dict~)
+  let decompressed = @zstd.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
+  let d = @zstd.Inflater::new(dict~)
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with full input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), data)
+}
+
+///|
 test "signal protocol: inflater emits before checksum" {
   let data = Bytes::makei(4096, fn(i) { (i * 17 % 251).to_byte() })
   let compressed = @zstd.compress(data)
