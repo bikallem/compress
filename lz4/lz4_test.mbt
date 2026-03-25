@@ -92,3 +92,27 @@ test "lz4 frame header checksum" {
   let result = try? @lz4.decompress(corrupted)
   guard result is Err(_) else { fail("expected checksum mismatch error") }
 }
+
+///|
+test "lz4 unsupported dependent blocks" {
+  let data : Bytes = b"\x04\x22\x4d\x18\x40\x40\x00"
+  let result = try? @lz4.decompress(data)
+  guard result is Err(_) else { fail("expected error for dependent blocks") }
+}
+
+///|
+test "lz4 truncated dict id header" {
+  let data : Bytes = b"\x04\x22\x4d\x18\x61\x40\x00"
+  let result = try? @lz4.decompress(data)
+  guard result is Err(_) else {
+    fail("expected error for truncated dict-id header")
+  }
+}
+
+///|
+test "lz4 missing end mark" {
+  let compressed = @lz4.compress(b"Hello, World!")
+  let truncated = Bytes::makei(compressed.length() - 8, fn(i) { compressed[i] })
+  let result = try? @lz4.decompress(truncated)
+  guard result is Err(_) else { fail("expected error for missing end mark") }
+}

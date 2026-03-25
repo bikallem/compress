@@ -1,5 +1,5 @@
 ///|
-/// Streaming LZ4 compressor using signal protocol.
+/// Buffered LZ4 compressor using signal protocol.
 ///
 /// Usage:
 ///   let d = Deflater::new()

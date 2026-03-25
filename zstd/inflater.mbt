@@ -1,8 +1,7 @@
 ///|
-/// Streaming Zstandard decompressor using signal protocol.
+/// Buffered Zstandard decompressor using signal protocol.
 priv struct InflaterState {
-  mut input : BytesView
-  mut input_pos : Int
+  input_buf : @blit.Buffer
   mut finished : Bool
   mut failed : ZstdError?
   mut sink : @blit.Buffer?
@@ -14,8 +13,7 @@ struct Inflater(InflaterState)
 ///|
 pub fn Inflater::new() -> Inflater {
   Inflater({
-    input: b""[:],
-    input_pos: 0,
+    input_buf: @blit.Buffer::new(),
     finished: false,
     failed: None,
     sink: None,
@@ -28,8 +26,7 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   if s.finished || s.failed is Some(_) {
     return
   }
-  s.input = data
-  s.input_pos = 0
+  s.input_buf.write_bytesview(data)
 }
 
 ///|
@@ -57,26 +54,29 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   if s.finished {
     return End
   }
-  let input = s.input
-  if s.input_pos >= input.length() {
+  let data = s.input_buf.to_bytes()
+  if data.length() == 0 {
     return Await
   }
-  let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
-    input.unsafe_get(s.input_pos + i)
-  })
-  let result = decompress(data) catch {
-    e => {
-      let ze = ZstdError::CorruptData(e.to_string())
-      s.failed = Some(ze)
-      return Error(ze)
+  let result = try? decompress(data)
+  match result {
+    Err(e) =>
+      match e {
+        UnexpectedEOF => Await
+        _ => {
+          s.failed = Some(e)
+          Error(e)
+        }
+      }
+    Ok(result) => {
+      s.finished = true
+      match s.sink {
+        Some(sink) => {
+          sink.write_bytes(result)
+          End
+        }
+        None => Data(result[:])
+      }
     }
-  }
-  s.finished = true
-  match s.sink {
-    Some(sink) => {
-      sink.write_bytes(result)
-      End
-    }
-    None => Data(result[:])
   }
 }

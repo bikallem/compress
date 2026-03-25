@@ -5,6 +5,8 @@ priv enum InflatePhase {
   StoredInit
   StoredCopy(Int) // remaining bytes
   DynamicHeader
+  DynamicHeaderCodeLengths(Int, Int, Int, FixedArray[Int], Int) // hlit, hdist, hclen, cl_lengths, next index
+  DynamicHeaderCodeTable(Int, Int, HuffmanDecoder, FixedArray[Int], Int) // hlit, hdist, cl_decoder, lengths, next index
   HuffmanLoop(HuffmanDecoder, HuffmanDecoder)
   // Partial match decode states (suspended mid-symbol)
   HuffmanMatchLen(HuffmanDecoder, HuffmanDecoder, Int, Int) // lit_dec, dist_dec, length_code, extra_bits
@@ -75,6 +77,14 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       StoredInit => self.decode_stored_init()
       StoredCopy(remaining) => self.decode_stored_copy(remaining)
       DynamicHeader => self.decode_dynamic_header()
+      DynamicHeaderCodeLengths(hlit, hdist, hclen, cl_lengths, next_idx) =>
+        self.decode_dynamic_header_code_lengths(
+          hlit, hdist, hclen, cl_lengths, next_idx,
+        )
+      DynamicHeaderCodeTable(hlit, hdist, cl_decoder, lengths, next_idx) =>
+        self.decode_dynamic_header_code_table(
+          hlit, hdist, cl_decoder, lengths, next_idx,
+        )
       HuffmanLoop(lit_dec, dist_dec) =>
         self.decode_huffman_loop(lit_dec, dist_dec)
       HuffmanMatchLen(lit_dec, dist_dec, length_code, extra_bits) =>
@@ -273,34 +283,62 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
   let hlit = bb.read_unchecked(5) + 257
   let hdist = bb.read_unchecked(5) + 1
   let hclen = bb.read_unchecked(4) + 4
-  // Need 3 bits per code length
-  if !bb.ensure(hclen * 3) {
-    // This is tricky — we've already consumed the header bits.
-    // For simplicity, require enough input to parse the whole dynamic header.
-    return self.fail(
-      CompressError::CorruptInput(
-        "truncated dynamic header (need more input for code lengths)",
-      ),
-    )
-  }
   let cl_lengths = FixedArray::make(NUM_CODES, 0)
-  for i in 0..<hclen {
-    cl_lengths.unsafe_set(code_order.unsafe_get(i), bb.read_unchecked(3))
+  self.phase = DynamicHeaderCodeLengths(hlit, hdist, hclen, cl_lengths, 0)
+  self.redispatch = true
+  Await
+}
+
+///|
+fn Inflater::decode_dynamic_header_code_lengths(
+  self : Inflater,
+  hlit : Int,
+  hdist : Int,
+  hclen : Int,
+  cl_lengths : FixedArray[Int],
+  next_idx : Int,
+) -> Decode {
+  let bb = self.bb
+  let mut i = next_idx
+  while i < hclen {
+    match bb.read(3) {
+      None => {
+        self.phase = DynamicHeaderCodeLengths(hlit, hdist, hclen, cl_lengths, i)
+        return Await
+      }
+      Some(n) => {
+        cl_lengths.unsafe_set(code_order.unsafe_get(i), n)
+        i += 1
+      }
+    }
   }
   let cl_decoder = HuffmanDecoder::build(cl_lengths) catch {
     e => return self.fail(CompressError::CorruptInput(e.to_string()))
   }
+  let lengths = FixedArray::make(hlit + hdist, 0)
+  self.phase = DynamicHeaderCodeTable(hlit, hdist, cl_decoder, lengths, 0)
+  self.redispatch = true
+  Await
+}
+
+///|
+fn Inflater::decode_dynamic_header_code_table(
+  self : Inflater,
+  hlit : Int,
+  hdist : Int,
+  cl_decoder : HuffmanDecoder,
+  lengths : FixedArray[Int],
+  next_idx : Int,
+) -> Decode {
+  let bb = self.bb
   let total = hlit + hdist
-  let lengths = FixedArray::make(total, 0)
-  let mut i = 0
+  let mut i = next_idx
   while i < total {
     let sym = match cl_decoder.decode(bb) {
-      None =>
-        return self.fail(
-          CompressError::CorruptInput(
-            "truncated dynamic header (need more input for code table)",
-          ),
-        )
+      None => {
+        self.phase = DynamicHeaderCodeTable(hlit, hdist, cl_decoder, lengths, i)
+        return Await
+      }
       Some(s) => s
     }
     match sym {
@@ -315,10 +353,12 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
           )
         }
         let count = match bb.read(2) {
-          None =>
-            return self.fail(
-              CompressError::CorruptInput("truncated dynamic header"),
+          None => {
+            self.phase = DynamicHeaderCodeTable(
+              hlit, hdist, cl_decoder, lengths, i,
             )
+            return Await
+          }
           Some(v) => v + 3
         }
         let prev = lengths.unsafe_get(i - 1)
@@ -339,10 +379,12 @@ fn Inflater::decode_dynamic_header(self : Inflater) -> Decode {
           (7, 11)
         }
         let count = match bb.read(bits) {
-          None =>
-            return self.fail(
-              CompressError::CorruptInput("truncated dynamic header"),
+          None => {
+            self.phase = DynamicHeaderCodeTable(
+              hlit, hdist, cl_decoder, lengths, i,
             )
+            return Await
+          }
           Some(v) => v + base
         }
         for _ in 0..<count {

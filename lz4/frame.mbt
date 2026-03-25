@@ -98,9 +98,20 @@ fn parse_frame_header(
   guard version == 1 else {
     raise Lz4Error::InvalidHeader("unsupported version")
   }
+  let block_independence = (flg & 0x20) != 0
+  let has_block_checksum = (flg & 0x10) != 0
   let has_content_size = (flg & 0x08) != 0
   let has_content_checksum = (flg & 0x04) != 0
   let has_dict_id = (flg & 0x01) != 0
+  guard block_independence else {
+    raise Lz4Error::InvalidHeader("dependent blocks not supported")
+  }
+  guard !has_block_checksum else {
+    raise Lz4Error::InvalidHeader("block checksums not supported")
+  }
+  guard (flg & 0x02) == 0 else {
+    raise Lz4Error::InvalidHeader("reserved FLG bit set")
+  }
   let bd = data.unsafe_get(5).to_int()
   let block_max_size_id = (bd >> 4) & 0x07
   guard block_max_size_id >= 4 && block_max_size_id <= 7 else {
@@ -120,7 +131,8 @@ fn parse_frame_header(
     None
   }
   if has_dict_id {
-    pos += 4 // skip dict id
+    guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
+    raise Lz4Error::InvalidHeader("dictionary id not supported")
   }
   // Verify header checksum
   let header_start = 4 // after magic

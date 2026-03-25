@@ -1,5 +1,5 @@
 ///|
-/// Streaming Zstandard compressor using signal protocol.
+/// Buffered Zstandard compressor using signal protocol.
 priv struct EncoderState {
   level : CompressionLevel
   input_buf : @blit.Buffer

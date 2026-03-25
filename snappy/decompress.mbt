@@ -148,10 +148,6 @@ fn decode_block(
       dst_pos += length
     }
   }
-  guard dst_pos == uncompressed_len else {
-    raise SnappyError::CorruptInput(
-      "decoded \{dst_pos} bytes, expected \{uncompressed_len}",
-    )
-  }
+  guard dst_pos == uncompressed_len else { raise SnappyError::UnexpectedEOF }
   dst_pos
 }

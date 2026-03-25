@@ -97,7 +97,8 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
   let xxh = @checksum.XXH64::new()
   // Repeat offsets persist across blocks within a frame
   let rep = [1, 4, 8]
-  while pos < src_len {
+  let mut saw_last_block = false
+  while !saw_last_block {
     guard pos + 3 <= src_len else { raise ZstdError::UnexpectedEOF }
     let bh = src.unsafe_get(pos).to_int() |
       (src.unsafe_get(pos + 1).to_int() << 8) |
@@ -132,9 +133,7 @@ pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
     } else {
       raise ZstdError::CorruptData("reserved block type")
     }
-    if last_block == 1 {
-      break
-    }
+    saw_last_block = last_block == 1
   }
   // Verify checksum
   if has_checksum == 1 {
@@ -252,8 +251,13 @@ fn decompress_block(
   }
   // Compression modes byte
   guard pos < block_end else { raise ZstdError::UnexpectedEOF }
-  let _modes = src.unsafe_get(pos).to_int()
+  let modes = src.unsafe_get(pos).to_int()
   pos += 1
+  guard modes == 0 else {
+    raise ZstdError::CorruptData(
+      "sequence compression modes other than predefined are not supported",
+    )
+  }
   // For now: decode using predefined tables and the bitstream
   // The remaining bytes [pos..block_end) contain the sequence bitstream (backward)
   let seq_data = Bytes::makei(block_end - pos, fn(i) { src.unsafe_get(pos + i) })

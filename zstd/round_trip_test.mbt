@@ -100,13 +100,25 @@ test "signal protocol: chunked input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @zstd.compress(data)
   let d = @zstd.Inflater::new()
-  d.src(compressed[:])
   let buf = @blit.Buffer::new()
+  let chunk_size = 11
+  let mut pos = 0
   loop d.decode() {
-    Await => {
-      inspect(false, content="true")
-      break
-    }
+    Await =>
+      if pos >= compressed.length() {
+        inspect(false, content="true")
+        break
+      } else {
+        let end = if pos + chunk_size > compressed.length() {
+          compressed.length()
+        } else {
+          pos + chunk_size
+        }
+        let chunk = Bytes::makei(end - pos, fn(i) { compressed[pos + i] })
+        d.src(chunk[:])
+        pos = end
+        continue d.decode()
+      }
     Data(chunk) => {
       buf.write_bytesview(chunk)
       continue d.decode()

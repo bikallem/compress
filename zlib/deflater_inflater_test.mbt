@@ -155,3 +155,28 @@ test "streaming zlib deflater with compression levels" {
   let decompressed = @zlib.decompress(buf.to_bytes())
   assert_eq(decompressed, original)
 }
+
+///|
+test "streaming zlib inflater handles dynamic header split" {
+  let compressed : Bytes = b"\x78\x9c\xf3\x48\xcd\xc9\xc9\xd7\x51\x08\xcf\x2f\xca\x49\x51\x04\x00\x1f\x9e\x04\x6a"
+  let d = @zlib.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:4])
+  let mut fed_rest = false
+  loop d.decode() {
+    Await =>
+      if fed_rest {
+        fail("unexpected Await after full input")
+      } else {
+        fed_rest = true
+        d.src(compressed[4:])
+        continue d.decode()
+      }
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => assert_eq(buf.to_bytes(), b"Hello, World!")
+    Error(e) => raise e
+  }
+}

@@ -195,3 +195,28 @@ test "streaming gzip deflater with header" {
   assert_eq(decompressed, original)
   assert_eq(got_header.name, "out.txt")
 }
+
+///|
+test "streaming gzip inflater handles dynamic header split" {
+  let compressed : Bytes = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03\xf3\x48\xcd\xc9\xc9\xd7\x51\x08\xcf\x2f\xca\x49\x51\x04\x00\xd0\xc3\x4a\xec\x0d\x00\x00\x00"
+  let d = @gzip.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:12])
+  let mut fed_rest = false
+  loop d.decode() {
+    Await =>
+      if fed_rest {
+        fail("unexpected Await after full input")
+      } else {
+        fed_rest = true
+        d.src(compressed[12:])
+        continue d.decode()
+      }
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => assert_eq(buf.to_bytes(), b"Hello, World!")
+    Error(e) => raise e
+  }
+}

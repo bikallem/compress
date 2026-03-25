@@ -14,7 +14,8 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, B
 - BytesView-based streaming API — zero-copy input slicing
 - Signal protocol streaming — no callbacks, no trait objects, explicit control flow
 - Async streaming for DEFLATE via MoonBit's `async/io`
-- Cross-validated against Go's `compress/*` stdlib
+- Cross-validated against Go's `compress/*` stdlib where applicable, plus
+  external golden vectors for additional formats
 
 ## Table of Contents
 
@@ -42,8 +43,8 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, B
 | `bikallem/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
 | `bikallem/compress/brotli` | Brotli compression/decompression (RFC 7932) |
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
-| `bikallem/compress/zstd` | Zstandard compression/decompression (RFC 8878) |
-| `bikallem/compress/lz4` | LZ4 frame compression/decompression |
+| `bikallem/compress/zstd` | Experimental Zstandard subset with predefined sequence tables |
+| `bikallem/compress/lz4` | LZ4 frame compression/decompression for independent-block frames |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
 
 ## Installation
@@ -86,12 +87,12 @@ let compressed = @bzip2.compress(data)
 let compressed = @bzip2.compress(data, level=9)
 let decompressed = @bzip2.decompress(compressed)
 
-// Zstandard
+// Zstandard (experimental subset)
 let compressed = @zstd.compress(data)
 let compressed = @zstd.compress(data, level=Fast)
 let decompressed = @zstd.decompress(compressed)
 
-// LZ4
+// LZ4 (independent-block frames)
 let compressed = @lz4.compress(data)
 let decompressed = @lz4.decompress(compressed)
 
@@ -102,7 +103,7 @@ let adler = @checksum.adler32(data[:])
 
 ## Streaming API
 
-All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types that use a signal protocol for streaming. This gives callers explicit control over data flow without callbacks or trait objects.
+All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types with a signal-protocol interface. `flate`, `gzip`, `zlib`, `lzw`, `bzip2`, and `brotli` stream incrementally. `snappy`, `lz4`, and `zstd` currently use buffered wrappers: they accept chunked input, but decompression waits for a complete stream/frame and compression emits output on finalization.
 
 ### Compression
 
@@ -164,11 +165,11 @@ let i = @brotli.Inflater::new()
 let d = @bzip2.Deflater::new(level=9)
 let i = @bzip2.Inflater::new()
 
-// Zstandard
+// Zstandard (buffered wrapper over the current subset codec)
 let d = @zstd.Deflater::new(level=Fast)
 let i = @zstd.Inflater::new()
 
-// LZ4
+// LZ4 (buffered wrapper, independent-block frames only)
 let d = @lz4.Deflater::new()
 let i = @lz4.Inflater::new()
 
@@ -210,6 +211,8 @@ bzip2 uses its own level parameter (1-9), controlling block size (N x 100KB).
 Brotli uses `@brotli.CompressionLevel`: `Level(0)` through `Level(11)`, `Default` (level 6), or `Best` (level 11). Higher levels use longer hash chains for better compression ratios.
 
 Zstandard uses `@zstd.CompressionLevel`: `Fast`, `Default`, `Best`, or `Level(Int)`.
+
+**Zstandard status:** The current decoder supports the subset produced by this package, including raw/RLE literals and predefined sequence tables. Huffman-compressed literals, custom FSE tables, and treeless sequence modes are rejected explicitly.
 
 **Brotli features:** The decoder is fully RFC 7932 compliant, including the 122KB static dictionary with 121 word transforms. The encoder supports context modeling (level 5+), which uses the previous byte to select among multiple literal Huffman trees for better compression of structured text. Block splitting and static dictionary compression by the encoder are not yet implemented. Quality levels 10-11 use the same hash-chain algorithm as level 9. Output is verified against Go's `andybalholm/brotli` reference decoder.
 

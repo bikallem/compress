@@ -1,5 +1,5 @@
 ///|
-/// Streaming Snappy decompressor using signal protocol.
+/// Buffered Snappy decompressor using signal protocol.
 ///
 /// Usage:
 ///   let d = Inflater::new()
@@ -11,8 +11,7 @@
 ///     Error(e) => ...
 ///   }
 priv struct InflaterState {
-  mut input : BytesView
-  mut input_pos : Int
+  input_buf : @blit.Buffer
   mut finished : Bool
   mut failed : SnappyError?
   mut sink : @blit.Buffer?
@@ -24,8 +23,7 @@ struct Inflater(InflaterState)
 ///|
 pub fn Inflater::new() -> Inflater {
   Inflater({
-    input: b""[:],
-    input_pos: 0,
+    input_buf: @blit.Buffer::new(),
     finished: false,
     failed: None,
     sink: None,
@@ -38,8 +36,7 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   if s.finished || s.failed is Some(_) {
     return
   }
-  s.input = data
-  s.input_pos = 0
+  s.input_buf.write_bytesview(data)
 }
 
 ///|
@@ -65,30 +62,45 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   if s.finished {
     return End
   }
-  let input = s.input
-  if s.input_pos >= input.length() {
+  let input = s.input_buf.to_bytes()
+  if input.length() == 0 {
     return Await
   }
   // Parse the complete Snappy stream
   // Read varint for uncompressed length
-  let (uncompressed_len, data_start) = read_varint(input, s.input_pos) catch {
-    e => {
-      let se = SnappyError::CorruptInput(e.to_string())
-      s.failed = Some(se)
-      return Error(se)
-    }
+  let read_len_result = try? read_varint(input[:], 0)
+  let (uncompressed_len, data_start) = match read_len_result {
+    Ok(v) => v
+    Err(e) =>
+      match e {
+        UnexpectedEOF => return Await
+        _ => {
+          s.failed = Some(e)
+          return Error(e)
+        }
+      }
   }
   if uncompressed_len == 0 {
     s.finished = true
     return End
   }
   let dst = FixedArray::make(uncompressed_len, b'\x00')
-  let n = decode_block(input, data_start, dst, uncompressed_len) catch {
-    e => {
-      let se = SnappyError::CorruptInput(e.to_string())
-      s.failed = Some(se)
-      return Error(se)
-    }
+  let decode_result = try? decode_block(
+    input[:],
+    data_start,
+    dst,
+    uncompressed_len,
+  )
+  let n = match decode_result {
+    Ok(v) => v
+    Err(e) =>
+      match e {
+        UnexpectedEOF => return Await
+        _ => {
+          s.failed = Some(e)
+          return Error(e)
+        }
+      }
   }
   s.finished = true
   match s.sink {

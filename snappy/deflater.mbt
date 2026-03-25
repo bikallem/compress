@@ -1,5 +1,5 @@
 ///|
-/// Streaming Snappy compressor using signal protocol.
+/// Buffered Snappy compressor using signal protocol.
 ///
 /// Usage:
 ///   let d = Deflater::new()

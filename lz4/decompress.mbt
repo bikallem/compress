@@ -14,8 +14,10 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
   let block_buf = FixedArray::make(block_max_size, b'\x00')
   let mut pos = data_pos
   let xxh = @checksum.XXH32::new()
+  let mut saw_end_mark = false
   // Read blocks
-  while pos + 4 <= data.length() {
+  while !saw_end_mark {
+    guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
     let block_size_raw = data.unsafe_get(pos).to_int() |
       (data.unsafe_get(pos + 1).to_int() << 8) |
       (data.unsafe_get(pos + 2).to_int() << 16) |
@@ -23,7 +25,8 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
     pos += 4
     // End mark
     if block_size_raw == 0 {
-      break
+      saw_end_mark = true
+      continue
     }
     let is_uncompressed = (block_size_raw & 0x80000000) != 0
     let block_size = block_size_raw & 0x7FFFFFFF

@@ -128,3 +128,28 @@ test "streaming decompress with chunk boundaries on compressible data" {
     assert_eq(got, size)
   }
 }
+
+///|
+test "inflate dynamic header split across chunks" {
+  let compressed : Bytes = b"\xf3\x48\xcd\xc9\xc9\xd7\x51\x08\xcf\x2f\xca\x49\x51\x04\x00"
+  let d = @flate.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:2])
+  let mut fed_rest = false
+  loop d.decode() {
+    Await =>
+      if fed_rest {
+        fail("unexpected Await after full input")
+      } else {
+        fed_rest = true
+        d.src(compressed[2:])
+        continue d.decode()
+      }
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => assert_eq(buf.to_bytes(), b"Hello, World!")
+    Error(e) => raise e
+  }
+}

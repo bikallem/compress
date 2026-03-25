@@ -1,5 +1,5 @@
 ///|
-/// Streaming LZ4 decompressor using signal protocol.
+/// Buffered LZ4 decompressor using signal protocol.
 ///
 /// Usage:
 ///   let d = Inflater::new()
@@ -11,8 +11,7 @@
 ///     Error(e) => ...
 ///   }
 priv struct InflaterState {
-  mut input : BytesView
-  mut input_pos : Int
+  input_buf : @blit.Buffer
   mut finished : Bool
   mut failed : Lz4Error?
   mut sink : @blit.Buffer?
@@ -24,8 +23,7 @@ struct Inflater(InflaterState)
 ///|
 pub fn Inflater::new() -> Inflater {
   Inflater({
-    input: b""[:],
-    input_pos: 0,
+    input_buf: @blit.Buffer::new(),
     finished: false,
     failed: None,
     sink: None,
@@ -38,8 +36,7 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   if s.finished || s.failed is Some(_) {
     return
   }
-  s.input = data
-  s.input_pos = 0
+  s.input_buf.write_bytesview(data)
 }
 
 ///|
@@ -67,27 +64,29 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   if s.finished {
     return End
   }
-  let input = s.input
-  if s.input_pos >= input.length() {
+  let data = s.input_buf.to_bytes()
+  if data.length() == 0 {
     return Await
   }
-  // Decompress the full frame
-  let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
-    input.unsafe_get(s.input_pos + i)
-  })
-  let result = decompress(data) catch {
-    e => {
-      let le = Lz4Error::CorruptData(e.to_string())
-      s.failed = Some(le)
-      return Error(le)
+  let result = try? decompress(data)
+  match result {
+    Err(e) =>
+      match e {
+        UnexpectedEOF => Await
+        _ => {
+          s.failed = Some(e)
+          Error(e)
+        }
+      }
+    Ok(result) => {
+      s.finished = true
+      match s.sink {
+        Some(sink) => {
+          sink.write_bytes(result)
+          End
+        }
+        None => Data(result[:])
+      }
     }
-  }
-  s.finished = true
-  match s.sink {
-    Some(sink) => {
-      sink.write_bytes(result)
-      End
-    }
-    None => Data(result[:])
   }
 }
