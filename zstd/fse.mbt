@@ -91,6 +91,158 @@ fn highest_bit(n_ : Int) -> Int {
 }
 
 ///|
+const FSE_MIN_TABLELOG : Int = 5
+
+///|
+fn read_le32_padded(src : BytesView, pos : Int) -> UInt {
+  let b0 = if pos < src.length() { src.unsafe_get(pos).to_uint() } else { 0U }
+  let b1 = if pos + 1 < src.length() {
+    src.unsafe_get(pos + 1).to_uint()
+  } else {
+    0U
+  }
+  let b2 = if pos + 2 < src.length() {
+    src.unsafe_get(pos + 2).to_uint()
+  } else {
+    0U
+  }
+  let b3 = if pos + 3 < src.length() {
+    src.unsafe_get(pos + 3).to_uint()
+  } else {
+    0U
+  }
+  b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+///|
+fn reload_ncount_bits(
+  src : BytesView,
+  ip : Int,
+  bit_count : Int,
+) -> (UInt, Int, Int) {
+  let next_ip = ip + (bit_count >> 3)
+  let next_bit_count = bit_count & 7
+  (read_le32_padded(src, next_ip) >> next_bit_count, next_ip, next_bit_count)
+}
+
+///|
+fn read_ncount(
+  src : BytesView,
+  max_symbol : Int,
+  max_accuracy_log : Int,
+) -> (FixedArray[Int], Int, Int, Int) raise ZstdError {
+  guard src.length() > 0 else {
+    raise ZstdError::CorruptData("empty FSE table description")
+  }
+  let normalized = FixedArray::make(max_symbol + 1, 0)
+  let mut bit_stream = read_le32_padded(src, 0)
+  let mut accuracy_log = (bit_stream & 0x0FU).reinterpret_as_int() +
+    FSE_MIN_TABLELOG
+  guard accuracy_log <= max_accuracy_log else {
+    raise ZstdError::CorruptData("FSE accuracy log exceeds supported limit")
+  }
+  bit_stream = bit_stream >> 4
+  let table_log = accuracy_log
+  let mut bit_count = 4
+  let mut remaining = (1 << table_log) + 1
+  let mut threshold = 1 << table_log
+  accuracy_log += 1
+  let max_symbol_count = max_symbol + 1
+  let mut charnum = 0
+  let mut previous_zero = false
+  let mut ip = 0
+  while true {
+    if previous_zero {
+      while true {
+        let repeat = (bit_stream & 0x03U).reinterpret_as_int()
+        bit_stream = bit_stream >> 2
+        bit_count += 2
+        charnum += repeat
+        guard charnum <= max_symbol_count else {
+          raise ZstdError::CorruptData(
+            "FSE table description repeats past alphabet",
+          )
+        }
+        if repeat != 3 {
+          break
+        }
+        let (next_stream, next_ip, next_bit_count) = reload_ncount_bits(
+          src, ip, bit_count,
+        )
+        bit_stream = next_stream
+        ip = next_ip
+        bit_count = next_bit_count
+      }
+    }
+    let max = 2 * threshold - 1 - remaining
+    let threshold_mask = (threshold - 1).reinterpret_as_uint()
+    let raw_count = if (bit_stream & threshold_mask).reinterpret_as_int() < max {
+      bit_count += accuracy_log - 1
+      (bit_stream & threshold_mask).reinterpret_as_int()
+    } else {
+      let mut value = (bit_stream & (2 * threshold - 1).reinterpret_as_uint()).reinterpret_as_int()
+      if value >= threshold {
+        value -= max
+      }
+      bit_count += accuracy_log
+      value
+    }
+    let count = raw_count - 1
+    guard charnum < max_symbol_count else {
+      raise ZstdError::CorruptData("FSE table description exceeds alphabet")
+    }
+    normalized.unsafe_set(charnum, count)
+    charnum += 1
+    previous_zero = count == 0
+    if count >= 0 {
+      remaining -= count
+    } else {
+      remaining += count
+    }
+    if remaining < threshold {
+      guard remaining > 0 else {
+        raise ZstdError::CorruptData("oversubscribed FSE table description")
+      }
+      if remaining == 1 {
+        break
+      }
+      accuracy_log = highest_bit(remaining)
+      threshold = 1 << (accuracy_log - 1)
+    }
+    guard charnum <= max_symbol_count else {
+      raise ZstdError::CorruptData("FSE table description exceeds alphabet")
+    }
+    let (next_stream, next_ip, next_bit_count) = reload_ncount_bits(
+      src, ip, bit_count,
+    )
+    bit_stream = next_stream
+    ip = next_ip
+    bit_count = next_bit_count
+  }
+  guard remaining == 1 else {
+    raise ZstdError::CorruptData("incomplete FSE table description")
+  }
+  guard bit_count <= 32 else {
+    raise ZstdError::CorruptData("invalid FSE table description bit count")
+  }
+  let bytes_read = ip + ((bit_count + 7) >> 3)
+  guard bytes_read <= src.length() else { raise ZstdError::UnexpectedEOF }
+  (normalized, charnum - 1, table_log, bytes_read)
+}
+
+///|
+fn build_fse_table_from_description(
+  src : BytesView,
+  max_symbol : Int,
+  max_accuracy_log : Int,
+) -> (FseTable, Int) raise ZstdError {
+  let (normalized, actual_max_symbol, table_log, bytes_read) = read_ncount(
+    src, max_symbol, max_accuracy_log,
+  )
+  (FseTable::build(normalized, actual_max_symbol, table_log), bytes_read)
+}
+
+///|
 /// Decodes an FSE-encoded stream using the given table.
 fn fse_decode_symbol(table : FseTable, state : Int) -> (Byte, Int, Int) {
   let s = if state >= 0 && state < table.symbols.length() { state } else { 0 }
@@ -248,6 +400,27 @@ const ML_DEFAULT_ACCURACY : Int = 6
 
 ///|
 const OF_DEFAULT_ACCURACY : Int = 5
+
+///|
+let ll_default_table : FseTable = FseTable::build(
+  ll_default_norm,
+  35,
+  LL_DEFAULT_ACCURACY,
+)
+
+///|
+let ml_default_table : FseTable = FseTable::build(
+  ml_default_norm,
+  52,
+  ML_DEFAULT_ACCURACY,
+)
+
+///|
+let of_default_table : FseTable = FseTable::build(
+  of_default_norm,
+  28,
+  OF_DEFAULT_ACCURACY,
+)
 
 ///|
 /// Baseline and extra bits tables for literal lengths.
