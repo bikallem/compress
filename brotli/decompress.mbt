@@ -103,14 +103,12 @@ fn decode_compressed_block(
   dist_rb : FixedArray[Int],
   dist_rb_idx : Ref[Int],
 ) -> Unit {
-  let nbltypesl = decode_block_type_count(br)
-  let nbltypesi = decode_block_type_count(br)
-  let nbltypesd = decode_block_type_count(br)
-
-  // When NBLTYPES > 1, read block type/count prefix codes and first block count
+  // Read NBLTYPES and their trees interleaved (matching C reference order).
+  // For each category: read NBLTYPES, then if > 1 read type tree + count tree + first count.
   let dummy_tree : HuffTree = { table: FixedArray::make(1, 0), max_bits: 0 }
 
   // Literal block types
+  let nbltypesl = decode_block_type_count(br)
   let lit_btype_tree : HuffTree = if nbltypesl > 1 {
     decode_prefix_code(br, nbltypesl + 2)
   } else {
@@ -129,6 +127,7 @@ fn decode_compressed_block(
   let mut lit_block_type = 0
 
   // Insert-and-copy block types
+  let nbltypesi = decode_block_type_count(br)
   let iac_btype_tree : HuffTree = if nbltypesi > 1 {
     decode_prefix_code(br, nbltypesi + 2)
   } else {
@@ -147,6 +146,7 @@ fn decode_compressed_block(
   let mut iac_block_type = 0
 
   // Distance block types
+  let nbltypesd = decode_block_type_count(br)
   let dist_btype_tree : HuffTree = if nbltypesd > 1 {
     decode_prefix_code(br, nbltypesd + 2)
   } else {
@@ -347,14 +347,22 @@ fn decode_compressed_block(
       let mask = (1 << shift) - 1
       let word_idx = address & mask
       let transform_idx = address >> shift
-      let word_off = dict_word_offset(copy_len, word_idx)
-      let tmp = FixedArray::make(copy_len + 128, b'\x00')
-      let out_len = transform_dictionary_word(
-        tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
-      )
-      let write_len = if out_len < climit { out_len } else { climit }
-      sink.write_fixed(tmp, 0, write_len)
-      produced += write_len
+      if transform_idx >= 121 {
+        // Invalid transform — treat as error, skip
+        produced += climit
+        for _ in 0..<climit {
+          sink.write_byte(b'\x00')
+        }
+      } else {
+        let word_off = dict_word_offset(copy_len, word_idx)
+        let tmp = FixedArray::make(copy_len + 128, b'\x00')
+        let out_len = transform_dictionary_word(
+          tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
+        )
+        let write_len = if out_len < climit { out_len } else { climit }
+        sink.write_fixed(tmp, 0, write_len)
+        produced += write_len
+      }
     } else {
       // Backward reference — write distance to ring buffer and advance
       // Only for explicit distances (needs_dist=true)
