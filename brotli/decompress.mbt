@@ -505,23 +505,20 @@ fn decode_distance_circ(
   dist_rb_idx : Int,
   npostfix : Int,
 ) -> (Int, Int) {
-  // Returns (distance, distance_context)
   if code <= 3 {
-    // Codes 0-3: direct ring buffer access (C reference TakeDistanceFromRingBuffer)
-    // Code 0: last distance, distance_context=1 (compensate roll)
-    // Code 1-3: 2nd/3rd/4th last, distance_context=0
-    let offset = code - 3 // code 0→-3, 1→-2, 2→-1, 3→0
+    let offset = code - 3
     let d = dist_rb.unsafe_get((dist_rb_idx - offset) & 3)
-    let ctx = 1 >> code // code 0→1, code 1-3→0
+    // Code 0 (last distance) needs compensation for dictionary roll
+    let ctx = if code == 0 { 1 } else { 0 }
     (d, ctx)
   } else if code < 16 {
-    // Codes 4-15: ring buffer + delta
+    // Codes 4-15: ring buffer entry + delta (RFC 7932 Table 9)
     let (index_delta, base) = if code < 10 {
       (3, code - 4)
     } else {
       (2, code - 10)
     }
-    // Unpack delta from 0x605142: each 4-bit nibble, subtract 3
+    // Packed deltas from C reference: nibbles of 0x605142 encode {-1,+1,-2,+2,-3,+3}
     let delta = ((0x605142 >> (4 * base)) & 0xF) - 3
     let d = dist_rb.unsafe_get((dist_rb_idx + index_delta) & 3) + delta
     let d = if d < 1 { 1 } else { d }
