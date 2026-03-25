@@ -13,161 +13,19 @@ priv struct SeqTables {
 
 ///|
 /// Decompresses Zstandard-encoded data.
-pub fn decompress(data : Bytes) -> Bytes raise ZstdError {
-  let src = data[:]
-  let src_len = data.length()
-  guard src_len >= 4 else { raise ZstdError::UnexpectedEOF }
-  let magic = src.unsafe_get(0).to_uint() |
-    (src.unsafe_get(1).to_uint() << 8) |
-    (src.unsafe_get(2).to_uint() << 16) |
-    (src.unsafe_get(3).to_uint() << 24)
-  guard magic == ZSTD_MAGIC else {
-    raise ZstdError::InvalidHeader("invalid magic number")
+pub fn decompress(
+  data : Bytes,
+  dict? : Bytes = Bytes::default(),
+) -> Bytes raise ZstdError {
+  let inf = Inflater::new(dict~)
+  inf.enable_direct_output((data.length() * 4).max(65536))
+  inf.src(data[:])
+  loop inf.decode() {
+    Await => raise ZstdError::UnexpectedEOF
+    Data(_) => continue inf.decode()
+    End => inf.take_output()
+    Error(e) => raise e
   }
-  guard src_len >= 5 else { raise ZstdError::UnexpectedEOF }
-  let fhd = src.unsafe_get(4).to_int()
-  let fcs_flag = (fhd >> 6) & 0x03
-  let single_segment = (fhd >> 5) & 0x01
-  let has_checksum = (fhd >> 2) & 0x01
-  let dict_id_flag = fhd & 0x03
-  let mut pos = 5
-  let mut window_size = 0
-  if single_segment == 0 {
-    guard pos < src_len else { raise ZstdError::UnexpectedEOF }
-    let wd = src.unsafe_get(pos).to_int()
-    pos += 1
-    let exponent = (wd >> 3) + 10
-    let mantissa = wd & 0x07
-    window_size = (1 << exponent) + mantissa * (1 << (exponent - 3))
-    guard window_size <= MAX_WINDOW_SIZE else {
-      raise ZstdError::WindowTooLarge("window size \{window_size} exceeds max")
-    }
-  }
-  let dict_id_size = match dict_id_flag {
-    0 => 0
-    1 => 1
-    2 => 2
-    _ => 4
-  }
-  guard dict_id_size == 0 else {
-    raise ZstdError::InvalidHeader("dictionaries are not supported")
-  }
-  let fcs_size = match fcs_flag {
-    0 => if single_segment == 1 { 1 } else { 0 }
-    1 => 2
-    2 => 4
-    _ => 8
-  }
-  guard pos + fcs_size <= src_len else { raise ZstdError::UnexpectedEOF }
-  let content_size : Int? = match fcs_size {
-    0 => None
-    1 => {
-      let v = src.unsafe_get(pos).to_int()
-      pos += 1
-      Some(v)
-    }
-    2 => {
-      let v = src.unsafe_get(pos).to_int() |
-        (src.unsafe_get(pos + 1).to_int() << 8)
-      pos += 2
-      Some(v + 256)
-    }
-    4 => {
-      let v = src.unsafe_get(pos).to_int() |
-        (src.unsafe_get(pos + 1).to_int() << 8) |
-        (src.unsafe_get(pos + 2).to_int() << 16) |
-        (src.unsafe_get(pos + 3).to_int() << 24)
-      pos += 4
-      Some(v)
-    }
-    _ => {
-      let v = src.unsafe_get(pos).to_int() |
-        (src.unsafe_get(pos + 1).to_int() << 8) |
-        (src.unsafe_get(pos + 2).to_int() << 16) |
-        (src.unsafe_get(pos + 3).to_int() << 24)
-      pos += 8
-      Some(v)
-    }
-  }
-  if single_segment == 1 {
-    match content_size {
-      Some(cs) => window_size = cs
-      None => ()
-    }
-  }
-  let capacity = match content_size {
-    Some(cs) => cs
-    None => (src_len * 4).max(65536)
-  }
-  let sink = @blit.Buffer::new(size_hint=capacity)
-  let xxh = @checksum.XXH64::new()
-  let rep = [1, 4, 8]
-  let mut prev_lit_table : ZstdHuffmanTable? = None
-  let mut prev_seq_tables : SeqTables? = None
-  let mut saw_last_block = false
-  while !saw_last_block {
-    guard pos + 3 <= src_len else { raise ZstdError::UnexpectedEOF }
-    let bh = src.unsafe_get(pos).to_int() |
-      (src.unsafe_get(pos + 1).to_int() << 8) |
-      (src.unsafe_get(pos + 2).to_int() << 16)
-    pos += 3
-    let last_block = bh & 1
-    let block_type = (bh >> 1) & 3
-    let block_size = bh >> 3
-    if block_type == BLOCK_TYPE_RAW {
-      guard pos + block_size <= src_len else { raise ZstdError::UnexpectedEOF }
-      let block_data = Bytes::makei(block_size, fn(i) {
-        src.unsafe_get(pos + i)
-      })
-      sink.write_bytes(block_data)
-      xxh.update(block_data[:])
-      pos += block_size
-    } else if block_type == BLOCK_TYPE_RLE {
-      guard pos < src_len else { raise ZstdError::UnexpectedEOF }
-      let rle_byte = src.unsafe_get(pos)
-      pos += 1
-      let block_data = Bytes::make(block_size, rle_byte)
-      sink.write_bytes(block_data)
-      xxh.update(block_data[:])
-    } else if block_type == BLOCK_TYPE_COMPRESSED {
-      guard pos + block_size <= src_len else { raise ZstdError::UnexpectedEOF }
-      let (block_data, next_lit_table, next_seq_tables) = decompress_block(
-        src, pos, block_size, window_size, sink, rep, prev_lit_table, prev_seq_tables,
-      )
-      prev_lit_table = next_lit_table
-      prev_seq_tables = next_seq_tables
-      sink.write_bytes(block_data)
-      xxh.update(block_data[:])
-      pos += block_size
-    } else {
-      raise ZstdError::CorruptData("reserved block type")
-    }
-    saw_last_block = last_block == 1
-  }
-  if has_checksum == 1 {
-    guard pos + 4 <= src_len else { raise ZstdError::UnexpectedEOF }
-    let expected_cs = src.unsafe_get(pos).to_uint() |
-      (src.unsafe_get(pos + 1).to_uint() << 8) |
-      (src.unsafe_get(pos + 2).to_uint() << 16) |
-      (src.unsafe_get(pos + 3).to_uint() << 24)
-    let actual_cs = xxh.checksum64().to_uint()
-    guard expected_cs == actual_cs else {
-      raise ZstdError::ChecksumMismatch(expected=expected_cs, got=actual_cs)
-    }
-    pos += 4
-  }
-  guard pos == src_len else {
-    raise ZstdError::CorruptData("trailing bytes after frame end")
-  }
-  match content_size {
-    Some(cs) => {
-      guard sink.length() == cs else {
-        raise ZstdError::CorruptData("frame content size mismatch")
-      }
-    }
-    None => ()
-  }
-  sink.to_bytes()
 }
 
 ///|
@@ -177,6 +35,7 @@ fn decompress_block(
   block_size : Int,
   window_size : Int,
   prev_output : @blit.Buffer,
+  dict_content : BytesView,
   rep : Array[Int],
   prev_lit_table : ZstdHuffmanTable?,
   prev_seq_tables : SeqTables?,
@@ -211,6 +70,7 @@ fn decompress_block(
     src[pos_after_tables:block_end],
     seq_tables,
     prev_output,
+    dict_content,
     rep,
     window_size,
   )
@@ -508,6 +368,7 @@ fn execute_sequences(
   seq_data : BytesView,
   seq_tables : SeqTables,
   prev_output : @blit.Buffer,
+  dict_content : BytesView,
   rep : Array[Int],
   window_size : Int,
 ) -> Bytes raise ZstdError {
@@ -558,15 +419,28 @@ fn execute_sequences(
     lit_pos += lit_len
     let offset = resolve_offset(rep, offset_value, lit_len)
     let total_len = prev_len + block_out.length()
-    guard offset > 0 && offset <= total_len else {
+    guard offset > 0 else {
       raise ZstdError::CorruptData("invalid match offset")
     }
-    guard window_size == 0 || offset <= window_size else {
-      raise ZstdError::CorruptData("match offset exceeds window size")
+    if total_len <= window_size && offset > total_len {
+      guard offset <= total_len + dict_content.length() else {
+        raise ZstdError::CorruptData("invalid match offset")
+      }
+    } else {
+      guard offset <= total_len else {
+        raise ZstdError::CorruptData("invalid match offset")
+      }
+    }
+    if window_size != 0 && total_len > window_size {
+      guard offset <= window_size else {
+        raise ZstdError::CorruptData("match offset exceeds window size")
+      }
     }
     for j in 0..<match_len {
-      let src_idx = total_len - offset + j % offset
-      let byte = if src_idx < prev_len {
+      let src_idx = total_len - offset + j
+      let byte = if src_idx < 0 {
+        dict_content.unsafe_get(dict_content.length() + src_idx)
+      } else if src_idx < prev_len {
         prev_output.get_byte(src_idx)
       } else {
         block_out.get_byte(src_idx - prev_len)

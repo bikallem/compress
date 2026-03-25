@@ -1,23 +1,24 @@
 ///|
 /// Compresses data using the Zstandard format.
 /// Uses LZ77 match finding and zstd compressed blocks with predefined FSE tables.
-pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
+pub fn compress(
+  data : Bytes,
+  level? : CompressionLevel = Default,
+  dict? : Bytes = Bytes::default(),
+) -> Bytes {
   ignore(level)
+  let parsed_dict = parse_dictionary_for_encoder(dict)
   let src = data[:]
   let src_len = data.length()
-  let max_out = 14 + src_len + (src_len / MAX_BLOCK_SIZE + 1) * 6 + 4
+  let max_out = 18 + src_len + (src_len / MAX_BLOCK_SIZE + 1) * 6 + 4
   let out = FixedArray::make(max_out, b'\x00')
   let mut pos = 0
-  pos += write_zstd_frame_header(out, pos, src_len)
+  pos += write_zstd_frame_header(out, pos, src_len, parsed_dict.dict_id)
   let xxh = @checksum.XXH64::new()
   xxh.update(src)
   if src_len == 0 {
-    let block_header = 1
-    out.unsafe_set(pos, (block_header & 0xFF).to_byte())
-    out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
-    out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
-    pos += 3
-  } else if is_all_same(src) {
+    pos = write_block_header_fixed(out, pos, true, BLOCK_TYPE_RAW, 0)
+  } else if parsed_dict.content.length() == 0 && is_all_same(src) {
     let block_header = 1 | (BLOCK_TYPE_RLE << 1) | (src_len << 3)
     out.unsafe_set(pos, (block_header & 0xFF).to_byte())
     out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
@@ -26,8 +27,11 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
     out.unsafe_set(pos, src.unsafe_get(0))
     pos += 1
   } else {
-    // Find sequences across the entire input
-    let (sequences, literals, lit_count) = find_sequences(src)
+    let (sequences, literals, lit_count) = find_sequences_with_prefix(
+      src,
+      parsed_dict.content[:],
+      parsed_dict.rep,
+    )
     if sequences.length() == 0 {
       // No sequences found, emit as raw blocks
       let mut src_pos = 0
@@ -39,12 +43,13 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         }
         let block_len = block_end - src_pos
         let is_last = block_end == src_len
-        let last_flag = if is_last { 1 } else { 0 }
-        let block_header = last_flag | (BLOCK_TYPE_RAW << 1) | (block_len << 3)
-        out.unsafe_set(pos, (block_header & 0xFF).to_byte())
-        out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
-        out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
-        pos += 3
+        pos = write_block_header_fixed(
+          out,
+          pos,
+          is_last,
+          BLOCK_TYPE_RAW,
+          block_len,
+        )
         for i in 0..<block_len {
           out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
         }
@@ -123,20 +128,19 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         let block_content_size = block_decoded + trailing_lit_count
         decoded_total += block_content_size
         let is_last = seq_idx >= num_seq
-        let last_flag = if is_last { 1 } else { 0 }
         // Encode this block
         let comp_buf = FixedArray::make(block_content_size + 256, b'\x00')
         let comp_size = compress_block_from_sequences(
           block_seqs, literals, block_lit_start, total_block_lits, comp_buf,
         )
         if comp_size > 0 && comp_size < block_content_size {
-          let block_header = last_flag |
-            (BLOCK_TYPE_COMPRESSED << 1) |
-            (comp_size << 3)
-          out.unsafe_set(pos, (block_header & 0xFF).to_byte())
-          out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
-          out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
-          pos += 3
+          pos = write_block_header_fixed(
+            out,
+            pos,
+            is_last,
+            BLOCK_TYPE_COMPRESSED,
+            comp_size,
+          )
           for i in 0..<comp_size {
             out.unsafe_set(pos + i, comp_buf.unsafe_get(i))
           }
@@ -144,13 +148,13 @@ pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
         } else {
           // Fall back to raw block - need the original source bytes
           let raw_start = decoded_total - block_content_size
-          let block_header = last_flag |
-            (BLOCK_TYPE_RAW << 1) |
-            (block_content_size << 3)
-          out.unsafe_set(pos, (block_header & 0xFF).to_byte())
-          out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
-          out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
-          pos += 3
+          pos = write_block_header_fixed(
+            out,
+            pos,
+            is_last,
+            BLOCK_TYPE_RAW,
+            block_content_size,
+          )
           for i in 0..<block_content_size {
             out.unsafe_set(pos + i, src.unsafe_get(raw_start + i))
           }
@@ -189,50 +193,19 @@ fn is_all_same(data : BytesView) -> Bool {
 }
 
 ///|
-fn write_zstd_frame_header(
+fn write_block_header_fixed(
   dst : FixedArray[Byte],
   pos_ : Int,
-  content_size : Int,
+  is_last : Bool,
+  block_type : Int,
+  block_size : Int,
 ) -> Int {
-  let mut pos = pos_
-  let start = pos
-  dst.unsafe_set(pos, (ZSTD_MAGIC & 0xFFU).to_byte())
-  dst.unsafe_set(pos + 1, ((ZSTD_MAGIC >> 8) & 0xFFU).to_byte())
-  dst.unsafe_set(pos + 2, ((ZSTD_MAGIC >> 16) & 0xFFU).to_byte())
-  dst.unsafe_set(pos + 3, ((ZSTD_MAGIC >> 24) & 0xFFU).to_byte())
-  pos += 4
-  let (fcs_field, fcs_bytes) = if content_size == 0 {
-    (0, 0)
-  } else if content_size <= 255 {
-    (0, 1)
-  } else if content_size <= 65535 + 256 {
-    (1, 2)
-  } else {
-    (2, 4)
-  }
-  let single_segment = 1
-  let fhd = (fcs_field << 6) | (single_segment << 5) | 0x04
-  dst.unsafe_set(pos, fhd.to_byte())
-  pos += 1
-  if fcs_bytes == 0 {
-    dst.unsafe_set(pos, content_size.to_byte())
-    pos += 1
-  } else if fcs_bytes == 1 {
-    dst.unsafe_set(pos, content_size.to_byte())
-    pos += 1
-  } else if fcs_bytes == 2 {
-    let val = content_size - 256
-    dst.unsafe_set(pos, (val & 0xFF).to_byte())
-    dst.unsafe_set(pos + 1, ((val >> 8) & 0xFF).to_byte())
-    pos += 2
-  } else {
-    dst.unsafe_set(pos, (content_size & 0xFF).to_byte())
-    dst.unsafe_set(pos + 1, ((content_size >> 8) & 0xFF).to_byte())
-    dst.unsafe_set(pos + 2, ((content_size >> 16) & 0xFF).to_byte())
-    dst.unsafe_set(pos + 3, ((content_size >> 24) & 0xFF).to_byte())
-    pos += 4
-  }
-  pos - start
+  let last_flag = if is_last { 1 } else { 0 }
+  let block_header = last_flag | (block_type << 1) | (block_size << 3)
+  dst.unsafe_set(pos_, (block_header & 0xFF).to_byte())
+  dst.unsafe_set(pos_ + 1, ((block_header >> 8) & 0xFF).to_byte())
+  dst.unsafe_set(pos_ + 2, ((block_header >> 16) & 0xFF).to_byte())
+  pos_ + 3
 }
 
 // ── LZ77 match finder ──────────────────────────────────────────────
@@ -265,26 +238,47 @@ priv struct ZstdSequence {
 }
 
 ///|
-fn find_sequences(
+fn find_sequences_with_prefix(
   src : BytesView,
+  prefix : BytesView,
+  rep_init : Array[Int],
 ) -> (Array[ZstdSequence], FixedArray[Byte], Int) {
-  let src_len = src.length()
+  let combined = @blit.Buffer::new(size_hint=prefix.length() + src.length())
+  if prefix.length() > 0 {
+    combined.write_bytesview(prefix)
+  }
+  combined.write_bytesview(src)
+  find_sequences_combined(combined.to_bytes(), prefix.length(), rep_init)
+}
+
+///|
+fn find_sequences_combined(
+  combined : Bytes,
+  base : Int,
+  rep_init : Array[Int],
+) -> (Array[ZstdSequence], FixedArray[Byte], Int) {
+  let src = combined[:]
+  let src_len = combined.length() - base
   let sequences : Array[ZstdSequence] = []
   let literals = FixedArray::make(src_len, b'\x00')
   let mut lit_pos = 0
   if src_len < ZSTD_MIN_MATCH + 5 {
     for i in 0..<src_len {
-      literals.unsafe_set(lit_pos, src.unsafe_get(i))
+      literals.unsafe_set(lit_pos, src.unsafe_get(base + i))
       lit_pos += 1
     }
     return (sequences, literals, lit_pos)
   }
   let hash_table = FixedArray::make(ZSTD_HASH_SIZE, -1)
-  // Repeat offsets (zstd spec initial values)
-  let rep = [1, 4, 8]
-  let mut ip = 0
-  let mut anchor = 0
-  let mf_limit = src_len - ZSTD_MIN_MATCH
+  let rep = copy_rep_offsets(rep_init)
+  let mut ip = base
+  let mut anchor = base
+  let mf_limit = combined.length() - ZSTD_MIN_MATCH
+  if base >= ZSTD_MIN_MATCH {
+    for i in 0..<(base - ZSTD_MIN_MATCH + 1) {
+      hash_table.unsafe_set(zstd_hash(src, i), i)
+    }
+  }
   while ip < mf_limit {
     let hash = zstd_hash(src, ip)
     let ref_pos = hash_table.unsafe_get(hash)
@@ -296,13 +290,13 @@ fn find_sequences(
     for r in 0..<3 {
       let rep_off = rep.unsafe_get(r)
       if ip >= rep_off &&
-        ip + ZSTD_MIN_MATCH <= src_len &&
+        ip + ZSTD_MIN_MATCH <= combined.length() &&
         src.unsafe_get(ip - rep_off) == src.unsafe_get(ip) &&
         src.unsafe_get(ip - rep_off + 1) == src.unsafe_get(ip + 1) &&
         src.unsafe_get(ip - rep_off + 2) == src.unsafe_get(ip + 2) &&
         src.unsafe_get(ip - rep_off + 3) == src.unsafe_get(ip + 3) {
         let mut mlen = ZSTD_MIN_MATCH
-        while ip + mlen < src_len &&
+        while ip + mlen < combined.length() &&
               src.unsafe_get(ip - rep_off + mlen) == src.unsafe_get(ip + mlen) {
           mlen += 1
         }
@@ -315,13 +309,12 @@ fn find_sequences(
     }
     // Try hash match
     if ref_pos >= 0 &&
-      ip - ref_pos <= 65535 &&
       src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
       src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
       src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
       src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
       let mut match_len = ZSTD_MIN_MATCH
-      while ip + match_len < src_len &&
+      while ip + match_len < combined.length() &&
             src.unsafe_get(ref_pos + match_len) ==
             src.unsafe_get(ip + match_len) {
         match_len += 1
@@ -367,54 +360,13 @@ fn find_sequences(
       } else {
         best_offset + 3 // actual offset + 3 for new offsets
       }
-      // Compute the actual offset (not the encoded offset_value)
-      let actual_off = if offset_value > 3 {
-        offset_value - 3
-      } else {
-        rep.unsafe_get(0) // after rep update, rep[0] is the actual offset used
-      }
+      let actual_off = resolve_offset(rep, offset_value, lit_len)
       sequences.push({
         lit_len,
         offset: offset_value,
         match_len: best_match_len,
         actual_offset: actual_off,
       })
-      // Update repeat offsets same way as decoder
-      if offset_value > 3 {
-        let actual = offset_value - 3
-        rep.unsafe_set(2, rep.unsafe_get(1))
-        rep.unsafe_set(1, rep.unsafe_get(0))
-        rep.unsafe_set(0, actual)
-      } else if offset_value == 1 {
-        if lit_len == 0 {
-          let tmp = rep.unsafe_get(0)
-          rep.unsafe_set(0, rep.unsafe_get(1))
-          rep.unsafe_set(1, tmp)
-        }
-        // else rep[0] stays
-      } else if offset_value == 2 {
-        if lit_len == 0 {
-          let tmp = rep.unsafe_get(2)
-          rep.unsafe_set(2, rep.unsafe_get(1))
-          rep.unsafe_set(1, rep.unsafe_get(0))
-          rep.unsafe_set(0, tmp)
-        } else {
-          let tmp = rep.unsafe_get(1)
-          rep.unsafe_set(1, rep.unsafe_get(0))
-          rep.unsafe_set(0, tmp)
-        }
-        // offset_value == 3
-      } else if lit_len == 0 {
-        let actual = rep.unsafe_get(0) - 1
-        rep.unsafe_set(2, rep.unsafe_get(1))
-        rep.unsafe_set(1, rep.unsafe_get(0))
-        rep.unsafe_set(0, actual)
-      } else {
-        let tmp = rep.unsafe_get(2)
-        rep.unsafe_set(2, rep.unsafe_get(1))
-        rep.unsafe_set(1, rep.unsafe_get(0))
-        rep.unsafe_set(0, tmp)
-      }
       // Update hash table for positions within the match for better future matches
       let hash_end = if ip + best_match_len < mf_limit {
         ip + best_match_len
@@ -431,7 +383,7 @@ fn find_sequences(
     }
     ip += 1
   }
-  let trailing = src_len - anchor
+  let trailing = combined.length() - anchor
   for i in 0..<trailing {
     literals.unsafe_set(lit_pos, src.unsafe_get(anchor + i))
     lit_pos += 1

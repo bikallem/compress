@@ -2,9 +2,9 @@
 package "bikallem/compress/zstd"
 
 // Values
-pub fn compress(Bytes, level? : CompressionLevel) -> Bytes
+pub fn compress(Bytes, level? : CompressionLevel, dict? : Bytes) -> Bytes
 
-pub fn decompress(Bytes) -> Bytes raise ZstdError
+pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise ZstdError
 
 // Errors
 pub(all) suberror ZstdError {
@@ -36,7 +36,7 @@ pub impl Show for Decode
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
-pub fn Deflater::new(level? : CompressionLevel) -> Self
+pub fn Deflater::new(level? : CompressionLevel, dict? : Bytes) -> Self
 
 pub(all) enum Encode {
   Ok
@@ -49,7 +49,7 @@ pub impl Show for Encode
 type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::enable_direct_output(Self, Int) -> Unit
-pub fn Inflater::new() -> Self
+pub fn Inflater::new(dict? : Bytes) -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit
 pub fn Inflater::take_output(Self) -> Bytes
 

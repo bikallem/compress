@@ -159,6 +159,75 @@ fn fixture_sentences() -> Bytes {
 }
 
 ///|
+fn zstd_hex_nibble(c : Byte) -> Int {
+  let n = c.to_int()
+  if n >= 48 && n <= 57 {
+    return n - 48
+  }
+  if n >= 97 && n <= 102 {
+    return n - 87
+  }
+  if n >= 65 && n <= 70 {
+    return n - 55
+  }
+  0
+}
+
+///|
+fn zstd_hex_to_bytes(hex : String) -> Bytes {
+  let bytes = @utf8.encode(hex[:])
+  let len = bytes.length() / 2
+  Bytes::makei(len, fn(i) {
+    ((zstd_hex_nibble(bytes[i * 2]) << 4) | zstd_hex_nibble(bytes[i * 2 + 1])).to_byte()
+  })
+}
+
+///|
+fn formatted_dict_fixture() -> Bytes {
+  zstd_hex_to_bytes(
+    "37a430ec2935b0442610c0178603333003333003333003333017baf796522a1c" +
+    "482081041248208104124820814412530400000011d0eb750300002440800001" +
+    "19583cf8881808080808085c8cb40820028140901018040281e0921008141c43" +
+    "1004c1b14b92a403c4b15b0821841022222222222222229224493a0100000004" +
+    "00000008000000303120636c75737465723d310a616c70686120746f6b656e20" +
+    "67726f757020302e206265746120746f6b656e206c616e65206e3d65752d7765" +
+    "73742d310a6c6f6720656e747279206c6576656c3d696e666f20757365723d75" +
+    "7365723220616374696f6e2e2067616d6d6120746f6b656e2073686172642031",
+  )
+}
+
+///|
+fn formatted_dict_fixture_input() -> Bytes {
+  let buf = @blit.Buffer::new()
+  for _ in 0..<16 {
+    buf.write_bytes(
+      b"alpha token group 1. beta token lane 2. gamma token shard 0.\n",
+    )
+  }
+  for _ in 0..<12 {
+    buf.write_bytes(
+      b"log entry level=info user=user3 action=login region=eu-west-1\n",
+    )
+  }
+  for _ in 0..<12 {
+    buf.write_bytes(
+      b"metric service=api route=/v1/item/2 status=201 cluster=1\n",
+    )
+  }
+  buf.to_bytes()
+}
+
+///|
+fn formatted_dict_fixture_compressed() -> Bytes {
+  zstd_hex_to_bytes(
+    "28b52ffd672935b04464083d0300f4033132302e31333d6c6f67696e20726567" +
+    "696f336d657472696320736572766963653d61706920726f7574653d2f76312f" +
+    "6974656d2f32207374617475733d320dfc70f8017a00047b510c1440ae7b2332" +
+    "3142dd8e039bd85a003217c512e87363bc0970e00437b0e805",
+  )
+}
+
+///|
 test "golden: decompress zstd CLI compressed literals and FSE tables" {
   let compressed : Bytes = b"\x28\xb5\x2f\xfd\x00\x58\xa5\x03\x00\x92\x46\x10\x10\xc0\xa5\x70\xc6\x11\xf4\x5f\xd9\xae\x88\x88\x94\x6d\x50\xb1\x0b\x33\x33\x33\x23\x22\x22\x22\x22\xf2\xff\xff\xff\xdb\xb6\x6d\xdb\x6d\xdb\xb6" +
     b"\x2d\x49\x92\x24\xb9\x6d\xdb\xb6\x49\x92\x24\x49\x11\x11\x11\x11\x31\x72\x97\x53\x08\x82\x61\x00\x08\x08\x82\x61\x10\x61\xa8\x20\xbe\xde\x01\xc0\x93\xca\x35\x12\x88\xd1\xb7\xff\xff\xff\x67\xaa" +
@@ -213,4 +282,42 @@ test "golden: decompress zstd CLI treeless literals and repeat tables" {
     b"\x29\x91\xc7\x40\x11\xee\x0c\x7b\xa6\x93\x9f\xbd\x45\x1d\xc0\xc4\x28\x61\x1b\x98\xb2\x0b\x8a\x41\x22\x5e\xfd\x98\x18\x53"
   let decompressed = @zstd.decompress(compressed)
   assert_eq(decompressed, fixture_sentences())
+}
+
+///|
+test "golden: decompress zstd CLI with formatted dictionary" {
+  let dict = formatted_dict_fixture()
+  let compressed = formatted_dict_fixture_compressed()
+  let decompressed = @zstd.decompress(compressed, dict~)
+  assert_eq(decompressed, formatted_dict_fixture_input())
+}
+
+///|
+test "zstd rejects formatted dictionary id mismatch" {
+  let dict = formatted_dict_fixture()
+  let wrong = Bytes::makei(dict.length(), fn(i) {
+    if i == 4 {
+      (dict[i].to_int() ^ 0xFF).to_byte()
+    } else {
+      dict[i]
+    }
+  })
+  let result = try? @zstd.decompress(
+    formatted_dict_fixture_compressed(),
+    dict=wrong,
+  )
+  match result {
+    Err(_) => ()
+    Ok(_) => fail("expected dictionary id mismatch")
+  }
+}
+
+///|
+test "zstd compress emits formatted dictionary id" {
+  let dict = formatted_dict_fixture()
+  let data = formatted_dict_fixture_input()
+  let compressed = @zstd.compress(data, dict~)
+  assert_true((compressed[4].to_int() & 0x03) != 0)
+  let decompressed = @zstd.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
 }

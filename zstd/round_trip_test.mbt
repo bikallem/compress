@@ -153,3 +153,87 @@ test "signal protocol: deflater streaming" {
   let decompressed = @zstd.decompress(compressed)
   assert_eq(decompressed, data)
 }
+
+///|
+fn raw_dict_fixture() -> Bytes {
+  b"alpha token group one. beta token group two. gamma token group three. raw dictionary fixture."
+}
+
+///|
+test "round-trip: with raw dictionary" {
+  let dict = raw_dict_fixture()
+  let data = dict + b" tail bytes that do not appear in the dictionary."
+  let compressed_no_dict = @zstd.compress(data)
+  let compressed_with_dict = @zstd.compress(data, dict~)
+  let decompressed = @zstd.decompress(compressed_with_dict, dict~)
+  assert_eq(decompressed, data)
+  assert_true(compressed_with_dict.length() < compressed_no_dict.length())
+  let missing_dict = try? @zstd.decompress(compressed_with_dict)
+  match missing_dict {
+    Err(_) => ()
+    Ok(_) => fail("expected dictionary-backed frame to require the dictionary")
+  }
+}
+
+///|
+test "signal protocol: inflater emits before checksum" {
+  let data = Bytes::makei(4096, fn(i) { (i * 17 % 251).to_byte() })
+  let compressed = @zstd.compress(data)
+  let d = @zstd.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:compressed.length() - 4])
+  let mut saw_data = false
+  loop d.decode() {
+    Await => break
+    Data(chunk) => {
+      saw_data = true
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => fail("expected checksum bytes to still be outstanding")
+    Error(e) => raise e
+  }
+  assert_true(saw_data)
+  d.src(compressed[compressed.length() - 4:])
+  loop d.decode() {
+    Await => fail("expected checksum completion after trailer")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), data)
+}
+
+///|
+test "signal protocol: deflater emits before finish on full block" {
+  let full_block = 131072
+  let data = Bytes::makei(full_block + 4096, fn(i) { (i * 11 % 251).to_byte() })
+  let d = @zstd.Deflater::new()
+  let out = @blit.Buffer::new()
+  match d.encode(Some(data[:full_block])) {
+    Data(chunk) => {
+      assert_true(chunk.length() > 0)
+      out.write_bytesview(chunk)
+    }
+    Ok =>
+      fail("expected compressed output once a full zstd block was available")
+    End => fail("unexpected end")
+    Error(e) => raise e
+  }
+  match d.encode(Some(data[full_block:])) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok | End => ()
+    Error(e) => raise e
+  }
+  match d.encode(None) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok | End => ()
+    Error(e) => raise e
+  }
+  let compressed = out.to_bytes()
+  let decompressed = @zstd.decompress(compressed)
+  assert_eq(decompressed, data)
+}
