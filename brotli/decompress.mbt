@@ -40,7 +40,9 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     let mlen = br.read_bits(mlen_bits) + 1
     let dist_rb_ref = Ref::new(dist_rb_idx)
     if is_last {
-      decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_ref)
+      decode_compressed_block(
+        br, mlen, sink, max_backward, dist_rb, dist_rb_ref,
+      )
       dist_rb_idx = dist_rb_ref.val
       break
     }
@@ -109,8 +111,6 @@ fn decode_compressed_block(
 
   // Literal block types
   let nbltypesl = decode_block_type_count(br)
-  if nbltypesl > 2 {
-  }
   let lit_btype_tree : HuffTree = if nbltypesl > 1 {
     decode_prefix_code(br, nbltypesl + 2)
   } else {
@@ -120,8 +120,6 @@ fn decode_compressed_block(
     decode_prefix_code(br, 26)
   } else {
     dummy_tree
-  }
-  if nbltypesl > 2 {
   }
   let mut lit_block_remaining = if nbltypesl > 1 {
     decode_block_count(br, lit_bcount_tree)
@@ -170,8 +168,6 @@ fn decode_compressed_block(
 
   let npostfix = br.read_bits(2)
   let ndirect_raw = br.read_bits(4)
-  if nbltypesl > 2 {
-  }
   let ndirect = ndirect_raw << npostfix
   // Read context modes (one per literal block type, 2 bits each)
   let context_modes = FixedArray::make(nbltypesl, 0)
@@ -179,8 +175,6 @@ fn decode_compressed_block(
     context_modes.unsafe_set(i, br.read_bits(2))
   }
   let ntreesl = decode_block_type_count(br)
-  if nbltypesl > 2 {
-  }
 
   // Read context map for literals (RFC 7932: comes after NTREESL, before NTREESD)
   let cmap_size = 64 * nbltypesl
@@ -193,8 +187,6 @@ fn decode_compressed_block(
   let ntreesd = decode_block_type_count(br)
 
   // Read context map for distances
-  if nbltypesd > 2 {
-  }
   let cmap_d_size = 4 * nbltypesd
   let cmap_d = if ntreesd > 1 {
     decode_context_map(br, cmap_d_size, ntreesd)
@@ -203,21 +195,12 @@ fn decode_compressed_block(
   }
 
   // Read NTREESL literal prefix codes
-  if nbltypesd > 2 {
-  }
-  // Trace position before/after literal trees
-  if nbltypesl > 2 {
-  }
-  if nbltypesl > 2 {
-  }
   let lit_trees : FixedArray[HuffTree] = FixedArray::make(ntreesl, {
     table: FixedArray::make(1, 0),
     max_bits: 0,
   })
   for i in 0..<ntreesl {
     lit_trees.unsafe_set(i, decode_prefix_code(br, 256))
-  }
-  if nbltypesl > 2 {
   }
   // Read NBLTYPESI insert-and-copy prefix codes (one per block type)
   let iac_trees : FixedArray[HuffTree] = FixedArray::make(nbltypesi, {
@@ -264,11 +247,9 @@ fn decode_compressed_block(
     }
 
     let iac_code = read_huffman_symbol(br, iac_trees.unsafe_get(iac_block_type))
-    let (insert_len, copy_len, needs_dist) = decode_insert_copy(br, iac_code)
-    if produced == 1732 {
-    }
-    if produced >= 1720 && produced < 1760 {
-    }
+    let (insert_len, copy_len, needs_dist, dist_ctx) = decode_insert_copy(
+      br, iac_code,
+    )
     let ilimit = if insert_len > mlen - produced {
       mlen - produced
     } else {
@@ -294,8 +275,6 @@ fn decode_compressed_block(
           lit_prev_type = lit_block_type
           lit_block_type = resolved
           lit_block_remaining = decode_block_count(br, lit_bcount_tree)
-          if produced >= 1750 && produced < 1760 {
-          }
         }
         if nbltypesl > 1 {
           lit_block_remaining -= 1
@@ -339,7 +318,6 @@ fn decode_compressed_block(
         dist_block_remaining -= 1
       }
       let dist_tree = if ntreesd > 1 {
-        let dist_ctx = if copy_len > 4 { 3 } else { copy_len - 2 }
         let tree_idx = cmap_d.unsafe_get(dist_block_type * 4 + dist_ctx)
         dist_trees.unsafe_get(tree_idx)
       } else {
@@ -347,14 +325,17 @@ fn decode_compressed_block(
       }
       let dist_code = read_huffman_symbol(br, dist_tree)
       let (d, ctx) = decode_distance_circ(
-        br, dist_code, ndirect, dist_rb, dist_rb_idx.val, npostfix,
+        br, dist_code, ndirect, dist_rb, dist_rb_idx, npostfix,
       )
       distance_context = ctx
       d
     } else {
-      // Implicit distance: reuse last distance
+      // Implicit distance: reuse last distance. Match the reference
+      // decoder's temporary ring-buffer rollback so dictionary references can
+      // restore the index without a write-back.
       distance_context = 1
-      dist_rb.unsafe_get((dist_rb_idx.val - 1) & 3)
+      dist_rb_idx.val -= 1
+      dist_rb.unsafe_get(dist_rb_idx.val & 3)
     }
     let climit = if copy_len > mlen - produced {
       mlen - produced
@@ -389,17 +370,15 @@ fn decode_compressed_block(
         let out_len = transform_dictionary_word(
           tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
         )
-        let write_len = if out_len < climit { out_len } else { climit }
-        sink.write_fixed(tmp, 0, write_len)
-        produced += write_len
+        sink.write_fixed(tmp, 0, out_len)
+        produced += out_len
       }
     } else {
-      // Backward reference — write distance to ring buffer and advance
-      // Only for explicit distances (needs_dist=true)
-      if needs_dist {
-        dist_rb.unsafe_set(dist_rb_idx.val & 3, distance)
-        dist_rb_idx.val += 1
-      }
+      // Backward reference — write the resolved distance into the recent
+      // distances ring buffer and advance it, even for implicit last-distance
+      // commands, just like the reference decoder.
+      dist_rb.unsafe_set(dist_rb_idx.val & 3, distance)
+      dist_rb_idx.val += 1
       let copy_src = start_pos + produced - distance
       if copy_src >= 0 {
         sink.copy_from_self(copy_src, climit)
@@ -505,7 +484,7 @@ fn decode_block_type_count(br : BitReader) -> Int {
 }
 
 ///|
-fn decode_insert_copy(br : BitReader, code : Int) -> (Int, Int, Bool) {
+fn decode_insert_copy(br : BitReader, code : Int) -> (Int, Int, Bool, Int) {
   let block = code >> 6
   let sub = code & 63
   let ir = (sub >> 3) & 7
@@ -534,7 +513,8 @@ fn decode_insert_copy(br : BitReader, code : Int) -> (Int, Int, Bool) {
   let copy_extra = _copy_extra_bits.unsafe_get(copy_code)
   let copy_len = copy_base +
     (if copy_extra > 0 { br.read_bits(copy_extra) } else { 0 })
-  (insert_len, copy_len, needs_dist)
+  let dist_ctx = if copy_base > 4 { 3 } else { copy_base - 2 }
+  (insert_len, copy_len, needs_dist, dist_ctx)
 }
 
 ///|
@@ -545,14 +525,16 @@ fn decode_distance_circ(
   code : Int,
   ndirect : Int,
   dist_rb : FixedArray[Int],
-  dist_rb_idx : Int,
+  dist_rb_idx : Ref[Int],
   npostfix : Int,
 ) -> (Int, Int) {
   if code <= 3 {
     let offset = code - 3
-    let d = dist_rb.unsafe_get((dist_rb_idx - offset) & 3)
-    // Code 0 (last distance) needs compensation for dictionary roll
-    let ctx = if code == 0 { 1 } else { 0 }
+    let d = dist_rb.unsafe_get((dist_rb_idx.val - offset) & 3)
+    // Code 0 (last distance) temporarily rolls the ring-buffer index back so
+    // dictionary references can restore it without performing a write-back.
+    let ctx = 1 >> code
+    dist_rb_idx.val -= ctx
     (d, ctx)
   } else if code < 16 {
     // Codes 4-15: ring buffer entry + delta (RFC 7932 Table 9)
@@ -563,7 +545,7 @@ fn decode_distance_circ(
     }
     // Packed deltas from C reference: nibbles of 0x605142 encode {-1,+1,-2,+2,-3,+3}
     let delta = ((0x605142 >> (4 * base)) & 0xF) - 3
-    let d = dist_rb.unsafe_get((dist_rb_idx + index_delta) & 3) + delta
+    let d = dist_rb.unsafe_get((dist_rb_idx.val + index_delta) & 3) + delta
     let d = if d < 1 { 1 } else { d }
     (d, 0)
   } else if code < 16 + ndirect {
@@ -670,62 +652,79 @@ fn decode_prefix_code(br : BitReader, alphabet_size : Int) -> HuffTree {
 
 ///|
 fn decode_simple_prefix(br : BitReader, alphabet_size : Int) -> HuffTree {
-  let nsym = br.read_bits(2) + 1
+  let kind = br.read_bits(2)
+  let nsym = kind + 1
   let sb = brotli_sym_bits(alphabet_size)
   let syms = FixedArray::make(nsym, 0)
   for i in 0..<nsym {
     syms.unsafe_set(i, br.read_bits(sb))
   }
-  match nsym {
-    1 => {
+  match kind {
+    0 => {
       // Single symbol: 0 bits consumed per read (symbol is implicit).
       let table = FixedArray::make(1, 0)
       table.unsafe_set(0, (syms.unsafe_get(0) << 8) | 0)
       { table, max_bits: 0 }
     }
-    2 => {
+    1 => {
       let table = FixedArray::make(2, 0)
-      table.unsafe_set(0, (syms.unsafe_get(0) << 8) | 1)
-      table.unsafe_set(1, (syms.unsafe_get(1) << 8) | 1)
+      if syms.unsafe_get(1) > syms.unsafe_get(0) {
+        table.unsafe_set(0, (syms.unsafe_get(0) << 8) | 1)
+        table.unsafe_set(1, (syms.unsafe_get(1) << 8) | 1)
+      } else {
+        table.unsafe_set(0, (syms.unsafe_get(1) << 8) | 1)
+        table.unsafe_set(1, (syms.unsafe_get(0) << 8) | 1)
+      }
       { table, max_bits: 1 }
     }
-    3 => {
+    2 => {
       let table = FixedArray::make(4, 0)
       table.unsafe_set(0, (syms.unsafe_get(0) << 8) | 1)
-      table.unsafe_set(1, (syms.unsafe_get(1) << 8) | 2)
       table.unsafe_set(2, (syms.unsafe_get(0) << 8) | 1)
-      table.unsafe_set(3, (syms.unsafe_get(2) << 8) | 2)
+      if syms.unsafe_get(2) > syms.unsafe_get(1) {
+        table.unsafe_set(1, (syms.unsafe_get(1) << 8) | 2)
+        table.unsafe_set(3, (syms.unsafe_get(2) << 8) | 2)
+      } else {
+        table.unsafe_set(1, (syms.unsafe_get(2) << 8) | 2)
+        table.unsafe_set(3, (syms.unsafe_get(1) << 8) | 2)
+      }
       { table, max_bits: 2 }
     }
     _ => {
-      // Sort 4 symbols (needed for correct table layout)
-      for i in 0..<3 {
-        for k in (i + 1)..<4 {
-          if syms.unsafe_get(k) < syms.unsafe_get(i) {
-            let t = syms.unsafe_get(k)
-            syms.unsafe_set(k, syms.unsafe_get(i))
-            syms.unsafe_set(i, t)
-          }
-        }
-      }
       let tree_select = br.read_bits(1)
       if tree_select == 0 {
+        // Balanced 4-symbol tree: sort all symbols first.
+        for i in 0..<3 {
+          for k in (i + 1)..<4 {
+            if syms.unsafe_get(k) < syms.unsafe_get(i) {
+              let t = syms.unsafe_get(k)
+              syms.unsafe_set(k, syms.unsafe_get(i))
+              syms.unsafe_set(i, t)
+            }
+          }
+        }
         let table = FixedArray::make(4, 0)
-        // Match Go decoder layout: table[0]=s0, table[1]=s2, table[2]=s1, table[3]=s3
         table.unsafe_set(0, (syms.unsafe_get(0) << 8) | 2)
-        table.unsafe_set(1, (syms.unsafe_get(2) << 8) | 2)
         table.unsafe_set(2, (syms.unsafe_get(1) << 8) | 2)
+        table.unsafe_set(1, (syms.unsafe_get(2) << 8) | 2)
         table.unsafe_set(3, (syms.unsafe_get(3) << 8) | 2)
         { table, max_bits: 2 }
       } else {
+        // Skewed 4-symbol tree: preserve the first two symbol positions and
+        // only order the 3-bit tail symbols, matching the reference decoder.
+        if syms.unsafe_get(3) < syms.unsafe_get(2) {
+          let t = syms.unsafe_get(3)
+          syms.unsafe_set(3, syms.unsafe_get(2))
+          syms.unsafe_set(2, t)
+        }
         let table = FixedArray::make(8, 0)
         table.unsafe_set(0, (syms.unsafe_get(0) << 8) | 1)
-        table.unsafe_set(2, (syms.unsafe_get(0) << 8) | 1)
-        table.unsafe_set(4, (syms.unsafe_get(0) << 8) | 1)
-        table.unsafe_set(6, (syms.unsafe_get(0) << 8) | 1)
         table.unsafe_set(1, (syms.unsafe_get(1) << 8) | 2)
+        table.unsafe_set(2, (syms.unsafe_get(0) << 8) | 1)
         table.unsafe_set(5, (syms.unsafe_get(1) << 8) | 2)
+        table.unsafe_set(4, (syms.unsafe_get(0) << 8) | 1)
         table.unsafe_set(3, (syms.unsafe_get(2) << 8) | 3)
+        table.unsafe_set(6, (syms.unsafe_get(0) << 8) | 1)
         table.unsafe_set(7, (syms.unsafe_get(3) << 8) | 3)
         { table, max_bits: 3 }
       }
@@ -789,8 +788,6 @@ fn decode_complex_prefix(
         break
       }
     }
-  }
-  if alphabet_size == 224 && space != 0 {
   }
   let cl_tree = build_hufftree(cl_lengths, 18)
   let code_lengths = FixedArray::make(alphabet_size, 0)
@@ -923,7 +920,7 @@ fn build_hufftree(
   }
   let offset = FixedArray::make(max_len + 1, 0)
   let mut total = -1
-  for bits in 1..=max_len {
+  for bits in 1..<=max_len {
     total += count.unsafe_get(bits)
     offset.unsafe_set(bits, total)
   }
@@ -940,7 +937,7 @@ fn build_hufftree(
   let mut key_step = 1 << (max_len - 1)
   let mut sym_idx = 0
   let mut step = 2
-  for bits in 1..=max_len {
+  for bits in 1..<=max_len {
     let mut bits_count = count.unsafe_get(bits)
     while bits_count > 0 {
       let rev = brotli_reverse_dec(key >> (max_len - bits), bits)
@@ -958,7 +955,6 @@ fn build_hufftree(
     key_step = key_step >> 1
   }
   { table, max_bits: max_len }
-
 }
 
 ///|
