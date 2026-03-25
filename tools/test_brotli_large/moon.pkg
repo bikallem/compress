@@ -1,0 +1,11 @@
+import {
+  "bikallem/compress/brotli",
+}
+
+options(
+  "is-main": true,
+  "native-stub": [ "file_io_stub.c" ],
+  targets: {
+    "main.mbt": [ "native" ],
+  },
+)

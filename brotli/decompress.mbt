@@ -456,11 +456,11 @@ fn decode_context_map(
 fn decode_block_type_count(br : BitReader) -> Int {
   let bit0 = br.read_bits(1)
   if bit0 == 0 {
-    return 1 // value=0, NBLTYPES=1
+    return 1
   }
   let n = br.read_bits(3)
   if n == 0 {
-    return 2 // value=1, NBLTYPES=2
+    return 2
   }
   let extra = br.read_bits(n)
   (1 << n) + extra + 1
@@ -735,14 +735,12 @@ fn decode_complex_prefix(
 ) -> HuffTree {
   let cl_lengths = FixedArray::make(18, 0)
   let mut space = 32
-  let mut num_codes = 0
   for j in hskip..<18 {
     let sym = cl_order.unsafe_get(j)
     let cl = read_cl_code_length(br)
     cl_lengths.unsafe_set(sym, cl)
     if cl > 0 {
       space -= 32 >> cl
-      num_codes += 1
       if space <= 0 {
         break
       }
@@ -752,20 +750,19 @@ fn decode_complex_prefix(
   let code_lengths = FixedArray::make(alphabet_size, 0)
   let mut i = 0
   let mut prev_cl = 8
-  let mut space : UInt = 32768
+  let mut space : UInt64 = 32768UL
   // Repeat state for RFC 7932 section 3.5:
   // Consecutive repeat symbols (16 or 17) accumulate their repeat count.
   let mut repeat = 0
   let mut repeat_code_len = 8
-  while i < alphabet_size && space > 0U {
+  while i < alphabet_size && space > 0UL {
     let sym = read_huffman_symbol(br, cl_tree)
     if sym >= 0 && sym <= 15 {
-      // Regular code length symbol
       repeat = 0
       code_lengths.unsafe_set(i, sym)
       if sym > 0 {
         prev_cl = sym
-        space -= (32768U >> sym)
+        space -= 32768UL >> sym
       }
       i += 1
     } else if sym == 16 {
@@ -786,7 +783,7 @@ fn decode_complex_prefix(
       for _repeat_idx in 0..<delta {
         if i < alphabet_size {
           code_lengths.unsafe_set(i, repeat_code_len)
-          space -= (32768U >> repeat_code_len)
+          space -= 32768UL >> repeat_code_len
           i += 1
         }
       }
@@ -888,7 +885,6 @@ fn build_hufftree(
     if cl > 0 && cl <= max_len {
       let code = next_code.unsafe_get(cl)
       next_code.unsafe_set(cl, code + 1)
-      // Mask code to cl bits to handle overcomplete Huffman codes
       let rev = brotli_reverse_dec(code & ((1 << cl) - 1), cl)
       let step = 1 << cl
       let mut idx = rev
