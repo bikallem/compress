@@ -104,7 +104,7 @@ fn decode_compressed_block(
   max_backward : Int,
   dist_rb : FixedArray[Int],
   dist_rb_idx : Ref[Int],
-) -> Unit {
+) -> Unit raise BrotliError {
   // Read NBLTYPES and their trees interleaved (matching C reference order).
   // For each category: read NBLTYPES, then if > 1 read type tree + count tree + first count.
   let dummy_tree : HuffTree = { table: FixedArray::make(1, 0), max_bits: 0 }
@@ -359,11 +359,7 @@ fn decode_compressed_block(
       let word_idx = address & mask
       let transform_idx = address >> shift
       if transform_idx >= 121 {
-        // Invalid transform — treat as error, skip
-        produced += climit
-        for _ in 0..<climit {
-          sink.write_byte(b'\x00')
-        }
+        raise BrotliError::CorruptData("invalid dictionary transform")
       } else {
         let word_off = dict_word_offset(copy_len, word_idx)
         let tmp = FixedArray::make(copy_len + 128, b'\x00')
@@ -416,7 +412,7 @@ fn decode_context_map(
   br : BitReader,
   map_size : Int,
   num_trees : Int,
-) -> FixedArray[Int] {
+) -> FixedArray[Int] raise BrotliError {
   let cmap = FixedArray::make(map_size, 0)
   // Read RLEMAX
   let rlemax_flag = br.read_bits(1)
@@ -642,7 +638,10 @@ priv struct HuffTree {
 }
 
 ///|
-fn decode_prefix_code(br : BitReader, alphabet_size : Int) -> HuffTree {
+fn decode_prefix_code(
+  br : BitReader,
+  alphabet_size : Int,
+) -> HuffTree raise BrotliError {
   let hskip = br.read_bits(2)
   if hskip == 1 {
     return decode_simple_prefix(br, alphabet_size)
@@ -771,11 +770,23 @@ let cl_order : FixedArray[Int] = {
 }
 
 ///|
+fn consume_huffman_space(
+  space : UInt64,
+  code_len : Int,
+) -> UInt64 raise BrotliError {
+  let used = 32768UL >> code_len
+  if used > space {
+    raise BrotliError::CorruptData("oversubscribed Huffman code lengths")
+  }
+  space - used
+}
+
+///|
 fn decode_complex_prefix(
   br : BitReader,
   alphabet_size : Int,
   hskip : Int,
-) -> HuffTree {
+) -> HuffTree raise BrotliError {
   let cl_lengths = FixedArray::make(18, 0)
   let mut space = 32
   for j in hskip..<18 {
@@ -805,7 +816,7 @@ fn decode_complex_prefix(
       code_lengths.unsafe_set(i, sym)
       if sym > 0 {
         prev_cl = sym
-        space -= 32768UL >> sym
+        space = consume_huffman_space(space, sym)
       }
       i += 1
     } else if sym == 16 {
@@ -823,12 +834,13 @@ fn decode_complex_prefix(
       }
       repeat += repeat_delta
       let delta = repeat - old_repeat
+      if i + delta > alphabet_size {
+        raise BrotliError::CorruptData("invalid code-length repeat")
+      }
       for _repeat_idx in 0..<delta {
-        if i < alphabet_size {
-          code_lengths.unsafe_set(i, repeat_code_len)
-          space -= 32768UL >> repeat_code_len
-          i += 1
-        }
+        code_lengths.unsafe_set(i, repeat_code_len)
+        space = consume_huffman_space(space, repeat_code_len)
+        i += 1
       }
     } else if sym == 17 {
       // Repeat zero code length
@@ -845,11 +857,12 @@ fn decode_complex_prefix(
       }
       repeat += repeat_delta
       let delta = repeat - old_repeat
+      if i + delta > alphabet_size {
+        raise BrotliError::CorruptData("invalid code-length repeat")
+      }
       for _zero_idx in 0..<delta {
-        if i < alphabet_size {
-          code_lengths.unsafe_set(i, 0)
-          i += 1
-        }
+        code_lengths.unsafe_set(i, 0)
+        i += 1
       }
     }
   }

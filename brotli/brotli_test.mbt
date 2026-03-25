@@ -101,6 +101,19 @@ test "brotli decode Go-compressed with dictionary (small)" {
 }
 
 ///|
+test "brotli rejects invalid dictionary transform" {
+  // Mutated from the valid small dictionary fixture above.
+  let compressed = hex_to_bytes("1b14000824007290420e298b1bf40401")
+  let result = try? @brotli.decompress(compressed)
+  match result {
+    Err(BrotliError::CorruptData(msg)) =>
+      assert_eq(msg, "invalid dictionary transform")
+    Err(err) => fail("expected invalid dictionary transform error, got \{err}")
+    Ok(_) => fail("expected error for invalid dictionary transform")
+  }
+}
+
+///|
 /// Test decoding Go-compressed brotli (level 1, simple LZ77).
 test "brotli decode Go-compressed level 1 simple" {
   let compressed = hex_to_bytes("8b04804141414141424242424203")
@@ -120,6 +133,20 @@ test "brotli decode Go-compressed level 3 ABC repeat" {
   let expected = buf.to_bytes()
   let decompressed = @brotli.decompress(compressed)
   assert_eq(decompressed, expected)
+}
+
+///|
+test "brotli rejects oversubscribed Huffman code lengths" {
+  // Mutated from the valid ABC repeat fixture above.
+  let compressed = hex_to_bytes("1b3b000020828486e29b204603")
+  let result = try? @brotli.decompress(compressed)
+  match result {
+    Err(BrotliError::CorruptData(msg)) =>
+      assert_eq(msg, "oversubscribed Huffman code lengths")
+    Err(err) =>
+      fail("expected oversubscribed Huffman code lengths error, got \{err}")
+    Ok(_) => fail("expected error for oversubscribed Huffman code lengths")
+  }
 }
 
 ///|
