@@ -199,11 +199,16 @@ fn decode_compressed_block(
     dist_trees.unsafe_set(i, decode_prefix_code(br, dist_alphabet))
   }
 
-  let dist_rb = FixedArray::make(4, 1)
-  dist_rb.unsafe_set(0, 4)
-  dist_rb.unsafe_set(1, 11)
-  dist_rb.unsafe_set(2, 15)
-  dist_rb.unsafe_set(3, 16)
+  // Distance ring buffer: circular with index, matching C reference layout.
+  // C reference: dist_rb[0]=16, dist_rb[1]=15, dist_rb[2]=11, dist_rb[3]=4, idx=0
+  // Last distance = dist_rb[(idx-1)&3] = dist_rb[3] = 4
+  let dist_rb = FixedArray::make(4, 0)
+  dist_rb.unsafe_set(0, 16)
+  dist_rb.unsafe_set(1, 15)
+  dist_rb.unsafe_set(2, 11)
+  dist_rb.unsafe_set(3, 4)
+  let mut dist_rb_idx = 0
+  let mut distance_context = 0
 
   // Previous block type per category (for block type ring buffer)
   let mut lit_prev_type = 1
@@ -283,6 +288,7 @@ fn decode_compressed_block(
     if produced >= mlen {
       break
     }
+    // Distance decode with circular ring buffer (matching C reference)
     let distance = if needs_dist {
       // Check for distance block type switch
       if nbltypesd > 1 && dist_block_remaining == 0 {
@@ -297,9 +303,7 @@ fn decode_compressed_block(
       if nbltypesd > 1 {
         dist_block_remaining -= 1
       }
-      // Select the distance tree based on distance block type and context
       let dist_tree = if ntreesd > 1 {
-        // Distance context is 0-3 based on copy length
         let dist_ctx = if copy_len > 4 { 3 } else { copy_len - 2 }
         let tree_idx = cmap_d.unsafe_get(dist_block_type * 4 + dist_ctx)
         dist_trees.unsafe_get(tree_idx)
@@ -307,10 +311,15 @@ fn decode_compressed_block(
         dist_trees.unsafe_get(0)
       }
       let dist_code = read_huffman_symbol(br, dist_tree)
-      let d = decode_distance(br, dist_code, ndirect, dist_rb, npostfix)
+      let (d, ctx) = decode_distance_circ(
+        br, dist_code, ndirect, dist_rb, dist_rb_idx, npostfix,
+      )
+      distance_context = ctx
       d
     } else {
-      dist_rb.unsafe_get(0)
+      // Implicit distance: reuse last distance
+      distance_context = 1
+      dist_rb.unsafe_get((dist_rb_idx - 1) & 3)
     }
     let climit = if copy_len > mlen - produced {
       mlen - produced
@@ -326,14 +335,14 @@ fn decode_compressed_block(
     if distance > max_dist &&
       copy_len >= dict_min_word_length &&
       copy_len <= dict_max_word_length {
-      // Static dictionary reference — do NOT update distance ring buffer
+      // Static dictionary reference — no ring buffer write, only compensate
+      dist_rb_idx += distance_context
       let address = distance - max_dist - 1
       let shift = dict_size_bits_by_length.unsafe_get(copy_len)
       let mask = (1 << shift) - 1
       let word_idx = address & mask
       let transform_idx = address >> shift
       let word_off = dict_word_offset(copy_len, word_idx)
-      // Apply transform to get the output bytes
       let tmp = FixedArray::make(copy_len + 128, b'\x00')
       let out_len = transform_dictionary_word(
         tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
@@ -342,12 +351,11 @@ fn decode_compressed_block(
       sink.write_fixed(tmp, 0, write_len)
       produced += write_len
     } else {
-      // Regular backward reference — update distance ring buffer
+      // Backward reference — write distance to ring buffer and advance
+      // Only for explicit distances (needs_dist=true)
       if needs_dist {
-        dist_rb.unsafe_set(3, dist_rb.unsafe_get(2))
-        dist_rb.unsafe_set(2, dist_rb.unsafe_get(1))
-        dist_rb.unsafe_set(1, dist_rb.unsafe_get(0))
-        dist_rb.unsafe_set(0, distance)
+        dist_rb.unsafe_set(dist_rb_idx & 3, distance)
+        dist_rb_idx += 1
       }
       let copy_src = start_pos + produced - distance
       if copy_src >= 0 {
@@ -487,41 +495,39 @@ fn decode_insert_copy(br : BitReader, code : Int) -> (Int, Int, Bool) {
 }
 
 ///|
-fn decode_distance(
+/// Decode distance and set distance_context, matching C reference TakeDistanceFromRingBuffer.
+/// Uses circular ring buffer with dist_rb_idx.
+fn decode_distance_circ(
   br : BitReader,
   code : Int,
   ndirect : Int,
   dist_rb : FixedArray[Int],
+  dist_rb_idx : Int,
   npostfix : Int,
-) -> Int {
-  if code < 4 {
-    return dist_rb.unsafe_get(code)
-  }
-  if code < 16 {
-    // RFC 7932 Table 9: distance codes 4-15
-    let (rb_idx, delta) = match code {
-      4 => (0, -1)
-      5 => (0, 1)
-      6 => (0, -2)
-      7 => (0, 2)
-      8 => (0, -3)
-      9 => (0, 3)
-      10 => (1, -1)
-      11 => (1, 1)
-      12 => (1, -2)
-      13 => (1, 2)
-      14 => (2, -1)
-      15 => (2, 1)
-      _ => (2, 1) // unreachable: codes 4-15 are exhaustively listed
-    }
-    let d = dist_rb.unsafe_get(rb_idx) + delta
-    if d < 1 {
-      1
+) -> (Int, Int) {
+  // Returns (distance, distance_context)
+  if code <= 3 {
+    // Codes 0-3: direct ring buffer access (C reference TakeDistanceFromRingBuffer)
+    // Code 0: last distance, distance_context=1 (compensate roll)
+    // Code 1-3: 2nd/3rd/4th last, distance_context=0
+    let offset = code - 3 // code 0→-3, 1→-2, 2→-1, 3→0
+    let d = dist_rb.unsafe_get((dist_rb_idx - offset) & 3)
+    let ctx = 1 >> code // code 0→1, code 1-3→0
+    (d, ctx)
+  } else if code < 16 {
+    // Codes 4-15: ring buffer + delta
+    let (index_delta, base) = if code < 10 {
+      (3, code - 4)
     } else {
-      d
+      (2, code - 10)
     }
+    // Unpack delta from 0x605142: each 4-bit nibble, subtract 3
+    let delta = ((0x605142 >> (4 * base)) & 0xF) - 3
+    let d = dist_rb.unsafe_get((dist_rb_idx + index_delta) & 3) + delta
+    let d = if d < 1 { 1 } else { d }
+    (d, 0)
   } else if code < 16 + ndirect {
-    code - 16 + 1
+    (code - 16 + 1, 0)
   } else {
     let dcode = code - 16 - ndirect
     if npostfix == 0 {
@@ -529,9 +535,8 @@ fn decode_distance(
       let ndistbits = 1 + (dcode >> 1)
       let extra = br.read_bits(ndistbits)
       let offset = ((2 + hcode) << ndistbits) - 4
-      offset + extra + ndirect + 1
+      (offset + extra + ndirect + 1, 0)
     } else {
-      // With postfix bits: RFC 7932 section 4
       let postfix_mask = (1 << npostfix) - 1
       let postfix = dcode & postfix_mask
       let dcode2 = dcode >> npostfix
@@ -539,7 +544,7 @@ fn decode_distance(
       let ndistbits = 1 + (dcode2 >> 1)
       let extra = br.read_bits(ndistbits)
       let offset = ((2 + hcode) << ndistbits) - 4
-      ((offset + extra) << npostfix) + postfix + ndirect + 1
+      (((offset + extra) << npostfix) + postfix + ndirect + 1, 0)
     }
   }
 }
