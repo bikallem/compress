@@ -398,8 +398,8 @@ fn decode_context_map(
       cmap.unsafe_set(i, 0)
       i += 1
     } else if sym <= rlemax {
-      // Run-length of zeros: (1 << sym) zeros
-      let run = 1 << sym
+      // Run-length of zeros: (1 << sym) + extra bits
+      let run = (1 << sym) + br.read_bits(sym)
       for _run_idx in 0..<run {
         if i < map_size {
           cmap.unsafe_set(i, 0)
@@ -436,13 +436,18 @@ fn decode_context_map(
 }
 
 ///|
+/// Decode NBLTYPES using DecodeVarLenUint8 + 1 (RFC 7932 section 9.2).
 fn decode_block_type_count(br : BitReader) -> Int {
-  let code = br.read_bits(1)
-  if code == 0 {
-    1
-  } else {
-    br.read_bits(3) + 2
+  let bit0 = br.read_bits(1)
+  if bit0 == 0 {
+    return 1 // value=0, NBLTYPES=1
   }
+  let n = br.read_bits(3)
+  if n == 0 {
+    return 2 // value=1, NBLTYPES=2
+  }
+  let extra = br.read_bits(n)
+  (1 << n) + extra + 1
 }
 
 ///|
@@ -720,17 +725,15 @@ fn decode_complex_prefix(
 ) -> HuffTree {
   let cl_lengths = FixedArray::make(18, 0)
   let mut space = 32
-  let mut num_codes = 0
   for j in hskip..<18 {
-    if num_codes >= 2 && space == 0 {
-      break
-    }
     let sym = cl_order.unsafe_get(j)
     let cl = read_cl_code_length(br)
     cl_lengths.unsafe_set(sym, cl)
     if cl > 0 {
       space -= 32 >> cl
-      num_codes += 1
+    }
+    if space == 0 {
+      break
     }
   }
   let cl_tree = build_hufftree(cl_lengths, 18)
