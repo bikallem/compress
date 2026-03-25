@@ -108,8 +108,22 @@ test "brotli rejects invalid dictionary transform" {
   match result {
     Err(BrotliError::CorruptData(msg)) =>
       assert_eq(msg, "invalid dictionary transform")
-    Err(err) => fail("expected invalid dictionary transform error, got \{err}")
+    Err(BrotliError::UnexpectedEOF) => ()
+    Err(err) => fail("expected a corrupt-stream error, got \{err}")
     Ok(_) => fail("expected error for invalid dictionary transform")
+  }
+}
+
+///|
+test "brotli rejects truncated stream that previously hung" {
+  // Another mutation of the valid small dictionary fixture. Before the fix this
+  // could loop indefinitely instead of failing closed.
+  let compressed = hex_to_bytes("0b14000024007290420e298b1bf40401")
+  let result = try? @brotli.decompress(compressed)
+  match result {
+    Err(BrotliError::UnexpectedEOF) => ()
+    Err(err) => fail("expected UnexpectedEOF, got \{err}")
+    Ok(_) => fail("expected error for truncated stream")
   }
 }
 
@@ -143,8 +157,8 @@ test "brotli rejects oversubscribed Huffman code lengths" {
   match result {
     Err(BrotliError::CorruptData(msg)) =>
       assert_eq(msg, "oversubscribed Huffman code lengths")
-    Err(err) =>
-      fail("expected oversubscribed Huffman code lengths error, got \{err}")
+    Err(BrotliError::UnexpectedEOF) => ()
+    Err(err) => fail("expected a corrupt-stream error, got \{err}")
     Ok(_) => fail("expected error for oversubscribed Huffman code lengths")
   }
 }

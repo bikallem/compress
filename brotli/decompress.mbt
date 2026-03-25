@@ -62,7 +62,7 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
 }
 
 ///|
-fn decode_wbits(br : BitReader) -> Int {
+fn decode_wbits(br : BitReader) -> Int raise BrotliError {
   // Bit 0
   let b0 = br.read_bits(1)
   if b0 == 0 {
@@ -366,6 +366,12 @@ fn decode_compressed_block(
         let out_len = transform_dictionary_word(
           tmp, 0, brotli_dictionary_data, word_off, copy_len, transform_idx,
         )
+        if out_len <= 0 {
+          raise BrotliError::CorruptData("invalid dictionary transform")
+        }
+        if out_len > mlen - produced {
+          raise BrotliError::CorruptData("dictionary transform exceeds block")
+        }
         sink.write_fixed(tmp, 0, out_len)
         produced += out_len
       }
@@ -466,7 +472,7 @@ fn decode_context_map(
 
 ///|
 /// Decode NBLTYPES using DecodeVarLenUint8 + 1 (RFC 7932 section 9.2).
-fn decode_block_type_count(br : BitReader) -> Int {
+fn decode_block_type_count(br : BitReader) -> Int raise BrotliError {
   let bit0 = br.read_bits(1)
   if bit0 == 0 {
     return 1
@@ -480,7 +486,10 @@ fn decode_block_type_count(br : BitReader) -> Int {
 }
 
 ///|
-fn decode_insert_copy(br : BitReader, code : Int) -> (Int, Int, Bool, Int) {
+fn decode_insert_copy(
+  br : BitReader,
+  code : Int,
+) -> (Int, Int, Bool, Int) raise BrotliError {
   let block = code >> 6
   let sub = code & 63
   let ir = (sub >> 3) & 7
@@ -523,7 +532,7 @@ fn decode_distance_circ(
   dist_rb : FixedArray[Int],
   dist_rb_idx : Ref[Int],
   npostfix : Int,
-) -> (Int, Int) {
+) -> (Int, Int) raise BrotliError {
   if code <= 3 {
     let offset = code - 3
     let d = dist_rb.unsafe_get((dist_rb_idx.val - offset) & 3)
@@ -569,7 +578,7 @@ fn decode_distance_circ(
 
 ///|
 /// Decode a block count value (RFC 7932 section 6).
-fn decode_block_count(br : BitReader, tree : HuffTree) -> Int {
+fn decode_block_count(br : BitReader, tree : HuffTree) -> Int raise BrotliError {
   let code = read_huffman_symbol(br, tree)
   // RFC 7932 Table 2: Block count codes
   let (base, extra) = match code {
@@ -650,7 +659,10 @@ fn decode_prefix_code(
 }
 
 ///|
-fn decode_simple_prefix(br : BitReader, alphabet_size : Int) -> HuffTree {
+fn decode_simple_prefix(
+  br : BitReader,
+  alphabet_size : Int,
+) -> HuffTree raise BrotliError {
   let kind = br.read_bits(2)
   let nsym = kind + 1
   let sb = brotli_sym_bits(alphabet_size)
@@ -870,7 +882,7 @@ fn decode_complex_prefix(
 }
 
 ///|
-fn read_cl_code_length(br : BitReader) -> Int {
+fn read_cl_code_length(br : BitReader) -> Int raise BrotliError {
   br.refill()
   let peek = (br.bits & 0xFUL).to_int()
   let (value, length) = match peek {
@@ -882,6 +894,7 @@ fn read_cl_code_length(br : BitReader) -> Int {
     15 => (5, 4)
     _ => (0, 2) // unreachable: peek is masked to 4 bits (0-15)
   }
+  guard br.n_bits >= length else { raise BrotliError::UnexpectedEOF }
   br.bits = br.bits >> length
   br.n_bits -= length
   value
@@ -981,7 +994,10 @@ fn brotli_reverse_dec(val : Int, n : Int) -> Int {
 }
 
 ///|
-fn read_huffman_symbol(br : BitReader, tree : HuffTree) -> Int {
+fn read_huffman_symbol(
+  br : BitReader,
+  tree : HuffTree,
+) -> Int raise BrotliError {
   if tree.max_bits == 0 {
     return tree.table.unsafe_get(0) >> 8
   }
@@ -991,6 +1007,8 @@ fn read_huffman_symbol(br : BitReader, tree : HuffTree) -> Int {
   let entry = tree.table.unsafe_get(peek)
   let sym = entry >> 8
   let cl = entry & 0xFF
+  guard cl > 0 else { raise BrotliError::CorruptData("invalid Huffman code") }
+  guard br.n_bits >= cl else { raise BrotliError::UnexpectedEOF }
   br.bits = br.bits >> cl
   br.n_bits -= cl
   sym

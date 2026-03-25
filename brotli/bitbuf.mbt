@@ -58,11 +58,12 @@ fn BitReader::refill(self : BitReader) -> Unit {
 }
 
 ///|
-fn BitReader::read_bits(self : BitReader, n : Int) -> Int {
+fn BitReader::read_bits(self : BitReader, n : Int) -> Int raise BrotliError {
   if n == 0 {
     return 0
   }
   self.refill()
+  guard self.n_bits >= n else { raise BrotliError::UnexpectedEOF }
   let mask : UInt64 = (1UL << n) - 1UL
   let val = (self.bits & mask).to_uint().reinterpret_as_int()
   self.bits = self.bits >> n
@@ -71,7 +72,7 @@ fn BitReader::read_bits(self : BitReader, n : Int) -> Int {
 }
 
 ///|
-fn BitReader::read_bool(self : BitReader) -> Bool {
+fn BitReader::read_bool(self : BitReader) -> Bool raise BrotliError {
   self.read_bits(1) == 1
 }
 
@@ -83,7 +84,7 @@ fn BitReader::read_bytes_to_sink(
   self : BitReader,
   sink : @blit.Buffer,
   len : Int,
-) -> Unit {
+) -> Unit raise BrotliError {
   // First, drain any buffered bits as individual bytes
   let mut remaining = len
   while remaining > 0 && self.n_bits >= 8 {
@@ -99,6 +100,9 @@ fn BitReader::read_bytes_to_sink(
   // If n_bits > 0, we have partial bits that don't form a full byte,
   // which shouldn't happen after byte alignment, but handle gracefully.
   if self.n_bits == 0 {
+    guard self.byte_pos + remaining <= self.data.length() else {
+      raise BrotliError::UnexpectedEOF
+    }
     // Bulk copy directly from input data to sink
     sink.ensure_capacity(remaining)
     @blit.blit_bytes(
@@ -114,6 +118,7 @@ fn BitReader::read_bytes_to_sink(
     // Fallback: read byte by byte
     for _ in 0..<remaining {
       self.refill()
+      guard self.n_bits >= 8 else { raise BrotliError::UnexpectedEOF }
       let b = (self.bits & 0xFFUL).to_uint().to_byte()
       self.bits = self.bits >> 8
       self.n_bits -= 8
