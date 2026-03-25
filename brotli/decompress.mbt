@@ -193,6 +193,8 @@ fn decode_compressed_block(
   let ntreesd = decode_block_type_count(br)
 
   // Read context map for distances
+  if nbltypesd > 2 {
+  }
   let cmap_d_size = 4 * nbltypesd
   let cmap_d = if ntreesd > 1 {
     decode_context_map(br, cmap_d_size, ntreesd)
@@ -201,6 +203,11 @@ fn decode_compressed_block(
   }
 
   // Read NTREESL literal prefix codes
+  if nbltypesd > 2 {
+  }
+  // Trace position before/after literal trees
+  if nbltypesl > 2 {
+  }
   if nbltypesl > 2 {
   }
   let lit_trees : FixedArray[HuffTree] = FixedArray::make(ntreesl, {
@@ -212,10 +219,15 @@ fn decode_compressed_block(
   }
   if nbltypesl > 2 {
   }
-  let iac_tree = decode_prefix_code(br, 704)
-  let dist_alphabet = 16 + ndirect + (48 << npostfix)
-  if nbltypesl > 2 {
+  // Read NBLTYPESI insert-and-copy prefix codes (one per block type)
+  let iac_trees : FixedArray[HuffTree] = FixedArray::make(nbltypesi, {
+    table: FixedArray::make(1, 0),
+    max_bits: 0,
+  })
+  for i in 0..<nbltypesi {
+    iac_trees.unsafe_set(i, decode_prefix_code(br, 704))
   }
+  let dist_alphabet = 16 + ndirect + (48 << npostfix)
   // Read NTREESD distance prefix codes
   let dist_trees : FixedArray[HuffTree] = FixedArray::make(ntreesd, {
     table: FixedArray::make(1, 0),
@@ -251,7 +263,7 @@ fn decode_compressed_block(
       iac_block_remaining -= 1
     }
 
-    let iac_code = read_huffman_symbol(br, iac_tree)
+    let iac_code = read_huffman_symbol(br, iac_trees.unsafe_get(iac_block_type))
     let (insert_len, copy_len, needs_dist) = decode_insert_copy(br, iac_code)
     let ilimit = if insert_len > mlen - produced {
       mlen - produced
@@ -831,18 +843,6 @@ fn decode_complex_prefix(
         }
       }
     }
-  }
-  // Verify space for debug
-  let mut _sp_check : UInt64 = 32768UL
-  let mut _nz_check = 0
-  for _k in 0..<alphabet_size {
-    if code_lengths.unsafe_get(_k) > 0 {
-      _nz_check += 1
-      _sp_check -= 32768UL >> code_lengths.unsafe_get(_k)
-    }
-  }
-  if _sp_check != 0UL && _sp_check < 0x8000000000000000UL {
-  } else if _sp_check > 0x8000000000000000UL {
   }
   build_hufftree(code_lengths, alphabet_size)
 }
