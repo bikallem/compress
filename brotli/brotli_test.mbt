@@ -200,7 +200,13 @@ test "brotli decompress WOFF2 table data" {
   )
   let result = @brotli.decompress(compressed)
   assert_eq(result.length(), expected.length())
-  assert_eq(result, expected)
+  for i in 0..<result.length() {
+    if result[i] != expected[i] {
+      fail(
+        "first mismatch at byte \{i}: got 0x\{result[i].to_int().to_string(radix=16)}, expected 0x\{expected[i].to_int().to_string(radix=16)}",
+      )
+    }
+  }
 }
 
 ///|
