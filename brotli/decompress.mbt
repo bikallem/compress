@@ -265,6 +265,10 @@ fn decode_compressed_block(
 
     let iac_code = read_huffman_symbol(br, iac_trees.unsafe_get(iac_block_type))
     let (insert_len, copy_len, needs_dist) = decode_insert_copy(br, iac_code)
+    if produced == 1732 {
+    }
+    if produced >= 1720 && produced < 1760 {
+    }
     let ilimit = if insert_len > mlen - produced {
       mlen - produced
     } else {
@@ -290,6 +294,8 @@ fn decode_compressed_block(
           lit_prev_type = lit_block_type
           lit_block_type = resolved
           lit_block_remaining = decode_block_count(br, lit_bcount_tree)
+          if produced >= 1750 && produced < 1760 {
+          }
         }
         if nbltypesl > 1 {
           lit_block_remaining -= 1
@@ -630,12 +636,18 @@ fn resolve_block_type(
   prev : Int,
   num_types : Int,
 ) -> Int {
-  if sym == 0 {
+  let block_type = if sym == 0 {
     prev
   } else if sym == 1 {
-    (current + 1) % num_types
+    current + 1
   } else {
     sym - 2
+  }
+  // Wrap if needed (matching C reference single-subtraction modulo)
+  if block_type >= num_types {
+    block_type - num_types
+  } else {
+    block_type
   }
 }
 
