@@ -213,9 +213,9 @@ fn decode_compressed_block(
   if nbltypesl > 2 {
   }
   let iac_tree = decode_prefix_code(br, 704)
+  let dist_alphabet = 16 + ndirect + (48 << npostfix)
   if nbltypesl > 2 {
   }
-  let dist_alphabet = 16 + ndirect + (48 << npostfix)
   // Read NTREESD distance prefix codes
   let dist_trees : FixedArray[HuffTree] = FixedArray::make(ntreesd, {
     table: FixedArray::make(1, 0),
@@ -766,6 +766,8 @@ fn decode_complex_prefix(
       }
     }
   }
+  if alphabet_size == 224 && space != 0 {
+  }
   let cl_tree = build_hufftree(cl_lengths, 18)
   let code_lengths = FixedArray::make(alphabet_size, 0)
   let mut i = 0
@@ -830,6 +832,18 @@ fn decode_complex_prefix(
       }
     }
   }
+  // Verify space for debug
+  let mut _sp_check : UInt64 = 32768UL
+  let mut _nz_check = 0
+  for _k in 0..<alphabet_size {
+    if code_lengths.unsafe_get(_k) > 0 {
+      _nz_check += 1
+      _sp_check -= 32768UL >> code_lengths.unsafe_get(_k)
+    }
+  }
+  if _sp_check != 0UL && _sp_check < 0x8000000000000000UL {
+  } else if _sp_check > 0x8000000000000000UL {
+  }
   build_hufftree(code_lengths, alphabet_size)
 }
 
@@ -887,34 +901,52 @@ fn build_hufftree(
   }
   let table_size = 1 << max_len
   let table = FixedArray::make(table_size, 0)
-  let bl_count = FixedArray::make(max_len + 1, 0)
+  // Sort symbols by code length, matching C reference key-based approach
+  let count = FixedArray::make(max_len + 1, 0)
   for i in 0..<num_symbols {
     let cl = code_lengths.unsafe_get(i)
     if cl > 0 && cl <= max_len {
-      bl_count.unsafe_set(cl, bl_count.unsafe_get(cl) + 1)
+      count.unsafe_set(cl, count.unsafe_get(cl) + 1)
     }
   }
-  let next_code = FixedArray::make(max_len + 1, 0)
-  for bits = 1, code = 0; bits <= max_len; {
-    let c = (code + bl_count.unsafe_get(bits - 1)) << 1
-    next_code.unsafe_set(bits, c)
-    continue bits + 1, c
+  let offset = FixedArray::make(max_len + 1, 0)
+  let mut total = -1
+  for bits in 1..=max_len {
+    total += count.unsafe_get(bits)
+    offset.unsafe_set(bits, total)
   }
-  for sym in 0..<num_symbols {
-    let cl = code_lengths.unsafe_get(sym)
+  let sorted = FixedArray::make(nsym, 0)
+  for s = num_symbols - 1; s >= 0; s = s - 1 {
+    let cl = code_lengths.unsafe_get(s)
     if cl > 0 && cl <= max_len {
-      let code = next_code.unsafe_get(cl)
-      next_code.unsafe_set(cl, code + 1)
-      let rev = brotli_reverse_dec(code & ((1 << cl) - 1), cl)
-      let step = 1 << cl
+      sorted.unsafe_set(offset.unsafe_get(cl), s)
+      offset.unsafe_set(cl, offset.unsafe_get(cl) - 1)
+    }
+  }
+  // Fill table: key increments by key_step; reversed key gives table index
+  let mut key = 0
+  let mut key_step = 1 << (max_len - 1)
+  let mut sym_idx = 0
+  let mut step = 2
+  for bits in 1..=max_len {
+    let mut bits_count = count.unsafe_get(bits)
+    while bits_count > 0 {
+      let rev = brotli_reverse_dec(key >> (max_len - bits), bits)
+      let entry = (sorted.unsafe_get(sym_idx) << 8) | bits
       let mut idx = rev
       while idx < table_size {
-        table.unsafe_set(idx, (sym << 8) | cl)
+        table.unsafe_set(idx, entry)
         idx += step
       }
+      key += key_step
+      sym_idx += 1
+      bits_count -= 1
     }
+    step = step << 1
+    key_step = key_step >> 1
   }
   { table, max_bits: max_len }
+
 }
 
 ///|
