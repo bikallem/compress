@@ -9,7 +9,6 @@ fn main {
   let _ : @lz4.Inflater? = None
   let _ : @snappy.SnappyError? = None
   let _ : @zstd.Inflater? = None
-  let _ = @blit.Buffer::new()
   let _ = @env.args()
   println("This tool requires --target native")
 }

@@ -1,5 +1,4 @@
 import {
-  "bikallem/blit",
   "bikallem/compress/brotli",
   "bikallem/compress/bzip2",
   "bikallem/compress/flate",
