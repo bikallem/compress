@@ -83,18 +83,32 @@ fn main {
   println("Got first 20:\{got_hex}")
   println("Exp first 20:\{exp_hex}")
   let mut mismatches = 0
+  let mut first_mismatch = -1
   for i in 0..<result.length() {
     if result[i] != expected[i] {
-      if mismatches < 10 {
-        println(
-          "mismatch at byte \{i}: got 0x\{result[i].to_int().to_string(radix=16)}, expected 0x\{expected[i].to_int().to_string(radix=16)}",
-        )
+      if first_mismatch < 0 {
+        first_mismatch = i
       }
       mismatches += 1
     }
   }
   if mismatches > 0 {
-    println("FAIL: \{mismatches} mismatches")
+    println("FAIL: \{mismatches} mismatches, first at byte \{first_mismatch}")
+    // Show bytes around first mismatch
+    let start = if first_mismatch > 4 { first_mismatch - 4 } else { 0 }
+    let end = if first_mismatch + 10 < result.length() {
+      first_mismatch + 10
+    } else {
+      result.length()
+    }
+    let mut got_s = ""
+    let mut exp_s = ""
+    for i in start..<end {
+      got_s += " \{result[i].to_int().to_string(radix=16)}"
+      exp_s += " \{expected[i].to_int().to_string(radix=16)}"
+    }
+    println("  got[\{start}..\{end}]:\{got_s}")
+    println("  exp[\{start}..\{end}]:\{exp_s}")
   } else {
     println("PASS: all \{result.length()} bytes match")
   }

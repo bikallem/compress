@@ -109,6 +109,8 @@ fn decode_compressed_block(
 
   // Literal block types
   let nbltypesl = decode_block_type_count(br)
+  if nbltypesl > 2 {
+  }
   let lit_btype_tree : HuffTree = if nbltypesl > 1 {
     decode_prefix_code(br, nbltypesl + 2)
   } else {
@@ -118,6 +120,8 @@ fn decode_compressed_block(
     decode_prefix_code(br, 26)
   } else {
     dummy_tree
+  }
+  if nbltypesl > 2 {
   }
   let mut lit_block_remaining = if nbltypesl > 1 {
     decode_block_count(br, lit_bcount_tree)
@@ -166,6 +170,8 @@ fn decode_compressed_block(
 
   let npostfix = br.read_bits(2)
   let ndirect_raw = br.read_bits(4)
+  if nbltypesl > 2 {
+  }
   let ndirect = ndirect_raw << npostfix
   // Read context modes (one per literal block type, 2 bits each)
   let context_modes = FixedArray::make(nbltypesl, 0)
@@ -173,6 +179,8 @@ fn decode_compressed_block(
     context_modes.unsafe_set(i, br.read_bits(2))
   }
   let ntreesl = decode_block_type_count(br)
+  if nbltypesl > 2 {
+  }
 
   // Read context map for literals (RFC 7932: comes after NTREESL, before NTREESD)
   let cmap_size = 64 * nbltypesl
