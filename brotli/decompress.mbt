@@ -308,10 +308,6 @@ fn decode_compressed_block(
       }
       let dist_code = read_huffman_symbol(br, dist_tree)
       let d = decode_distance(br, dist_code, ndirect, dist_rb, npostfix)
-      dist_rb.unsafe_set(3, dist_rb.unsafe_get(2))
-      dist_rb.unsafe_set(2, dist_rb.unsafe_get(1))
-      dist_rb.unsafe_set(1, dist_rb.unsafe_get(0))
-      dist_rb.unsafe_set(0, d)
       d
     } else {
       dist_rb.unsafe_get(0)
@@ -330,7 +326,7 @@ fn decode_compressed_block(
     if distance > max_dist &&
       copy_len >= dict_min_word_length &&
       copy_len <= dict_max_word_length {
-      // Static dictionary reference
+      // Static dictionary reference — do NOT update distance ring buffer
       let address = distance - max_dist - 1
       let shift = dict_size_bits_by_length.unsafe_get(copy_len)
       let mask = (1 << shift) - 1
@@ -346,6 +342,13 @@ fn decode_compressed_block(
       sink.write_fixed(tmp, 0, write_len)
       produced += write_len
     } else {
+      // Regular backward reference — update distance ring buffer
+      if needs_dist {
+        dist_rb.unsafe_set(3, dist_rb.unsafe_get(2))
+        dist_rb.unsafe_set(2, dist_rb.unsafe_get(1))
+        dist_rb.unsafe_set(1, dist_rb.unsafe_get(0))
+        dist_rb.unsafe_set(0, distance)
+      }
       let copy_src = start_pos + produced - distance
       if copy_src >= 0 {
         sink.copy_from_self(copy_src, climit)
