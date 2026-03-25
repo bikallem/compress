@@ -4,7 +4,5 @@ import {
 
 options(
   "native-stub": [ "file_io_stub.c" ],
-  targets: {
-    "large_fixture_test.mbt": [ "native" ],
-  },
+  targets: { "large_fixture_test.mbt": [ "native" ] },
 )
