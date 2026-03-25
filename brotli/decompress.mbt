@@ -201,6 +201,8 @@ fn decode_compressed_block(
   }
 
   // Read NTREESL literal prefix codes
+  if nbltypesl > 2 {
+  }
   let lit_trees : FixedArray[HuffTree] = FixedArray::make(ntreesl, {
     table: FixedArray::make(1, 0),
     max_bits: 0,
@@ -208,7 +210,11 @@ fn decode_compressed_block(
   for i in 0..<ntreesl {
     lit_trees.unsafe_set(i, decode_prefix_code(br, 256))
   }
+  if nbltypesl > 2 {
+  }
   let iac_tree = decode_prefix_code(br, 704)
+  if nbltypesl > 2 {
+  }
   let dist_alphabet = 16 + ndirect + (48 << npostfix)
   // Read NTREESD distance prefix codes
   let dist_trees : FixedArray[HuffTree] = FixedArray::make(ntreesd, {
@@ -247,8 +253,6 @@ fn decode_compressed_block(
 
     let iac_code = read_huffman_symbol(br, iac_tree)
     let (insert_len, copy_len, needs_dist) = decode_insert_copy(br, iac_code)
-    if produced < 30 {
-    }
     let ilimit = if insert_len > mlen - produced {
       mlen - produced
     } else {
