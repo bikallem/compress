@@ -86,11 +86,16 @@ test "signal protocol: chunked input" {
   let buf = @blit.Buffer::new()
   let chunk_size = 7
   let mut pos = 0
+  let mut finished = false
   loop d.decode() {
     Await =>
       if pos >= compressed.length() {
-        inspect(false, content="true")
-        break
+        if finished {
+          fail("unexpected Await after lz4 finish")
+        }
+        d.finish()
+        finished = true
+        continue d.decode()
       } else {
         let end = if pos + chunk_size > compressed.length() {
           compressed.length()
@@ -115,17 +120,19 @@ test "signal protocol: chunked input" {
 test "signal protocol: deflater streaming" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let d = @lz4.Deflater::new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(data[:512])) {
-    Ok => ()
-    Data(_) | End => ()
+    Ok => fail("lz4 deflater should emit after first chunk")
+    Data(out) => buf.write_bytesview(out)
+    End => fail("lz4 deflater should not end before finish")
     Error(e) => raise e
   }
   match d.encode(Some(data[512:])) {
-    Ok => ()
-    Data(_) | End => ()
+    Ok => fail("lz4 deflater should emit after second chunk")
+    Data(out) => buf.write_bytesview(out)
+    End => fail("lz4 deflater should not end before finish")
     Error(e) => raise e
   }
-  let buf = @blit.Buffer::new()
   match d.encode(None) {
     Data(out) => buf.write_bytesview(out)
     End => ()
@@ -138,14 +145,17 @@ test "signal protocol: deflater streaming" {
 }
 
 ///|
-test "signal protocol: buffered inflater consumes concatenated frames" {
+test "signal protocol: inflater consumes concatenated frames" {
   let compressed = @lz4.compress(b"first frame") +
     @lz4.compress(b"second frame")
   let d = @lz4.Inflater::new()
   let buf = @blit.Buffer::new()
   d.src(compressed[:])
   loop d.decode() {
-    Await => fail("unexpected Await with full concatenated LZ4 input")
+    Await => {
+      d.finish()
+      continue d.decode()
+    }
     Data(chunk) => {
       buf.write_bytesview(chunk)
       continue d.decode()

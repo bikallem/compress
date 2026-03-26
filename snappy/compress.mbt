@@ -220,3 +220,13 @@ fn Encoder::compress_block(
 fn Encoder::close(self : Encoder) -> Bytes {
   self.buf.to_bytes()
 }
+
+///|
+fn Encoder::take_output(self : Encoder) -> Bytes {
+  if self.buf.length() == 0 {
+    return Bytes::default()
+  }
+  let out = self.buf.to_bytes()
+  self.buf.reset()
+  out
+}

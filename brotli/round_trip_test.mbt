@@ -69,7 +69,7 @@ test "round-trip: all byte values" {
 }
 
 ///|
-test "signal protocol: buffered inflater accepts chunked input" {
+test "signal protocol: inflater accepts chunked input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @brotli.compress(data)
   let d = @brotli.Inflater::new()
@@ -105,23 +105,26 @@ test "signal protocol: buffered inflater accepts chunked input" {
 test "signal protocol: deflater streaming" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let d = @brotli.Deflater::new()
+  let buf = @blit.Buffer::new()
   match d.encode(Some(data[:512])) {
-    Ok => ()
-    Data(_) | End =>
-      fail("brotli buffered deflater should not emit before finish")
+    Ok => fail("brotli deflater should emit after first chunk")
+    Data(out) => buf.write_bytesview(out)
+    End => fail("brotli deflater should not end before finish")
     Error(e) => raise e
   }
   match d.encode(Some(data[512:])) {
-    Ok => ()
-    Data(_) | End =>
-      fail("brotli buffered deflater should not emit before finish")
+    Ok => fail("brotli deflater should emit after second chunk")
+    Data(out) => buf.write_bytesview(out)
+    End => fail("brotli deflater should not end before finish")
     Error(e) => raise e
   }
-  let buf = @blit.Buffer::new()
-  match d.encode(None) {
-    Data(out) => buf.write_bytesview(out)
-    End => ()
-    Ok => ()
+  loop d.encode(None) {
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => fail("brotli finalization should not return Ok")
     Error(e) => raise e
   }
   let compressed = buf.to_bytes()

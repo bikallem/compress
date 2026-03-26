@@ -115,24 +115,27 @@ test "signal protocol: chunked input" {
 ///|
 test "signal protocol: deflater streaming" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
-  let d = @snappy.Deflater::new()
-  // Feed data in chunks
+  let d = @snappy.Deflater::new(total_len=data.length())
+  let buf = @blit.Buffer::new()
   match d.encode(Some(data[:512])) {
-    Ok => ()
-    Data(_) | End => ()
+    Ok => fail("snappy deflater should emit after first chunk")
+    Data(out) => buf.write_bytesview(out)
+    End => fail("snappy deflater should not end before finish")
     Error(e) => raise e
   }
   match d.encode(Some(data[512:])) {
-    Ok => ()
-    Data(_) | End => ()
+    Ok => fail("snappy deflater should emit after second chunk")
+    Data(out) => buf.write_bytesview(out)
+    End => fail("snappy deflater should not end before finish")
     Error(e) => raise e
   }
-  // Finalize
-  let buf = @blit.Buffer::new()
-  match d.encode(None) {
-    Data(out) => buf.write_bytesview(out)
-    End => ()
-    Ok => ()
+  loop d.encode(None) {
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => fail("snappy finalization should not return Ok")
     Error(e) => raise e
   }
   let compressed = buf.to_bytes()

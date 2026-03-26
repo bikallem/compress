@@ -24,7 +24,7 @@ pub impl Show for Decode
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
-pub fn Deflater::new() -> Self
+pub fn Deflater::new(total_len? : Int) -> Self
 
 pub(all) enum Encode {
   Ok

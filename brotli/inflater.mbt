@@ -1,7 +1,8 @@
 ///|
-/// Buffered Brotli decompressor using signal protocol.
+/// Incremental Brotli decompressor using signal protocol.
 priv struct InflaterState {
   input_buf : @blit.Buffer
+  mut emitted_len : Int
   mut finished : Bool
   mut failed : BrotliError?
   mut sink : @blit.Buffer?
@@ -14,6 +15,7 @@ struct Inflater(InflaterState)
 pub fn Inflater::new() -> Inflater {
   Inflater({
     input_buf: @blit.Buffer::new(),
+    emitted_len: 0,
     finished: false,
     failed: None,
     sink: None,
@@ -30,7 +32,7 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
 }
 
 ///|
-/// Enable direct output accumulation for buffered decompression.
+/// Enable direct output accumulation for streaming decompression.
 pub fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
   self.0.sink = Some(@blit.Buffer::new(size_hint=capacity))
 }
@@ -58,21 +60,35 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   if data.length() == 0 {
     return Await
   }
-  let result = decompress(data) catch {
+  let scratch = @blit.Buffer::new(size_hint=(data.length() * 4).max(256))
+  let complete = brotli_decompress_prefix(data, scratch) catch {
     e => {
-      if e is UnexpectedEOF {
-        return Await
-      }
       s.failed = Some(e)
       return Error(e)
     }
   }
-  s.finished = true
-  match s.sink {
-    Some(sink) => {
-      sink.write_bytes(result)
-      End
+  let output = scratch.to_bytes()
+  if output.length() > s.emitted_len {
+    let delta = output[s.emitted_len:]
+    s.emitted_len = output.length()
+    if complete {
+      s.finished = true
     }
-    None => Data(result[:])
+    match s.sink {
+      Some(sink) => {
+        sink.write_bytesview(delta)
+        if complete {
+          End
+        } else {
+          Await
+        }
+      }
+      None => Data(delta)
+    }
+  } else if complete {
+    s.finished = true
+    End
+  } else {
+    Await
   }
 }

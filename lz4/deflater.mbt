@@ -1,12 +1,11 @@
 ///|
-/// Buffered LZ4 compressor using signal protocol.
+/// Incremental LZ4 compressor using signal protocol.
 ///
 /// Usage:
 ///   let d = Deflater::new()
 ///   match d.encode(Some(data)) { Ok => ...; Data(out) => ... }
 ///   match d.encode(None) { Data(out) => ...; End => ... }
 priv struct EncoderState {
-  input_buf : @blit.Buffer
   mut finished : Bool
 }
 
@@ -15,7 +14,7 @@ struct Deflater(EncoderState)
 
 ///|
 pub fn Deflater::new() -> Deflater {
-  Deflater({ input_buf: @blit.Buffer::new(), finished: false })
+  Deflater({ finished: false })
 }
 
 ///|
@@ -29,18 +28,16 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       if chunk.length() == 0 {
         return Ok
       }
-      s.input_buf.write_bytesview(chunk)
-      Ok
+      let out = compress(chunk.to_bytes())
+      if out.length() > 0 {
+        Data(out[:])
+      } else {
+        Ok
+      }
     }
     None => {
-      let input = s.input_buf.to_bytes()
-      let output = compress(input)
       s.finished = true
-      if output.length() > 0 {
-        Data(output[:])
-      } else {
-        End
-      }
+      End
     }
   }
 }

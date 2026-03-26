@@ -186,3 +186,25 @@ fn BitWriter::to_bytes(self : BitWriter) -> Bytes {
   self.flush_final()
   self.buf.to_bytes()
 }
+
+///|
+fn BitWriter::take_output(self : BitWriter) -> Bytes {
+  self.flush()
+  if self.buf.length() == 0 {
+    return Bytes::default()
+  }
+  let out = self.buf.to_bytes()
+  self.buf.reset()
+  out
+}
+
+///|
+fn BitWriter::take_output_final(self : BitWriter) -> Bytes {
+  self.flush_final()
+  if self.buf.length() == 0 {
+    return Bytes::default()
+  }
+  let out = self.buf.to_bytes()
+  self.buf.reset()
+  out
+}

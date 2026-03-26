@@ -54,6 +54,66 @@ fn compress_uncompressed(src : BytesView, src_len : Int) -> Bytes {
 }
 
 ///|
+fn encode_uncompressed_metablock_into(
+  bw : BitWriter,
+  src : BytesView,
+  src_len : Int,
+  is_last : Bool,
+) -> Unit {
+  bw.write_bits(if is_last { 1 } else { 0 }, 1)
+  if is_last {
+    bw.write_bits(0, 1)
+  }
+  let (mnibbles, _) = meta_block_nibbles(src_len)
+  bw.write_bits(mnibbles - 4, 2)
+  bw.write_bits(src_len - 1, mnibbles * 4)
+  if not(is_last) {
+    bw.write_bits(1, 1)
+  }
+  if bw.n_bits > 0 {
+    bw.write_bits(0, 8 - bw.n_bits)
+  }
+  bw.flush_final()
+  bw.buf.write_bytesview(src)
+}
+
+///|
+fn encode_stream_chunk_into(
+  bw : BitWriter,
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+  is_last : Bool,
+) -> Unit {
+  // Streaming metablocks are encoded independently, so avoid context modeling
+  // that depends on the previous output byte across chunk boundaries.
+  let stream_level = if level >= 5 { 4 } else { level }
+  let mut offset = 0
+  while offset < src_len {
+    let chunk_size = if src_len - offset < MAX_METABLOCK_SIZE {
+      src_len - offset
+    } else {
+      MAX_METABLOCK_SIZE
+    }
+    let is_last_chunk = is_last && offset + chunk_size >= src_len
+    let chunk = src[offset:offset + chunk_size]
+    if stream_level == 0 || chunk_size < 8 {
+      encode_uncompressed_metablock_into(bw, chunk, chunk_size, is_last_chunk)
+    } else {
+      let cmds = if stream_level <= 1 {
+        lz77_find_matches(chunk, chunk_size)
+      } else {
+        lz77_find_matches_chain(chunk, chunk_size, stream_level)
+      }
+      encode_metablock_into(
+        bw, chunk, chunk_size, cmds, stream_level, is_last_chunk,
+      )
+    }
+    offset += chunk_size
+  }
+}
+
+///|
 priv struct BrotliCmd {
   insert_pos : Int
   insert_len : Int

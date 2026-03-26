@@ -1,5 +1,5 @@
 ///|
-/// Buffered Snappy decompressor using signal protocol.
+/// Incremental Snappy decompressor using signal protocol.
 ///
 /// Usage:
 ///   let d = Inflater::new()
@@ -12,6 +12,7 @@
 ///   }
 priv struct InflaterState {
   input_buf : @blit.Buffer
+  mut emitted_len : Int
   mut finished : Bool
   mut failed : SnappyError?
   mut sink : @blit.Buffer?
@@ -24,6 +25,7 @@ struct Inflater(InflaterState)
 pub fn Inflater::new() -> Inflater {
   Inflater({
     input_buf: @blit.Buffer::new(),
+    emitted_len: 0,
     finished: false,
     failed: None,
     sink: None,
@@ -66,56 +68,37 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   if input.length() == 0 {
     return Await
   }
-  // Parse the complete Snappy stream
-  // Read varint for uncompressed length
-  let read_len_result = try? read_varint(input[:], 0)
-  let (uncompressed_len, data_start) = match read_len_result {
+  let scratch = @blit.Buffer::new(size_hint=(input.length() * 2).max(256))
+  let complete = try? snappy_decompress_prefix(input, scratch)
+  let complete = match complete {
     Ok(v) => v
-    Err(e) =>
-      match e {
-        UnexpectedEOF => return Await
-        _ => {
-          s.failed = Some(e)
-          return Error(e)
+    Err(e) => {
+      s.failed = Some(e)
+      return Error(e)
+    }
+  }
+  let output = scratch.to_bytes()
+  if output.length() > s.emitted_len {
+    let delta = output[s.emitted_len:]
+    s.emitted_len = output.length()
+    if complete {
+      s.finished = true
+    }
+    match s.sink {
+      Some(sink) => {
+        sink.write_bytesview(delta)
+        if complete {
+          End
+        } else {
+          Await
         }
       }
-  }
-  if uncompressed_len == 0 {
-    if data_start != input.length() {
-      let err = CorruptInput("trailing bytes after end of stream")
-      s.failed = Some(err)
-      return Error(err)
+      None => Data(delta)
     }
+  } else if complete {
     s.finished = true
-    return End
-  }
-  let dst = FixedArray::make(uncompressed_len, b'\x00')
-  let decode_result = try? decode_block(
-    input[:],
-    data_start,
-    dst,
-    uncompressed_len,
-  )
-  let n = match decode_result {
-    Ok(v) => v
-    Err(e) =>
-      match e {
-        UnexpectedEOF => return Await
-        _ => {
-          s.failed = Some(e)
-          return Error(e)
-        }
-      }
-  }
-  s.finished = true
-  match s.sink {
-    Some(sink) => {
-      sink.write_fixed(dst, 0, n)
-      End
-    }
-    None => {
-      let result = Bytes::makei(n, fn(i) { dst.unsafe_get(i) })
-      Data(result[:])
-    }
+    End
+  } else {
+    Await
   }
 }

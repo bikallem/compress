@@ -1,9 +1,37 @@
 ///|
 /// Decompresses Brotli-encoded data.
 pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
-  guard data.length() > 0 else { raise BrotliError::CorruptData("empty input") }
-  let br = BitReader::new(data[:])
   let sink = @blit.Buffer::new(size_hint=data.length() * 4)
+  let complete = brotli_decompress_prefix(data, sink)
+  guard complete else { raise BrotliError::UnexpectedEOF }
+  sink.to_bytes()
+}
+
+///|
+fn brotli_decompress_prefix(
+  data : Bytes,
+  sink : @blit.Buffer,
+) -> Bool raise BrotliError {
+  guard data.length() > 0 else { raise BrotliError::CorruptData("empty input") }
+  let result : Result[Unit, BrotliError] = try? brotli_decompress_into(
+    data, sink,
+  )
+  match result {
+    Ok(_) => true
+    Err(e) =>
+      match e {
+        BrotliError::UnexpectedEOF => false
+        _ => raise e
+      }
+  }
+}
+
+///|
+fn brotli_decompress_into(
+  data : Bytes,
+  sink : @blit.Buffer,
+) -> Unit raise BrotliError {
+  let br = BitReader::new(data[:])
   let wbits = decode_wbits(br)
   let window_size = 1 << wbits
   let max_backward = window_size
@@ -58,7 +86,6 @@ pub fn decompress(data : Bytes) -> Bytes raise BrotliError {
     decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_ref)
     dist_rb_idx = dist_rb_ref.val
   }
-  sink.to_bytes()
 }
 
 ///|
