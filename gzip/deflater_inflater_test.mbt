@@ -255,3 +255,33 @@ test "streaming gzip inflater preserves repeat state across byte chunks" {
     Error(e) => raise e
   }
 }
+
+///|
+test "streaming gzip inflater validates FHCRC across header chunks" {
+  let original = b"header crc fixture"
+  let compressed = gzip_with_fhcrc(@gzip.compress(original))
+  let d = @gzip.Inflater::new()
+  let buf = @blit.Buffer::new()
+  let mut pos = 0
+  loop d.decode() {
+    Await =>
+      if pos >= compressed.length() {
+        fail("unexpected Await after full input")
+      } else {
+        let end = if pos + 3 > compressed.length() {
+          compressed.length()
+        } else {
+          pos + 3
+        }
+        d.src(compressed[pos:end])
+        pos = end
+        continue d.decode()
+      }
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => assert_eq(buf.to_bytes(), original)
+    Error(e) => raise e
+  }
+}

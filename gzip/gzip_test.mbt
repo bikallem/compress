@@ -122,6 +122,36 @@ fn gzip_hex_to_bytes(hex : String) -> Bytes {
 }
 
 ///|
+fn gzip_with_fhcrc(data : Bytes) -> Bytes {
+  let header = Bytes::makei(10, fn(i) {
+    if i == 3 {
+      (data[i].to_int() | 0x02).to_byte()
+    } else {
+      data[i]
+    }
+  })
+  let hcrc = @checksum.crc32(header[:]) & 0xFFFFU
+  let out = @blit.Buffer::new(size_hint=data.length() + 2)
+  out.write_bytes(header)
+  out.write_byte((hcrc & 0xFFU).to_byte())
+  out.write_byte(((hcrc >> 8) & 0xFFU).to_byte())
+  out.write_bytesview(data[10:])
+  out.to_bytes()
+}
+
+///|
+fn gzip_with_bad_fhcrc(data : Bytes) -> Bytes {
+  let with_crc = gzip_with_fhcrc(data)
+  Bytes::makei(with_crc.length(), fn(i) {
+    if i == 10 {
+      (with_crc[i].to_int() ^ 0xFF).to_byte()
+    } else {
+      with_crc[i]
+    }
+  })
+}
+
+///|
 fn gzip_hex_digit(c : UInt16) -> Int {
   if c >= '0' && c <= '9' {
     c.to_int() - 48
@@ -177,6 +207,22 @@ test "gzip checksum mismatch" {
   let corrupted = buf.to_bytes()
   let result = try? @gzip.decompress(corrupted)
   guard result is Err(_) else { fail("expected checksum mismatch error") }
+}
+
+///|
+test "gzip accepts valid FHCRC" {
+  let data = b"header crc fixture"
+  let compressed = gzip_with_fhcrc(@gzip.compress(data))
+  let (decompressed, _header) = @gzip.decompress(compressed)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "gzip rejects invalid FHCRC" {
+  let data = b"header crc fixture"
+  let compressed = gzip_with_bad_fhcrc(@gzip.compress(data))
+  let result = try? @gzip.decompress(compressed)
+  guard result is Err(_) else { fail("expected error for bad header checksum") }
 }
 
 ///|

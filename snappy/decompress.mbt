@@ -149,5 +149,8 @@ fn decode_block(
     }
   }
   guard dst_pos == uncompressed_len else { raise SnappyError::UnexpectedEOF }
+  guard src_pos == src_len else {
+    raise SnappyError::CorruptInput("trailing bytes after end of stream")
+  }
   dst_pos
 }

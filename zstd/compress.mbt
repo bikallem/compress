@@ -6,7 +6,6 @@ pub fn compress(
   level? : CompressionLevel = Default,
   dict? : Bytes = Bytes::default(),
 ) -> Bytes {
-  ignore(level)
   let parsed_dict = parse_dictionary_for_encoder(dict)
   let src = data[:]
   let src_len = data.length()
@@ -26,11 +25,35 @@ pub fn compress(
     pos += 3
     out.unsafe_set(pos, src.unsafe_get(0))
     pos += 1
+  } else if zstd_is_fast_mode(level) {
+    let mut src_pos = 0
+    while src_pos < src_len {
+      let block_end = if src_pos + MAX_BLOCK_SIZE < src_len {
+        src_pos + MAX_BLOCK_SIZE
+      } else {
+        src_len
+      }
+      let block_len = block_end - src_pos
+      let is_last = block_end == src_len
+      pos = write_block_header_fixed(
+        out,
+        pos,
+        is_last,
+        BLOCK_TYPE_RAW,
+        block_len,
+      )
+      for i in 0..<block_len {
+        out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
+      }
+      pos += block_len
+      src_pos = block_end
+    }
   } else {
     let (sequences, literals, lit_count) = find_sequences_with_prefix(
       src,
       parsed_dict.content[:],
       parsed_dict.rep,
+      level,
     )
     if sequences.length() == 0 {
       // No sequences found, emit as raw blocks
@@ -220,6 +243,37 @@ const ZSTD_HASH_SIZE : Int = 16384
 const ZSTD_MIN_MATCH : Int = 4
 
 ///|
+priv struct ZstdSearchConfig {
+  lazy_steps : Int
+}
+
+///|
+fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
+  match level {
+    Fast => { lazy_steps: 0 }
+    Default => { lazy_steps: 1 }
+    Best => { lazy_steps: 2 }
+    Level(n) =>
+      if n <= 1 {
+        { lazy_steps: 0 }
+      } else if n >= 8 {
+        { lazy_steps: 2 }
+      } else {
+        { lazy_steps: 1 }
+      }
+  }
+}
+
+///|
+fn zstd_is_fast_mode(level : CompressionLevel) -> Bool {
+  match level {
+    Fast => true
+    Level(n) => n <= 1
+    Default | Best => false
+  }
+}
+
+///|
 fn zstd_hash(data : BytesView, pos : Int) -> Int {
   let u = data.unsafe_get(pos).to_int() |
     (data.unsafe_get(pos + 1).to_int() << 8) |
@@ -238,17 +292,30 @@ priv struct ZstdSequence {
 }
 
 ///|
+priv struct MatchCandidate {
+  length : Int
+  offset : Int
+  rep_idx : Int
+}
+
+///|
 fn find_sequences_with_prefix(
   src : BytesView,
   prefix : BytesView,
   rep_init : Array[Int],
+  level : CompressionLevel,
 ) -> (Array[ZstdSequence], FixedArray[Byte], Int) {
   let combined = @blit.Buffer::new(size_hint=prefix.length() + src.length())
   if prefix.length() > 0 {
     combined.write_bytesview(prefix)
   }
   combined.write_bytesview(src)
-  find_sequences_combined(combined.to_bytes(), prefix.length(), rep_init)
+  find_sequences_combined(
+    combined.to_bytes(),
+    prefix.length(),
+    rep_init,
+    zstd_search_config(level),
+  )
 }
 
 ///|
@@ -256,6 +323,7 @@ fn find_sequences_combined(
   combined : Bytes,
   base : Int,
   rep_init : Array[Int],
+  config : ZstdSearchConfig,
 ) -> (Array[ZstdSequence], FixedArray[Byte], Int) {
   let src = combined[:]
   let src_len = combined.length() - base
@@ -283,54 +351,40 @@ fn find_sequences_combined(
     let hash = zstd_hash(src, ip)
     let ref_pos = hash_table.unsafe_get(hash)
     hash_table.unsafe_set(hash, ip)
-    // Try repeat offsets first
-    let mut best_offset = 0
-    let mut best_match_len = 0
-    let mut best_rep_idx = -1
-    for r in 0..<3 {
-      let rep_off = rep.unsafe_get(r)
-      if ip >= rep_off &&
-        ip + ZSTD_MIN_MATCH <= combined.length() &&
-        src.unsafe_get(ip - rep_off) == src.unsafe_get(ip) &&
-        src.unsafe_get(ip - rep_off + 1) == src.unsafe_get(ip + 1) &&
-        src.unsafe_get(ip - rep_off + 2) == src.unsafe_get(ip + 2) &&
-        src.unsafe_get(ip - rep_off + 3) == src.unsafe_get(ip + 3) {
-        let mut mlen = ZSTD_MIN_MATCH
-        while ip + mlen < combined.length() &&
-              src.unsafe_get(ip - rep_off + mlen) == src.unsafe_get(ip + mlen) {
-          mlen += 1
-        }
-        if mlen > best_match_len {
-          best_match_len = mlen
-          best_offset = rep_off
-          best_rep_idx = r
-        }
+    let mut match_ip = ip
+    let mut best = find_best_match(
+      src,
+      match_ip,
+      combined.length(),
+      ref_pos,
+      rep,
+    )
+    let mut lazy_steps = config.lazy_steps
+    while lazy_steps > 0 &&
+          best.length >= ZSTD_MIN_MATCH &&
+          best.length < 32 &&
+          match_ip + 1 < mf_limit {
+      let next_ip = match_ip + 1
+      let next_hash = zstd_hash(src, next_ip)
+      let next_ref = hash_table.unsafe_get(next_hash)
+      hash_table.unsafe_set(next_hash, next_ip)
+      let next_best = find_best_match(
+        src,
+        next_ip,
+        combined.length(),
+        next_ref,
+        rep,
+      )
+      if next_best.length > best.length + 1 {
+        match_ip = next_ip
+        best = next_best
+        lazy_steps -= 1
+        continue
       }
+      break
     }
-    // Try hash match
-    if ref_pos >= 0 &&
-      src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
-      src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
-      src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
-      src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
-      let mut match_len = ZSTD_MIN_MATCH
-      while ip + match_len < combined.length() &&
-            src.unsafe_get(ref_pos + match_len) ==
-            src.unsafe_get(ip + match_len) {
-        match_len += 1
-      }
-      let hash_offset = ip - ref_pos
-      // Prefer hash match only if significantly longer than rep match
-      if match_len > best_match_len + 1 || best_rep_idx < 0 {
-        if match_len > best_match_len || best_rep_idx < 0 {
-          best_match_len = match_len
-          best_offset = hash_offset
-          best_rep_idx = -1
-        }
-      }
-    }
-    if best_match_len >= ZSTD_MIN_MATCH {
-      let lit_len = ip - anchor
+    if best.length >= ZSTD_MIN_MATCH {
+      let lit_len = match_ip - anchor
       for i in 0..<lit_len {
         literals.unsafe_set(lit_pos, src.unsafe_get(anchor + i))
         lit_pos += 1
@@ -339,11 +393,11 @@ fn find_sequences_combined(
       // The decoder interprets offset_value based on lit_len:
       //   lit_len > 0: val 1 => rep[0], val 2 => rep[1], val 3 => rep[2]
       //   lit_len == 0: val 1 => rep[1], val 2 => rep[2], val 3 => rep[0]-1
-      let offset_value = if best_rep_idx >= 0 {
+      let offset_value = if best.rep_idx >= 0 {
         if lit_len > 0 {
-          best_rep_idx + 1
+          best.rep_idx + 1
           // lit_len == 0: shift the mapping
-        } else if best_rep_idx == 0 {
+        } else if best.rep_idx == 0 {
           // Want rep[0], but val 1 means rep[1] when lit_len==0
           // Need to check if rep[0] == rep[1]; if so val 1 works
           // Otherwise emit as new offset to be safe
@@ -352,32 +406,32 @@ fn find_sequences_combined(
           } else {
             rep.unsafe_get(0) + 3 // emit as new offset
           }
-        } else if best_rep_idx == 1 {
+        } else if best.rep_idx == 1 {
           1 // val 1 with lit_len==0 => rep[1], which is what we want
         } else {
           2 // val 2 with lit_len==0 => rep[2], which is what we want
         }
       } else {
-        best_offset + 3 // actual offset + 3 for new offsets
+        best.offset + 3 // actual offset + 3 for new offsets
       }
       let actual_off = resolve_offset(rep, offset_value, lit_len)
       sequences.push({
         lit_len,
         offset: offset_value,
-        match_len: best_match_len,
+        match_len: best.length,
         actual_offset: actual_off,
       })
       // Update hash table for positions within the match for better future matches
-      let hash_end = if ip + best_match_len < mf_limit {
-        ip + best_match_len
+      let hash_end = if match_ip + best.length < mf_limit {
+        match_ip + best.length
       } else {
         mf_limit
       }
-      for j = ip + 1; j < hash_end; j = j + 1 {
+      for j = match_ip + 1; j < hash_end; j = j + 1 {
         let h = zstd_hash(src, j)
         hash_table.unsafe_set(h, j)
       }
-      ip += best_match_len
+      ip = match_ip + best.length
       anchor = ip
       continue
     }
@@ -389,6 +443,53 @@ fn find_sequences_combined(
     lit_pos += 1
   }
   (sequences, literals, lit_pos)
+}
+
+///|
+fn find_best_match(
+  src : BytesView,
+  ip : Int,
+  src_end : Int,
+  ref_pos : Int,
+  rep : Array[Int],
+) -> MatchCandidate {
+  let mut best = { length: 0, offset: 0, rep_idx: -1 }
+  for r in 0..<3 {
+    let rep_off = rep.unsafe_get(r)
+    if ip >= rep_off &&
+      ip + ZSTD_MIN_MATCH <= src_end &&
+      src.unsafe_get(ip - rep_off) == src.unsafe_get(ip) &&
+      src.unsafe_get(ip - rep_off + 1) == src.unsafe_get(ip + 1) &&
+      src.unsafe_get(ip - rep_off + 2) == src.unsafe_get(ip + 2) &&
+      src.unsafe_get(ip - rep_off + 3) == src.unsafe_get(ip + 3) {
+      let mut mlen = ZSTD_MIN_MATCH
+      while ip + mlen < src_end &&
+            src.unsafe_get(ip - rep_off + mlen) == src.unsafe_get(ip + mlen) {
+        mlen += 1
+      }
+      if mlen > best.length {
+        best = { length: mlen, offset: rep_off, rep_idx: r }
+      }
+    }
+  }
+  if ref_pos >= 0 &&
+    src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
+    src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
+    src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
+    src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
+    let mut match_len = ZSTD_MIN_MATCH
+    while ip + match_len < src_end &&
+          src.unsafe_get(ref_pos + match_len) == src.unsafe_get(ip + match_len) {
+      match_len += 1
+    }
+    let hash_offset = ip - ref_pos
+    if match_len > best.length + 1 || best.rep_idx < 0 {
+      if match_len > best.length || best.rep_idx < 0 {
+        best = { length: match_len, offset: hash_offset, rep_idx: -1 }
+      }
+    }
+  }
+  best
 }
 
 // ── FSE CTable (compression table) ─────────────────────────────────

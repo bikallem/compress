@@ -116,8 +116,17 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       FrameHeader =>
         match try_parse_frame_header(input[s.input_pos:]) {
           NeedMore => return Await
+          Skippable(total_bytes) => {
+            if s.input_pos + total_bytes > input.length() {
+              return Await
+            }
+            s.input_pos += total_bytes
+            compact_input(s)
+            continue
+          }
           Error(e) => return fail_inflater(s, e)
           Parsed(header, consumed) => {
+            s.xxh.reset()
             if header.dict_id != 0U {
               if s.dict.content.length() == 0 {
                 return fail_inflater(
@@ -230,11 +239,10 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
             }
           None => ()
         }
-        if s.input_pos != input.length() {
-          return fail_inflater(
-            s,
-            ZstdError::CorruptData("trailing bytes after frame end"),
-          )
+        if s.input_pos < input.length() {
+          s.phase = FrameHeader
+          compact_input(s)
+          continue
         }
         s.phase = Done
         compact_input(s)

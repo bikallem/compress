@@ -183,6 +183,22 @@ fn zstd_hex_to_bytes(hex : String) -> Bytes {
 }
 
 ///|
+fn zstd_skippable_frame(payload : Bytes) -> Bytes {
+  let out = @blit.Buffer::new(size_hint=8 + payload.length())
+  out.write_byte(0x50)
+  out.write_byte(0x2A)
+  out.write_byte(0x4D)
+  out.write_byte(0x18)
+  let size = payload.length()
+  out.write_byte((size & 0xFF).to_byte())
+  out.write_byte(((size >> 8) & 0xFF).to_byte())
+  out.write_byte(((size >> 16) & 0xFF).to_byte())
+  out.write_byte(((size >> 24) & 0xFF).to_byte())
+  out.write_bytes(payload)
+  out.to_bytes()
+}
+
+///|
 fn formatted_dict_fixture() -> Bytes {
   zstd_hex_to_bytes(
     "37a430ec2935b0442610c0178603333003333003333003333017baf796522a1c" +
@@ -320,4 +336,12 @@ test "zstd compress emits formatted dictionary id" {
   assert_true((compressed[4].to_int() & 0x03) != 0)
   let decompressed = @zstd.decompress(compressed, dict~)
   assert_eq(decompressed, data)
+}
+
+///|
+test "zstd skips skippable frames before data frame" {
+  let compressed = zstd_skippable_frame(b"skippable metadata") +
+    @zstd.compress(b"Hello, World!")
+  let decompressed = @zstd.decompress(compressed)
+  assert_eq(decompressed, b"Hello, World!")
 }

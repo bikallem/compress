@@ -69,17 +69,29 @@ test "round-trip: all byte values" {
 }
 
 ///|
-test "signal protocol: chunked input" {
+test "signal protocol: buffered inflater accepts chunked input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @brotli.compress(data)
   let d = @brotli.Inflater::new()
-  d.src(compressed[:])
   let buf = @blit.Buffer::new()
+  let chunk_size = 7
+  let mut pos = 0
   loop d.decode() {
-    Await => {
-      inspect(false, content="true")
-      break
-    }
+    Await =>
+      if pos >= compressed.length() {
+        inspect(false, content="true")
+        break
+      } else {
+        let end = if pos + chunk_size > compressed.length() {
+          compressed.length()
+        } else {
+          pos + chunk_size
+        }
+        let chunk = Bytes::makei(end - pos, fn(i) { compressed[pos + i] })
+        d.src(chunk[:])
+        pos = end
+        continue d.decode()
+      }
     Data(chunk) => {
       buf.write_bytesview(chunk)
       continue d.decode()
@@ -95,12 +107,14 @@ test "signal protocol: deflater streaming" {
   let d = @brotli.Deflater::new()
   match d.encode(Some(data[:512])) {
     Ok => ()
-    Data(_) | End => ()
+    Data(_) | End =>
+      fail("brotli buffered deflater should not emit before finish")
     Error(e) => raise e
   }
   match d.encode(Some(data[512:])) {
     Ok => ()
-    Data(_) | End => ()
+    Data(_) | End =>
+      fail("brotli buffered deflater should not emit before finish")
     Error(e) => raise e
   }
   let buf = @blit.Buffer::new()

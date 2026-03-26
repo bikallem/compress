@@ -81,6 +81,11 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       }
   }
   if uncompressed_len == 0 {
+    if data_start != input.length() {
+      let err = CorruptInput("trailing bytes after end of stream")
+      s.failed = Some(err)
+      return Error(err)
+    }
     s.finished = true
     return End
   }

@@ -10,6 +10,7 @@ priv struct ZstdFrameHeader {
 priv enum FrameHeaderParse {
   NeedMore
   Parsed(ZstdFrameHeader, Int)
+  Skippable(Int)
   Error(ZstdError)
 }
 
@@ -46,6 +47,18 @@ fn try_parse_frame_header(src : BytesView) -> FrameHeaderParse {
     return NeedMore
   }
   let magic = read_u32_le(src, 0)
+  if (magic & ZSTD_MAGIC_SKIPPABLE_MASK) == ZSTD_MAGIC_SKIPPABLE_START {
+    if src.length() < 8 {
+      return NeedMore
+    }
+    let frame_size_u = read_u32_le(src, 4)
+    if frame_size_u > 0x7FFFFFFFU {
+      return Error(
+        ZstdError::InvalidHeader("skippable frame size exceeds supported range"),
+      )
+    }
+    return Skippable(8 + frame_size_u.reinterpret_as_int())
+  }
   if magic != ZSTD_MAGIC {
     return Error(ZstdError::InvalidHeader("invalid magic number"))
   }

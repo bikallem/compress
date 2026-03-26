@@ -183,6 +183,13 @@ fn try_parse_gzip_header(
     if pos + 2 > data.length() {
       return Err(NeedMore)
     }
+    let expected_hcrc = data[pos].to_uint() | (data[pos + 1].to_uint() << 8)
+    let actual_hcrc = gzip_header_crc16(data[:], pos)
+    if actual_hcrc != expected_hcrc {
+      return Err(
+        HeaderError(GzipError::InvalidHeader("header checksum mismatch")),
+      )
+    }
     pos += 2
   }
   Ok((pos, Header::{ name, comment, extra, mod_time: mtime, os }))

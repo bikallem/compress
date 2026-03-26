@@ -1,5 +1,5 @@
 ///|
-/// Streaming Brotli compressor using signal protocol.
+/// Buffered Brotli compressor using signal protocol.
 priv struct EncoderState {
   level : CompressionLevel
   input_buf : @blit.Buffer

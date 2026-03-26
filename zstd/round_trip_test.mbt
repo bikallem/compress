@@ -259,3 +259,66 @@ test "signal protocol: deflater emits before finish on full block" {
   let decompressed = @zstd.decompress(compressed)
   assert_eq(decompressed, data)
 }
+
+///|
+fn zstd_level_fixture() -> Bytes {
+  let buf = @blit.Buffer::new()
+  for _ in 0..<128 {
+    buf.write_bytes(b"aaaaabaaaaacaaaaadaaaaefaaaaabaaaaacaaaaadaaaaef")
+    buf.write_bytes(b"token-1 route=/v1/item/123 status=200 cluster=alpha ")
+    buf.write_bytes(b"aaaaabaaaaacaaaaadaaaaefaaaaabaaaaacaaaaadaaaaeg")
+  }
+  buf.to_bytes()
+}
+
+///|
+test "compression levels change zstd one-shot output" {
+  let data = zstd_level_fixture()
+  let fast = @zstd.compress(data, level=Fast)
+  let best = @zstd.compress(data, level=Best)
+  assert_eq(@zstd.decompress(fast), data)
+  assert_eq(@zstd.decompress(best), data)
+  assert_true(best.length() < fast.length())
+}
+
+///|
+test "signal protocol: zstd deflater honors compression level" {
+  let data = zstd_level_fixture()
+  let fast = @zstd.Deflater::new(level=Fast)
+  let best = @zstd.Deflater::new(level=Best)
+  let fast_buf = @blit.Buffer::new()
+  let best_buf = @blit.Buffer::new()
+  match fast.encode(Some(data[:])) {
+    Data(out) => fast_buf.write_bytesview(out)
+    Ok | End => ()
+    Error(e) => raise e
+  }
+  loop fast.encode(None) {
+    Data(out) => {
+      fast_buf.write_bytesview(out)
+      continue fast.encode(None)
+    }
+    End => break
+    Ok => ()
+    Error(e) => raise e
+  }
+  match best.encode(Some(data[:])) {
+    Data(out) => best_buf.write_bytesview(out)
+    Ok | End => ()
+    Error(e) => raise e
+  }
+  loop best.encode(None) {
+    Data(out) => {
+      best_buf.write_bytesview(out)
+      continue best.encode(None)
+    }
+    End => break
+    Ok => ()
+    Error(e) => raise e
+  }
+  let fast_out = fast_buf.to_bytes()
+  let best_out = best_buf.to_bytes()
+  assert_eq(@zstd.decompress(fast_out), data)
+  assert_eq(@zstd.decompress(best_out), data)
+  assert_true(best_out.length() < fast_out.length())
+}

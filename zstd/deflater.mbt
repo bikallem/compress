@@ -3,6 +3,7 @@ const ZSTD_STREAM_WINDOW : Int = MAX_WINDOW_SIZE
 
 ///|
 priv struct EncoderState {
+  level : CompressionLevel
   dict : ZstdDictionary
   mut input_buf : @blit.Buffer
   mut input_pos : Int
@@ -21,9 +22,9 @@ pub fn Deflater::new(
   level? : CompressionLevel = Default,
   dict? : Bytes = Bytes::default(),
 ) -> Deflater {
-  ignore(level)
   let parsed_dict = parse_dictionary_for_encoder(dict)
   Deflater({
+    level,
     dict: parsed_dict,
     input_buf: @blit.Buffer::new(),
     input_pos: 0,
@@ -86,13 +87,20 @@ fn pump_encoder(s : EncoderState, finish : Bool) -> Bytes? {
       let mut remaining = available
       while remaining > MAX_BLOCK_SIZE {
         let chunk = bytes_slice(input, s.input_pos, MAX_BLOCK_SIZE)
-        write_encoded_block(out, chunk, encoder_prefix(s), s.rep, false)
+        write_encoded_block(
+          out,
+          chunk,
+          encoder_prefix(s),
+          s.rep,
+          s.level,
+          false,
+        )
         append_encode_history(s, chunk)
         s.input_pos += MAX_BLOCK_SIZE
         remaining -= MAX_BLOCK_SIZE
       }
       let chunk = bytes_slice(input, s.input_pos, remaining)
-      write_encoded_block(out, chunk, encoder_prefix(s), s.rep, true)
+      write_encoded_block(out, chunk, encoder_prefix(s), s.rep, s.level, true)
       append_encode_history(s, chunk)
       s.input_pos += remaining
     }
@@ -104,7 +112,7 @@ fn pump_encoder(s : EncoderState, finish : Bool) -> Bytes? {
     let mut remaining = available
     while remaining >= MAX_BLOCK_SIZE {
       let chunk = bytes_slice(input, s.input_pos, MAX_BLOCK_SIZE)
-      write_encoded_block(out, chunk, encoder_prefix(s), s.rep, false)
+      write_encoded_block(out, chunk, encoder_prefix(s), s.rep, s.level, false)
       append_encode_history(s, chunk)
       s.input_pos += MAX_BLOCK_SIZE
       remaining -= MAX_BLOCK_SIZE
@@ -201,6 +209,7 @@ fn write_encoded_block(
   chunk : Bytes,
   prefix : Bytes,
   rep : Array[Int],
+  level : CompressionLevel,
   is_last : Bool,
 ) -> Unit {
   let chunk_view = chunk[:]
@@ -213,11 +222,17 @@ fn write_encoded_block(
     dst.write_byte(chunk[0])
     return
   }
+  if zstd_is_fast_mode(level) {
+    write_block_header_buffer(dst, is_last, BLOCK_TYPE_RAW, chunk.length())
+    dst.write_bytes(chunk)
+    return
+  }
   let rep_next = copy_rep_offsets(rep)
   let (sequences, literals, lit_count) = find_sequences_with_prefix(
     chunk_view,
     prefix[:],
     rep_next,
+    level,
   )
   if sequences.length() > 0 {
     let comp_buf = FixedArray::make(chunk.length() + 256, b'\x00')

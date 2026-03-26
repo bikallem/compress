@@ -69,6 +69,22 @@ test "snappy truncated data" {
 }
 
 ///|
+test "snappy rejects trailing bytes after payload" {
+  let compressed = @snappy.compress(b"hello")
+  let trailing = compressed + b"\x00"
+  let result = try? @snappy.decompress(trailing)
+  guard result is Err(_) else { fail("expected error for trailing bytes") }
+}
+
+///|
+test "snappy rejects trailing bytes after empty stream" {
+  let compressed = @snappy.compress(b"")
+  let trailing = compressed + b"\x00"
+  let result = try? @snappy.decompress(trailing)
+  guard result is Err(_) else { fail("expected error for trailing bytes") }
+}
+
+///|
 test "snappy single byte" {
   let original : Bytes = b"X"
   let compressed = @snappy.compress(original)

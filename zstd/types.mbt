@@ -48,6 +48,13 @@ pub(all) enum CompressionLevel {
 const ZSTD_MAGIC : UInt = 0xFD2FB528_U
 
 ///|
+/// Zstandard skippable-frame magic prefix.
+const ZSTD_MAGIC_SKIPPABLE_START : UInt = 0x184D2A50_U
+
+///|
+const ZSTD_MAGIC_SKIPPABLE_MASK : UInt = 0xFFFFFFF0_U
+
+///|
 /// Block types in Zstandard.
 const BLOCK_TYPE_RAW : Int = 0
 

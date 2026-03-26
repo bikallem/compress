@@ -1,8 +1,7 @@
 ///|
-/// Streaming Brotli decompressor using signal protocol.
+/// Buffered Brotli decompressor using signal protocol.
 priv struct InflaterState {
-  mut input : BytesView
-  mut input_pos : Int
+  input_buf : @blit.Buffer
   mut finished : Bool
   mut failed : BrotliError?
   mut sink : @blit.Buffer?
@@ -14,8 +13,7 @@ struct Inflater(InflaterState)
 ///|
 pub fn Inflater::new() -> Inflater {
   Inflater({
-    input: b""[:],
-    input_pos: 0,
+    input_buf: @blit.Buffer::new(),
     finished: false,
     failed: None,
     sink: None,
@@ -28,12 +26,11 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   if s.finished || s.failed is Some(_) {
     return
   }
-  s.input = data
-  s.input_pos = 0
+  s.input_buf.write_bytesview(data)
 }
 
 ///|
-/// Enable zero-copy direct output mode for one-shot decompression.
+/// Enable direct output accumulation for buffered decompression.
 pub fn Inflater::enable_direct_output(self : Inflater, capacity : Int) -> Unit {
   self.0.sink = Some(@blit.Buffer::new(size_hint=capacity))
 }
@@ -57,15 +54,15 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   if s.finished {
     return End
   }
-  let input = s.input
-  if s.input_pos >= input.length() {
+  let data = s.input_buf.to_bytes()
+  if data.length() == 0 {
     return Await
   }
-  let data = Bytes::makei(input.length() - s.input_pos, fn(i) {
-    input.unsafe_get(s.input_pos + i)
-  })
   let result = decompress(data) catch {
     e => {
+      if e is UnexpectedEOF {
+        return Await
+      }
       s.failed = Some(e)
       return Error(e)
     }

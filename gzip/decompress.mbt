@@ -92,7 +92,17 @@ fn parse_gzip_header(data : Bytes) -> (Int, Header) raise GzipError {
     if pos + 2 > data.length() {
       raise GzipError::UnexpectedEOF
     }
+    let expected_hcrc = data[pos].to_uint() | (data[pos + 1].to_uint() << 8)
+    let actual_hcrc = gzip_header_crc16(data[:], pos)
+    if actual_hcrc != expected_hcrc {
+      raise GzipError::InvalidHeader("header checksum mismatch")
+    }
     pos += 2
   }
   (pos, Header::{ name, comment, extra, mod_time: mtime, os })
+}
+
+///|
+fn gzip_header_crc16(data : BytesView, header_len : Int) -> UInt {
+  @checksum.crc32(data[0:header_len]) & 0xFFFFU
 }
