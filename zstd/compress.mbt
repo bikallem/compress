@@ -1,17 +1,19 @@
 ///|
 /// Compresses data using the Zstandard format.
-/// Uses LZ77 match finding and zstd compressed blocks with predefined FSE tables.
+/// Uses LZ77 match finding and zstd compressed blocks.
 pub fn compress(
   data : Bytes,
   level? : CompressionLevel = Default,
   dict? : Bytes = Bytes::default(),
-) -> Bytes {
+) -> Bytes raise ZstdError {
   let parsed_dict = parse_dictionary_for_encoder(dict)
   let src = data[:]
   let src_len = data.length()
   let max_out = 18 + src_len + (src_len / MAX_BLOCK_SIZE + 1) * 6 + 4
   let out = FixedArray::make(max_out, b'\x00')
   let mut pos = 0
+  let mut prev_lit_table = parsed_dict.lit_table
+  let mut prev_seq_tables = parsed_dict.seq_tables
   pos += write_zstd_frame_header(out, pos, src_len, parsed_dict.dict_id)
   let xxh = @checksum.XXH64::new()
   xxh.update(src)
@@ -25,38 +27,14 @@ pub fn compress(
     pos += 3
     out.unsafe_set(pos, src.unsafe_get(0))
     pos += 1
-  } else if zstd_is_fast_mode(level) {
-    let mut src_pos = 0
-    while src_pos < src_len {
-      let block_end = if src_pos + MAX_BLOCK_SIZE < src_len {
-        src_pos + MAX_BLOCK_SIZE
-      } else {
-        src_len
-      }
-      let block_len = block_end - src_pos
-      let is_last = block_end == src_len
-      pos = write_block_header_fixed(
-        out,
-        pos,
-        is_last,
-        BLOCK_TYPE_RAW,
-        block_len,
-      )
-      for i in 0..<block_len {
-        out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
-      }
-      pos += block_len
-      src_pos = block_end
-    }
   } else {
     let (sequences, literals, lit_count) = find_sequences_with_prefix(
       src,
       parsed_dict.content[:],
-      parsed_dict.rep,
+      copy_rep_offsets(parsed_dict.rep),
       level,
     )
     if sequences.length() == 0 {
-      // No sequences found, emit as raw blocks
       let mut src_pos = 0
       while src_pos < src_len {
         let block_end = if src_pos + MAX_BLOCK_SIZE < src_len {
@@ -66,22 +44,42 @@ pub fn compress(
         }
         let block_len = block_end - src_pos
         let is_last = block_end == src_len
-        pos = write_block_header_fixed(
-          out,
-          pos,
-          is_last,
-          BLOCK_TYPE_RAW,
-          block_len,
+        let block_bytes = src[src_pos:block_end]
+        let block_literals = fixed_array_from_bytesview(block_bytes)
+        let comp_buf = FixedArray::make(block_len * 2 + 64, b'\x00')
+        let (comp_size, next_lit, next_seq) = compress_literal_only_block(
+          block_literals, 0, block_len, comp_buf, prev_lit_table, prev_seq_tables,
         )
-        for i in 0..<block_len {
-          out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
+        if comp_size > 0 && comp_size < block_len {
+          pos = write_block_header_fixed(
+            out,
+            pos,
+            is_last,
+            BLOCK_TYPE_COMPRESSED,
+            comp_size,
+          )
+          for i in 0..<comp_size {
+            out.unsafe_set(pos + i, comp_buf.unsafe_get(i))
+          }
+          pos += comp_size
+          prev_lit_table = next_lit
+          prev_seq_tables = next_seq
+        } else {
+          pos = write_block_header_fixed(
+            out,
+            pos,
+            is_last,
+            BLOCK_TYPE_RAW,
+            block_len,
+          )
+          for i in 0..<block_len {
+            out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
+          }
+          pos += block_len
         }
-        pos += block_len
         src_pos = block_end
       }
     } else {
-      // Split sequences into blocks of MAX_BLOCK_SIZE decoded bytes.
-      // First, split any sequence whose decoded size exceeds MAX_BLOCK_SIZE.
       let split_seqs : Array[ZstdSequence] = []
       for i in 0..<sequences.length() {
         let seq = sequences.unsafe_get(i)
@@ -89,7 +87,6 @@ pub fn compress(
         if seq_decoded <= MAX_BLOCK_SIZE {
           split_seqs.push(seq)
         } else {
-          // Need to split this sequence.
           let actual_off = seq.actual_offset
           let mut remaining_match = seq.match_len
           let mut first = true
@@ -101,12 +98,7 @@ pub fn compress(
             } else {
               remaining_match
             }
-            let offset = if first {
-              seq.offset
-            } else {
-              // Continuation: emit as new offset to avoid lit_len=0 repeat offset ambiguity
-              actual_off + 3
-            }
+            let offset = if first { seq.offset } else { actual_off + 3 }
             split_seqs.push({
               lit_len,
               offset,
@@ -123,7 +115,6 @@ pub fn compress(
       let mut lit_offset = 0
       let mut decoded_total = 0
       while seq_idx < num_seq {
-        // Collect sequences for this block (up to MAX_BLOCK_SIZE decoded bytes)
         let block_seqs : Array[ZstdSequence] = []
         let mut block_decoded = 0
         let block_lit_start = lit_offset
@@ -141,20 +132,18 @@ pub fn compress(
           lit_offset += seq.lit_len
           seq_idx += 1
         }
-        // Check if there are trailing literals (only for the last block)
         let mut trailing_lit_count = 0
         if seq_idx >= num_seq {
-          // Last block gets trailing literals
           trailing_lit_count = lit_count - lit_offset
         }
         let total_block_lits = block_lit_count + trailing_lit_count
         let block_content_size = block_decoded + trailing_lit_count
         decoded_total += block_content_size
         let is_last = seq_idx >= num_seq
-        // Encode this block
-        let comp_buf = FixedArray::make(block_content_size + 256, b'\x00')
-        let comp_size = compress_block_from_sequences(
-          block_seqs, literals, block_lit_start, total_block_lits, comp_buf,
+        let comp_buf = FixedArray::make(block_content_size * 2 + 256, b'\x00')
+        let (comp_size, next_lit, next_seq) = compress_block_from_sequences(
+          block_seqs, literals, block_lit_start, total_block_lits, comp_buf, prev_lit_table,
+          prev_seq_tables,
         )
         if comp_size > 0 && comp_size < block_content_size {
           pos = write_block_header_fixed(
@@ -168,8 +157,9 @@ pub fn compress(
             out.unsafe_set(pos + i, comp_buf.unsafe_get(i))
           }
           pos += comp_size
+          prev_lit_table = next_lit
+          prev_seq_tables = next_seq
         } else {
-          // Fall back to raw block - need the original source bytes
           let raw_start = decoded_total - block_content_size
           pos = write_block_header_fixed(
             out,
@@ -199,6 +189,11 @@ pub fn compress(
   let result = @blit.make_uninit(pos)
   @blit.blit_fixed_array(result, 0, out, 0, pos)
   result.unsafe_reinterpret_as_bytes()
+}
+
+///|
+fn fixed_array_from_bytesview(data : BytesView) -> FixedArray[Byte] {
+  FixedArray::makei(data.length(), fn(i) { data.unsafe_get(i) })
 }
 
 ///|
@@ -261,15 +256,6 @@ fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
       } else {
         { lazy_steps: 1 }
       }
-  }
-}
-
-///|
-fn zstd_is_fast_mode(level : CompressionLevel) -> Bool {
-  match level {
-    Fast => true
-    Level(n) => n <= 1
-    Default | Best => false
   }
 }
 
@@ -507,6 +493,7 @@ priv struct FseSymbolTT {
 priv struct FseCTable {
   state_table : FixedArray[Int]
   symbol_tt : FixedArray[FseSymbolTT]
+  table_log : Int
 }
 
 ///|
@@ -594,7 +581,7 @@ fn build_fse_ctable(
     state_table.unsafe_set(sp, table_size + i)
     sym_pos.unsafe_set(sym, sp + 1)
   }
-  { state_table, symbol_tt }
+  { state_table, symbol_tt, table_log }
 }
 
 ///|
@@ -750,6 +737,21 @@ fn get_ml_code(ml : Int) -> (Int, Int, Int) {
 // ── Compressed block encoding ───────────────────────────────────────
 
 ///|
+priv struct HuffmanCodebook {
+  codes : FixedArray[Int]
+  bits : FixedArray[Int]
+  valid : FixedArray[Bool]
+}
+
+///|
+priv struct SeqEncoderChoice {
+  mode : Int
+  ctable : FseCTable?
+  rle_symbol : Int?
+  next_decoder : SeqDecoder
+}
+
+///|
 /// Encode a block from pre-computed sequences and literals.
 fn compress_block_from_sequences(
   sequences : Array[ZstdSequence],
@@ -757,14 +759,151 @@ fn compress_block_from_sequences(
   lit_start : Int,
   lit_count : Int,
   dst : FixedArray[Byte],
-) -> Int {
+  prev_lit_table : ZstdHuffmanTable?,
+  prev_seq_tables : SeqTables?,
+) -> (Int, ZstdHuffmanTable?, SeqTables?) {
   if sequences.length() == 0 {
-    return 0
+    return compress_literal_only_block(
+      literals, lit_start, lit_count, dst, prev_lit_table, prev_seq_tables,
+    )
   }
   let mut pos = 0
-  pos += write_literal_section(dst, pos, literals, lit_start, lit_count)
-  // Write sequences section header
+  let (lit_size, next_lit_table) = write_literal_section(
+    dst, pos, literals, lit_start, lit_count, prev_lit_table,
+  )
+  pos += lit_size
   let num_seq = sequences.length()
+  pos += write_num_sequences_header(dst, pos, num_seq)
+  let ll_codes = FixedArray::make(num_seq, 0)
+  let of_codes = FixedArray::make(num_seq, 0)
+  let ml_codes = FixedArray::make(num_seq, 0)
+  for i in 0..<num_seq {
+    let seq = sequences.unsafe_get(i)
+    let (ll_code, _, _) = get_ll_code(seq.lit_len)
+    let (of_code, _, _) = get_offset_code(seq.offset)
+    let (ml_code, _, _) = get_ml_code(seq.match_len)
+    ll_codes.unsafe_set(i, ll_code)
+    of_codes.unsafe_set(i, of_code)
+    ml_codes.unsafe_set(i, ml_code)
+  }
+  let prev_ll = match prev_seq_tables {
+    Some(t) => Some(t.ll)
+    None => None
+  }
+  let prev_of = match prev_seq_tables {
+    Some(t) => Some(t.of)
+    None => None
+  }
+  let prev_ml = match prev_seq_tables {
+    Some(t) => Some(t.ml)
+    None => None
+  }
+  let ll_choice = select_sequence_encoder(
+    ll_codes,
+    num_seq,
+    35,
+    SeqDecoder::Fse(ll_default_table),
+    ll_default_norm,
+    LL_DEFAULT_ACCURACY,
+    prev_ll,
+  )
+  let of_choice = select_sequence_encoder(
+    of_codes,
+    num_seq,
+    28,
+    SeqDecoder::Fse(of_default_table),
+    of_default_norm,
+    OF_DEFAULT_ACCURACY,
+    prev_of,
+  )
+  let ml_choice = select_sequence_encoder(
+    ml_codes,
+    num_seq,
+    52,
+    SeqDecoder::Fse(ml_default_table),
+    ml_default_norm,
+    ML_DEFAULT_ACCURACY,
+    prev_ml,
+  )
+  let modes = (ll_choice.mode << 6) |
+    (of_choice.mode << 4) |
+    (ml_choice.mode << 2)
+  dst.unsafe_set(pos, modes.to_byte())
+  pos += 1
+  if ll_choice.mode == 1 {
+    match ll_choice.rle_symbol {
+      Some(sym) => dst.unsafe_set(pos, sym.to_byte())
+      None => dst.unsafe_set(pos, b'\x00')
+    }
+    pos += 1
+  }
+  if of_choice.mode == 1 {
+    match of_choice.rle_symbol {
+      Some(sym) => dst.unsafe_set(pos, sym.to_byte())
+      None => dst.unsafe_set(pos, b'\x00')
+    }
+    pos += 1
+  }
+  if ml_choice.mode == 1 {
+    match ml_choice.rle_symbol {
+      Some(sym) => dst.unsafe_set(pos, sym.to_byte())
+      None => dst.unsafe_set(pos, b'\x00')
+    }
+    pos += 1
+  }
+  let stream_size = encode_sequences(
+    sequences,
+    ll_codes,
+    of_codes,
+    ml_codes,
+    ll_choice.ctable,
+    ll_choice.rle_symbol,
+    of_choice.ctable,
+    of_choice.rle_symbol,
+    ml_choice.ctable,
+    ml_choice.rle_symbol,
+    dst,
+    pos,
+  )
+  if stream_size == 0 {
+    return (0, next_lit_table, prev_seq_tables)
+  }
+  pos += stream_size
+  (
+    pos,
+    next_lit_table,
+    Some({
+      ll: ll_choice.next_decoder,
+      of: of_choice.next_decoder,
+      ml: ml_choice.next_decoder,
+    }),
+  )
+}
+
+///|
+fn compress_literal_only_block(
+  literals : FixedArray[Byte],
+  lit_start : Int,
+  lit_count : Int,
+  dst : FixedArray[Byte],
+  prev_lit_table : ZstdHuffmanTable?,
+  prev_seq_tables : SeqTables?,
+) -> (Int, ZstdHuffmanTable?, SeqTables?) {
+  let (lit_size, next_lit_table) = write_literal_section(
+    dst, 0, literals, lit_start, lit_count, prev_lit_table,
+  )
+  let pos = lit_size
+  dst.unsafe_set(pos, b'\x00')
+  (pos + 1, next_lit_table, prev_seq_tables)
+}
+
+///|
+fn write_num_sequences_header(
+  dst : FixedArray[Byte],
+  pos_ : Int,
+  num_seq : Int,
+) -> Int {
+  let mut pos = pos_
   if num_seq < 128 {
     dst.unsafe_set(pos, num_seq.to_byte())
     pos += 1
@@ -779,85 +918,7 @@ fn compress_block_from_sequences(
     dst.unsafe_set(pos + 2, ((val >> 8) & 0xFF).to_byte())
     pos += 3
   }
-  let ll_codes = FixedArray::make(num_seq, 0)
-  let of_codes = FixedArray::make(num_seq, 0)
-  let ml_codes = FixedArray::make(num_seq, 0)
-  let mut ll_symbol = -1
-  let mut of_symbol = -1
-  let mut ml_symbol = -1
-  let mut ll_rle = num_seq > 1
-  let mut of_rle = num_seq > 1
-  let mut ml_rle = num_seq > 1
-  for i in 0..<num_seq {
-    let seq = sequences.unsafe_get(i)
-    let (ll_code, _, _) = get_ll_code(seq.lit_len)
-    let (of_code, _, _) = get_offset_code(seq.offset)
-    let (ml_code, _, _) = get_ml_code(seq.match_len)
-    ll_codes.unsafe_set(i, ll_code)
-    of_codes.unsafe_set(i, of_code)
-    ml_codes.unsafe_set(i, ml_code)
-    if i == 0 {
-      ll_symbol = ll_code
-      of_symbol = of_code
-      ml_symbol = ml_code
-    } else {
-      if ll_code != ll_symbol {
-        ll_rle = false
-      }
-      if of_code != of_symbol {
-        of_rle = false
-      }
-      if ml_code != ml_symbol {
-        ml_rle = false
-      }
-    }
-  }
-  let modes = (if ll_rle { 1 << 6 } else { 0 }) |
-    (if of_rle { 1 << 4 } else { 0 }) |
-    (if ml_rle { 1 << 2 } else { 0 })
-  dst.unsafe_set(pos, modes.to_byte())
-  pos += 1
-  if ll_rle {
-    dst.unsafe_set(pos, ll_symbol.to_byte())
-    pos += 1
-  }
-  if of_rle {
-    dst.unsafe_set(pos, of_symbol.to_byte())
-    pos += 1
-  }
-  if ml_rle {
-    dst.unsafe_set(pos, ml_symbol.to_byte())
-    pos += 1
-  }
-  // Encode sequences
-  let stream_size = encode_sequences(
-    sequences,
-    ll_codes,
-    of_codes,
-    ml_codes,
-    if ll_rle {
-      Some(ll_symbol)
-    } else {
-      None
-    },
-    if of_rle {
-      Some(of_symbol)
-    } else {
-      None
-    },
-    if ml_rle {
-      Some(ml_symbol)
-    } else {
-      None
-    },
-    dst,
-    pos,
-  )
-  if stream_size == 0 {
-    return 0
-  }
-  pos += stream_size
-  pos
+  pos - pos_
 }
 
 ///|
@@ -867,7 +928,8 @@ fn write_literal_section(
   literals : FixedArray[Byte],
   lit_start : Int,
   lit_count : Int,
-) -> Int {
+  prev_lit_table : ZstdHuffmanTable?,
+) -> (Int, ZstdHuffmanTable?) {
   let mut pos = pos_
   let use_rle = if lit_count > 1 {
     let first = literals.unsafe_get(lit_start)
@@ -882,7 +944,69 @@ fn write_literal_section(
   } else {
     false
   }
-  let lit_type = if use_rle { 1 } else { 0 }
+  if use_rle {
+    pos += write_raw_literal_header(dst, pos, lit_count, 1)
+    dst.unsafe_set(pos, literals.unsafe_get(lit_start))
+    pos += 1
+    return (pos - pos_, prev_lit_table)
+  }
+  let raw_section_size = raw_literal_header_size(lit_count) + lit_count
+  match prev_lit_table {
+    Some(table) => {
+      let codebook = build_huffman_codebook(table)
+      if codebook_can_encode_literals(codebook, literals, lit_start, lit_count) {
+        let temp = FixedArray::make((lit_count * 3 + 7) / 2 + 8, b'\x00')
+        let encoded_size = encode_literals_with_codebook(
+          codebook, literals, lit_start, lit_count, temp, 0,
+        )
+        if lit_count < 1024 &&
+          encoded_size > 0 &&
+          encoded_size < 1024 &&
+          encoded_size + 3 < raw_section_size {
+          let header0 = ((lit_count & 0x0F) << 4) | 0x03
+          let header1 = ((encoded_size & 0x03) << 6) | ((lit_count >> 4) & 0x3F)
+          let header2 = (encoded_size >> 2) & 0xFF
+          dst.unsafe_set(pos, header0.to_byte())
+          dst.unsafe_set(pos + 1, header1.to_byte())
+          dst.unsafe_set(pos + 2, header2.to_byte())
+          pos += 3
+          for i in 0..<encoded_size {
+            dst.unsafe_set(pos + i, temp.unsafe_get(i))
+          }
+          pos += encoded_size
+          return (pos - pos_, prev_lit_table)
+        }
+      }
+    }
+    None => ()
+  }
+  pos += write_raw_literal_header(dst, pos, lit_count, 0)
+  for i in 0..<lit_count {
+    dst.unsafe_set(pos + i, literals.unsafe_get(lit_start + i))
+  }
+  pos += lit_count
+  (pos - pos_, prev_lit_table)
+}
+
+///|
+fn raw_literal_header_size(lit_count : Int) -> Int {
+  if lit_count < 32 {
+    1
+  } else if lit_count < 4096 {
+    2
+  } else {
+    3
+  }
+}
+
+///|
+fn write_raw_literal_header(
+  dst : FixedArray[Byte],
+  pos_ : Int,
+  lit_count : Int,
+  lit_type : Int,
+) -> Int {
+  let mut pos = pos_
   if lit_count < 32 {
     dst.unsafe_set(pos, ((lit_count << 3) | lit_type).to_byte())
     pos += 1
@@ -898,28 +1022,204 @@ fn write_literal_section(
     dst.unsafe_set(pos + 2, ((header >> 16) & 0xFF).to_byte())
     pos += 3
   }
-  if use_rle {
-    dst.unsafe_set(pos, literals.unsafe_get(lit_start))
-    pos += 1
-  } else {
-    for i in 0..<lit_count {
-      dst.unsafe_set(pos + i, literals.unsafe_get(lit_start + i))
-    }
-    pos += lit_count
-  }
   pos - pos_
 }
 
 ///|
-/// Encode sequences into a backward bitstream using predefined FSE CTables.
-/// Follows the reference ZSTD_encodeSequences_body algorithm exactly.
+fn build_huffman_codebook(table : ZstdHuffmanTable) -> HuffmanCodebook {
+  let codes = FixedArray::make(256, 0)
+  let bits = FixedArray::make(256, 0)
+  let valid = FixedArray::make(256, false)
+  for i in 0..<table.entries.length() {
+    let entry = table.entries.unsafe_get(i)
+    let sym = ((entry >> 8) & 0xFFU).reinterpret_as_int()
+    let n_bits = (entry & 0xFFU).reinterpret_as_int()
+    if n_bits > 0 && !valid.unsafe_get(sym) {
+      let shift = table.max_bits - n_bits
+      codes.unsafe_set(sym, i >> shift)
+      bits.unsafe_set(sym, n_bits)
+      valid.unsafe_set(sym, true)
+    }
+  }
+  { codes, bits, valid }
+}
+
+///|
+fn codebook_can_encode_literals(
+  codebook : HuffmanCodebook,
+  literals : FixedArray[Byte],
+  lit_start : Int,
+  lit_count : Int,
+) -> Bool {
+  for i in 0..<lit_count {
+    if !codebook.valid.unsafe_get(literals.unsafe_get(lit_start + i).to_int()) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+fn encode_literals_with_codebook(
+  codebook : HuffmanCodebook,
+  literals : FixedArray[Byte],
+  lit_start : Int,
+  lit_count : Int,
+  dst : FixedArray[Byte],
+  dst_pos : Int,
+) -> Int {
+  let bw = FseBitWriter::new(dst.length())
+  for i = lit_count - 1; i >= 0; i = i - 1 {
+    let sym = literals.unsafe_get(lit_start + i).to_int()
+    bw.add_bits(codebook.codes.unsafe_get(sym), codebook.bits.unsafe_get(sym))
+    bw.flush()
+  }
+  bw.close()
+  bw.copy_to(dst, dst_pos)
+}
+
+///|
+fn select_sequence_encoder(
+  codes : FixedArray[Int],
+  num_codes : Int,
+  max_symbol : Int,
+  default_decoder : SeqDecoder,
+  default_norm : FixedArray[Int],
+  default_accuracy : Int,
+  previous : SeqDecoder?,
+) -> SeqEncoderChoice {
+  let first = codes.unsafe_get(0)
+  let mut all_same = true
+  for i in 1..<num_codes {
+    if codes.unsafe_get(i) != first {
+      all_same = false
+      break
+    }
+  }
+  if all_same {
+    return {
+      mode: 1,
+      ctable: None,
+      rle_symbol: Some(first),
+      next_decoder: SeqDecoder::Rle(first),
+    }
+  }
+  match previous {
+    Some(prev) if seq_decoder_can_encode(prev, codes, num_codes) =>
+      match prev {
+        SeqDecoder::Fse(table) =>
+          {
+            mode: 3,
+            ctable: Some(build_repeat_ctable(table, max_symbol)),
+            rle_symbol: None,
+            next_decoder: prev,
+          }
+        SeqDecoder::Rle(sym) =>
+          { mode: 3, ctable: None, rle_symbol: Some(sym), next_decoder: prev }
+      }
+    _ =>
+      {
+        mode: 0,
+        ctable: Some(
+          build_fse_ctable(default_norm, max_symbol, default_accuracy),
+        ),
+        rle_symbol: None,
+        next_decoder: default_decoder,
+      }
+  }
+}
+
+///|
+fn seq_decoder_can_encode(
+  decoder : SeqDecoder,
+  codes : FixedArray[Int],
+  num_codes : Int,
+) -> Bool {
+  match decoder {
+    SeqDecoder::Rle(sym) => {
+      for i in 0..<num_codes {
+        if codes.unsafe_get(i) != sym {
+          return false
+        }
+      }
+      true
+    }
+    SeqDecoder::Fse(table) => {
+      let supported = FixedArray::make(256, false)
+      for i in 0..<table.symbols.length() {
+        supported.unsafe_set(table.symbols.unsafe_get(i).to_int(), true)
+      }
+      for i in 0..<num_codes {
+        if !supported.unsafe_get(codes.unsafe_get(i)) {
+          return false
+        }
+      }
+      true
+    }
+  }
+}
+
+///|
+fn build_repeat_ctable(table : FseTable, max_symbol : Int) -> FseCTable {
+  let counts = FixedArray::make(max_symbol + 1, 0)
+  for i in 0..<table.symbols.length() {
+    let sym = table.symbols.unsafe_get(i).to_int()
+    counts.unsafe_set(sym, counts.unsafe_get(sym) + 1)
+  }
+  let symbol_tt = FixedArray::make(max_symbol + 1, {
+    delta_nb_bits: 0,
+    delta_find_state: 0,
+  })
+  let mut total = 0
+  for sym in 0..<=max_symbol {
+    let count = counts.unsafe_get(sym)
+    if count == 0 {
+      continue
+    }
+    if count == 1 {
+      symbol_tt.unsafe_set(sym, {
+        delta_nb_bits: (table._accuracy_log << 16) - (1 << table._accuracy_log),
+        delta_find_state: total - 1,
+      })
+      total += 1
+    } else {
+      let max_bits_out = table._accuracy_log - (highest_bit(count - 1) - 1)
+      let min_state_plus = count << max_bits_out
+      symbol_tt.unsafe_set(sym, {
+        delta_nb_bits: (max_bits_out << 16) - min_state_plus,
+        delta_find_state: total - count,
+      })
+      total += count
+    }
+  }
+  let state_table = FixedArray::make(table.symbols.length(), 0)
+  let cum = FixedArray::make(max_symbol + 1, 0)
+  let mut c = 0
+  for sym in 0..<=max_symbol {
+    cum.unsafe_set(sym, c)
+    c += counts.unsafe_get(sym)
+  }
+  let seen = FixedArray::make(max_symbol + 1, 0)
+  for i in 0..<table.symbols.length() {
+    let sym = table.symbols.unsafe_get(i).to_int()
+    let pos = cum.unsafe_get(sym) + seen.unsafe_get(sym)
+    state_table.unsafe_set(pos, table.symbols.length() + i)
+    seen.unsafe_set(sym, seen.unsafe_get(sym) + 1)
+  }
+  { state_table, symbol_tt, table_log: table._accuracy_log }
+}
+
+///|
 fn encode_sequences(
   sequences : Array[ZstdSequence],
   ll_codes : FixedArray[Int],
   of_codes : FixedArray[Int],
   ml_codes : FixedArray[Int],
+  ll_ct : FseCTable?,
   ll_rle : Int?,
+  of_ct : FseCTable?,
   of_rle : Int?,
+  ml_ct : FseCTable?,
   ml_rle : Int?,
   dst : FixedArray[Byte],
   dst_pos : Int,
@@ -928,20 +1228,7 @@ fn encode_sequences(
   if num_seq == 0 {
     return 0
   }
-  let ll_ct : FseCTable? = match ll_rle {
-    Some(_) => None
-    None => Some(build_fse_ctable(ll_default_norm, 35, LL_DEFAULT_ACCURACY))
-  }
-  let of_ct : FseCTable? = match of_rle {
-    Some(_) => None
-    None => Some(build_fse_ctable(of_default_norm, 28, OF_DEFAULT_ACCURACY))
-  }
-  let ml_ct : FseCTable? = match ml_rle {
-    Some(_) => None
-    None => Some(build_fse_ctable(ml_default_norm, 52, ML_DEFAULT_ACCURACY))
-  }
   let bw = FseBitWriter::new(num_seq * 20 + 64)
-  // Get codes for the last sequence
   let last = sequences.unsafe_get(num_seq - 1)
   let ll_code_last = ll_codes.unsafe_get(num_seq - 1)
   let of_code_last = of_codes.unsafe_get(num_seq - 1)
@@ -965,21 +1252,14 @@ fn encode_sequences(
     Some(ct) => fse_init_state(ct, ml_code_last)
     None => 0
   }
-  // Write extra bits for the last sequence (written first in forward buffer,
-  // read last by decoder for the last sequence)
+  ignore(ll_rle)
+  ignore(of_rle)
+  ignore(ml_rle)
   bw.add_bits(ll_xv_last, ll_xb_last)
   bw.flush()
   bw.add_bits(ml_xv_last, ml_xb_last)
-  bw.add_bits(of_xv_last, of_code_last) // OF extra bits count = of_code
+  bw.add_bits(of_xv_last, of_code_last)
   bw.flush()
-  // Process remaining sequences from N-2 down to 0
-  // Reference order per sequence:
-  //   1. FSE_encodeSymbol(OF)  -- writes OF state update bits
-  //   2. FSE_encodeSymbol(ML)  -- writes ML state update bits
-  //   3. FSE_encodeSymbol(LL)  -- writes LL state update bits
-  //   4. BIT_addBits(LL extra)
-  //   5. BIT_addBits(ML extra)
-  //   6. BIT_addBits(OF extra)
   for n = num_seq - 2; n >= 0; n = n - 1 {
     let seq = sequences.unsafe_get(n)
     let of_code = of_codes.unsafe_get(n)
@@ -988,7 +1268,6 @@ fn encode_sequences(
     let (_of_code_check, _of_xb, of_xv) = get_offset_code(seq.offset)
     let (_ml_code_check, ml_xb, ml_xv) = get_ml_code(seq.match_len)
     let (_ll_code_check, ll_xb, ll_xv) = get_ll_code(seq.lit_len)
-    // FSE encode symbols (outputs state bits, transitions state)
     match of_ct {
       Some(ct) => of_state = fse_encode_symbol(ct, bw, of_state, of_code)
       None => ()
@@ -1003,27 +1282,24 @@ fn encode_sequences(
       None => ()
     }
     bw.flush()
-    // Extra bits
     bw.add_bits(ll_xv, ll_xb)
     bw.flush()
     bw.add_bits(ml_xv, ml_xb)
-    bw.add_bits(of_xv, of_code) // OF extra bits count = of_code
+    bw.add_bits(of_xv, of_code)
     bw.flush()
   }
-  // Flush final states (reverse of decoder init order: ML, OF, LL)
   match ml_ct {
-    Some(_) => fse_flush_state(bw, ml_state, ML_DEFAULT_ACCURACY)
+    Some(ct) => fse_flush_state(bw, ml_state, ct.table_log)
     None => ()
   }
   match of_ct {
-    Some(_) => fse_flush_state(bw, of_state, OF_DEFAULT_ACCURACY)
+    Some(ct) => fse_flush_state(bw, of_state, ct.table_log)
     None => ()
   }
   match ll_ct {
-    Some(_) => fse_flush_state(bw, ll_state, LL_DEFAULT_ACCURACY)
+    Some(ct) => fse_flush_state(bw, ll_state, ct.table_log)
     None => ()
   }
-  // Close and copy (no reversal needed - backward stream is stored forward)
   bw.close()
   bw.copy_to(dst, dst_pos)
 }

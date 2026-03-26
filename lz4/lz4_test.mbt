@@ -202,3 +202,63 @@ test "lz4 rejects trailing bytes after last frame" {
     fail("expected error for trailing bytes after last LZ4 frame")
   }
 }
+
+///|
+test "lz4 compress emits configured frame flags" {
+  let options : @lz4.FrameOptions = {
+    block_independence: false,
+    block_checksum: true,
+    content_checksum: false,
+    dict_id: 0x12345678U,
+  }
+  let compressed = @lz4.compress(b"configured frame", options~)
+  let flg = compressed[4].to_int()
+  assert_true((flg & 0x20) == 0)
+  assert_true((flg & 0x10) != 0)
+  assert_true((flg & 0x04) == 0)
+  assert_true((flg & 0x01) != 0)
+  let dict_id = compressed[6].to_uint() |
+    (compressed[7].to_uint() << 8) |
+    (compressed[8].to_uint() << 16) |
+    (compressed[9].to_uint() << 24)
+  assert_eq(dict_id, 0x12345678U)
+  let decompressed = @lz4.decompress(compressed, dict=b"external dictionary")
+  assert_eq(decompressed, b"configured frame")
+}
+
+///|
+test "lz4 deflater accepts frame options" {
+  let options : @lz4.FrameOptions = {
+    block_independence: false,
+    block_checksum: true,
+    content_checksum: true,
+    dict_id: 0x01020304U,
+  }
+  let d = @lz4.Deflater::new(options~)
+  let out = @blit.Buffer::new()
+  match d.encode(Some(b"streamed frame payload"[:])) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok => fail("expected streaming lz4 output")
+    End => fail("lz4 deflater should not end before finish")
+    Error(e) => raise e
+  }
+  match d.encode(None) {
+    Data(chunk) => out.write_bytesview(chunk)
+    End => ()
+    Ok => ()
+    Error(e) => raise e
+  }
+  let compressed = out.to_bytes()
+  let flg = compressed[4].to_int()
+  assert_true((flg & 0x20) == 0)
+  assert_true((flg & 0x10) != 0)
+  assert_true((flg & 0x04) != 0)
+  assert_true((flg & 0x01) != 0)
+  let dict_id = compressed[6].to_uint() |
+    (compressed[7].to_uint() << 8) |
+    (compressed[8].to_uint() << 16) |
+    (compressed[9].to_uint() << 24)
+  assert_eq(dict_id, 0x01020304U)
+  let decompressed = @lz4.decompress(compressed, dict=b"stream dictionary")
+  assert_eq(decompressed, b"streamed frame payload")
+}

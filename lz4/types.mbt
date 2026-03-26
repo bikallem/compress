@@ -35,6 +35,25 @@ pub(all) enum Decode {
 } derive(Show)
 
 ///|
+/// Encoder options for LZ4 frames.
+pub(all) struct FrameOptions {
+  block_independence : Bool
+  block_checksum : Bool
+  content_checksum : Bool
+  dict_id : UInt
+} derive(Show, Eq)
+
+///|
+pub fn FrameOptions::default() -> FrameOptions {
+  {
+    block_independence: true,
+    block_checksum: false,
+    content_checksum: true,
+    dict_id: 0U,
+  }
+}
+
+///|
 /// LZ4 frame magic number.
 const LZ4_FRAME_MAGIC : UInt = 0x184D2204_U
 

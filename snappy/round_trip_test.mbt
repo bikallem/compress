@@ -115,7 +115,7 @@ test "signal protocol: chunked input" {
 ///|
 test "signal protocol: deflater streaming" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
-  let d = @snappy.Deflater::new(total_len=data.length())
+  let d = @snappy.Deflater::new_known_length(data.length())
   let buf = @blit.Buffer::new()
   match d.encode(Some(data[:512])) {
     Ok => fail("snappy deflater should emit after first chunk")
@@ -139,6 +139,37 @@ test "signal protocol: deflater streaming" {
     Error(e) => raise e
   }
   let compressed = buf.to_bytes()
+  let decompressed = @snappy.decompress(compressed)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "signal protocol: deflater buffered mode is explicit" {
+  let data = b"buffered snappy payload buffered snappy payload"
+  let d = @snappy.Deflater::new_buffered()
+  match d.encode(Some(data[:16])) {
+    Ok => ()
+    Data(_) => fail("buffered snappy mode should not emit before finish")
+    End => fail("buffered snappy mode should not end before finish")
+    Error(e) => raise e
+  }
+  match d.encode(Some(data[16:])) {
+    Ok => ()
+    Data(_) => fail("buffered snappy mode should not emit before finish")
+    End => fail("buffered snappy mode should not end before finish")
+    Error(e) => raise e
+  }
+  let out = @blit.Buffer::new()
+  loop d.encode(None) {
+    Data(chunk) => {
+      out.write_bytesview(chunk)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => fail("buffered snappy finalization should not return Ok")
+    Error(e) => raise e
+  }
+  let compressed = out.to_bytes()
   let decompressed = @snappy.decompress(compressed)
   assert_eq(decompressed, data)
 }

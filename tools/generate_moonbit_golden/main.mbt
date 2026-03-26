@@ -289,7 +289,7 @@ fn main {
       continue
     }
     let out_name = "zstd_\{name}.bin"
-    let compressed = @zstd.compress(data)
+    let compressed = try! @zstd.compress(data)
     write_file("\{out_dir}/\{out_name}", compressed)
     entries.push({
       name: "zstd/\{name}",

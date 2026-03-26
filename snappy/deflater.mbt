@@ -2,11 +2,11 @@
 /// Snappy compressor using signal protocol.
 ///
 /// Usage:
-///   let d = Deflater::new(total_len=data.length())
+///   let d = Deflater::new_known_length(data.length())
 ///   match d.encode(Some(data)) { Ok => ...; Data(out) => ... }
 ///   match d.encode(None) { Data(out) => ...; End => ... }
-/// Pass `total_len=-1` to keep the old buffered compatibility mode for callers
-/// that do not know the final uncompressed size up front.
+/// Use Deflater::new_buffered() to keep the buffered compatibility mode for
+/// callers that do not know the final uncompressed size up front.
 priv struct DeflaterState {
   state : Encoder
   total_len : Int
@@ -31,6 +31,16 @@ pub fn Deflater::new(total_len? : Int = -1) -> Deflater {
     history: @blit.Buffer::new(),
     finished: false,
   })
+}
+
+///|
+pub fn Deflater::new_known_length(total_len : Int) -> Deflater {
+  Deflater::new(total_len~)
+}
+
+///|
+pub fn Deflater::new_buffered() -> Deflater {
+  Deflater::new()
 }
 
 ///|

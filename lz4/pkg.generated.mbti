@@ -2,7 +2,7 @@
 package "bikallem/compress/lz4"
 
 // Values
-pub fn compress(Bytes) -> Bytes
+pub fn compress(Bytes, options? : FrameOptions) -> Bytes
 
 pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise Lz4Error
 
@@ -25,7 +25,7 @@ pub(all) enum Decode {
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
-pub fn Deflater::new() -> Self
+pub fn Deflater::new(options? : FrameOptions) -> Self
 
 pub(all) enum Encode {
   Ok
@@ -33,6 +33,14 @@ pub(all) enum Encode {
   End
   Error(Lz4Error)
 } derive(Show)
+
+pub(all) struct FrameOptions {
+  block_independence : Bool
+  block_checksum : Bool
+  content_checksum : Bool
+  dict_id : UInt
+} derive(Eq, Show)
+pub fn FrameOptions::default() -> Self
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

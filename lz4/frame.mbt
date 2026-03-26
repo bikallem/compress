@@ -16,6 +16,7 @@ fn write_frame_header(
   dst : FixedArray[Byte],
   pos_ : Int,
   content_size : Int?,
+  options : FrameOptions,
 ) -> Int {
   let mut pos = pos_
   let start = pos
@@ -25,11 +26,13 @@ fn write_frame_header(
   dst.unsafe_set(pos + 2, ((LZ4_FRAME_MAGIC >> 16) & 0xFFU).to_byte())
   dst.unsafe_set(pos + 3, ((LZ4_FRAME_MAGIC >> 24) & 0xFFU).to_byte())
   pos += 4
-  // FLG byte: version=01, block_independence=1, block_checksum=0,
-  //           content_size=depends, content_checksum=1, reserved=0, dict_id=0
   let has_content_size = content_size is Some(_)
-  let flg = 0b01_1_0_0_1_0_0 |
-    (if has_content_size { 0b00_0_0_1_0_0_0 } else { 0 })
+  let flg = 0x40 |
+    (if options.block_independence { 0x20 } else { 0 }) |
+    (if options.block_checksum { 0x10 } else { 0 }) |
+    (if has_content_size { 0x08 } else { 0 }) |
+    (if options.content_checksum { 0x04 } else { 0 }) |
+    (if options.dict_id != 0U { 0x01 } else { 0 })
   dst.unsafe_set(pos, flg.to_byte())
   pos += 1
   // BD byte: block_max_size=4 (64KB)
@@ -45,6 +48,13 @@ fn write_frame_header(
       pos += 8
     }
     None => ()
+  }
+  if options.dict_id != 0U {
+    dst.unsafe_set(pos, (options.dict_id & 0xFFU).to_byte())
+    dst.unsafe_set(pos + 1, ((options.dict_id >> 8) & 0xFFU).to_byte())
+    dst.unsafe_set(pos + 2, ((options.dict_id >> 16) & 0xFFU).to_byte())
+    dst.unsafe_set(pos + 3, ((options.dict_id >> 24) & 0xFFU).to_byte())
+    pos += 4
   }
   // Header checksum: (xxh32(header_bytes) >> 8) & 0xFF
   let header_start = start + 4 // after magic

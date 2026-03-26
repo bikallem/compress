@@ -110,6 +110,17 @@ fn parse_formatted_dictionary_bytes(
 }
 
 ///|
-fn parse_dictionary_for_encoder(dict : Bytes) -> ZstdDictionary {
-  parse_dictionary_bytes(dict)
+fn parse_dictionary_for_encoder(dict : Bytes) -> ZstdDictionary raise ZstdError {
+  if dict.length() == 0 {
+    return empty_dictionary()
+  }
+  if dict.length() < 8 {
+    return raw_dictionary(dict)
+  }
+  let src = dict[:]
+  let magic = read_u32_le(src, 0)
+  if magic != 0xEC30A437_U {
+    return raw_dictionary(dict)
+  }
+  parse_formatted_dictionary_bytes(dict)
 }

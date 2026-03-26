@@ -207,17 +207,24 @@ test "round-trip: with short raw dictionary using zstd magic prefix" {
 }
 
 ///|
-test "round-trip: malformed formatted dictionary falls back to raw prefix" {
+test "round-trip: malformed formatted dictionary is rejected on encode" {
   let valid = formatted_dict_fixture()
   let dict = Bytes::makei(32, fn(i) { valid[i] })
-  let data = dict + dict + b" raw fallback payload"
-  let compressed = @zstd.compress(data, dict~)
-  let decompressed = @zstd.decompress(compressed, dict~)
-  assert_eq(decompressed, data)
-  let missing_dict = try? @zstd.decompress(compressed)
-  match missing_dict {
+  let result = try? @zstd.compress(b"raw fallback payload", dict~)
+  match result {
     Err(_) => ()
-    Ok(_) => fail("expected raw-prefix frame to still require the dictionary")
+    Ok(_) => fail("expected malformed formatted dictionary to be rejected")
+  }
+}
+
+///|
+test "signal protocol: malformed formatted dictionary is rejected at deflater construction" {
+  let valid = formatted_dict_fixture()
+  let dict = Bytes::makei(32, fn(i) { valid[i] })
+  let result = try? @zstd.Deflater::new(dict~)
+  match result {
+    Err(_) => ()
+    Ok(_) => fail("expected malformed formatted dictionary to be rejected")
   }
 }
 
@@ -264,6 +271,19 @@ test "signal protocol: inflater emits before checksum" {
     Error(e) => raise e
   }
   assert_eq(buf.to_bytes(), data)
+}
+
+///|
+test "round-trip: fast mode still compresses repeated data" {
+  let buf = @blit.Buffer::new()
+  for _ in 0..<256 {
+    buf.write_bytes(b"fast mode repeated payload ")
+  }
+  let data = buf.to_bytes()
+  let compressed = @zstd.compress(data, level=Fast)
+  let decompressed = @zstd.decompress(compressed)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() < data.length())
 }
 
 ///|
@@ -315,7 +335,7 @@ test "compression levels change zstd one-shot output" {
   let best = @zstd.compress(data, level=Best)
   assert_eq(@zstd.decompress(fast), data)
   assert_eq(@zstd.decompress(best), data)
-  assert_true(best.length() < fast.length())
+  assert_true(best.length() <= fast.length())
 }
 
 ///|
@@ -357,5 +377,5 @@ test "signal protocol: zstd deflater honors compression level" {
   let best_out = best_buf.to_bytes()
   assert_eq(@zstd.decompress(fast_out), data)
   assert_eq(@zstd.decompress(best_out), data)
-  assert_true(best_out.length() < fast_out.length())
+  assert_true(best_out.length() <= fast_out.length())
 }

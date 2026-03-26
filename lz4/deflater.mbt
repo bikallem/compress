@@ -8,6 +8,7 @@
 priv struct EncoderState {
   mut header_written : Bool
   mut finished : Bool
+  options : FrameOptions
   checksum : @checksum.XXH32
 }
 
@@ -15,10 +16,13 @@ priv struct EncoderState {
 struct Deflater(EncoderState)
 
 ///|
-pub fn Deflater::new() -> Deflater {
+pub fn Deflater::new(
+  options? : FrameOptions = { ..FrameOptions::default() },
+) -> Deflater {
   Deflater({
     header_written: false,
     finished: false,
+    options,
     checksum: @checksum.XXH32::new(),
   })
 }
@@ -35,10 +39,13 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         return Ok
       }
       let out = @blit.Buffer::new(
-        size_hint=19 + chunk.length() + (chunk.length() / 65536 + 1) * 12,
+        size_hint=23 +
+          chunk.length() +
+          (chunk.length() / 65536 + 1) *
+          (if s.options.block_checksum { 16 } else { 12 }),
       )
       if !s.header_written {
-        write_frame_header_buffer(out, None)
+        write_frame_header_buffer(out, None, s.options)
         s.header_written = true
       }
       s.checksum.update(chunk)
@@ -58,12 +65,21 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         let compressed_size = block_compress(block, block_buf)
         if compressed_size > 0 && compressed_size < block.length() {
           write_block_header_buffer(out, compressed_size, false)
-          for i in 0..<compressed_size {
-            out.write_byte(block_buf.unsafe_get(i))
+          write_fixed_array_bytes(out, block_buf, compressed_size)
+          if s.options.block_checksum {
+            write_u32_le_buffer(
+              out,
+              @checksum.xxh32(
+                fixed_array_prefix_view(block_buf, compressed_size),
+              ),
+            )
           }
         } else {
           write_block_header_buffer(out, block.length(), true)
           out.write_bytesview(block)
+          if s.options.block_checksum {
+            write_u32_le_buffer(out, @checksum.xxh32(block))
+          }
         }
         pos = block_end
       }
@@ -78,10 +94,15 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       s.finished = true
       let out = @blit.Buffer::new(size_hint=32)
       if !s.header_written {
-        write_frame_header_buffer(out, None)
+        write_frame_header_buffer(out, None, s.options)
         s.header_written = true
       }
-      write_frame_footer_buffer(out, Some(s.checksum.checksum()))
+      let content_cs = if s.options.content_checksum {
+        Some(s.checksum.checksum())
+      } else {
+        None
+      }
+      write_frame_footer_buffer(out, content_cs)
       let bytes = out.to_bytes()
       if bytes.length() > 0 {
         Data(bytes[:])
@@ -93,9 +114,13 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
 }
 
 ///|
-fn write_frame_header_buffer(dst : @blit.Buffer, content_size : Int?) -> Unit {
-  let temp = FixedArray::make(19, b'\x00')
-  let written = write_frame_header(temp, 0, content_size)
+fn write_frame_header_buffer(
+  dst : @blit.Buffer,
+  content_size : Int?,
+  options : FrameOptions,
+) -> Unit {
+  let temp = FixedArray::make(23, b'\x00')
+  let written = write_frame_header(temp, 0, content_size, options)
   for i in 0..<written {
     dst.write_byte(temp.unsafe_get(i))
   }
@@ -125,4 +150,28 @@ fn write_block_header_buffer(
   dst.write_byte(((raw >> 8) & 0xFF).to_byte())
   dst.write_byte(((raw >> 16) & 0xFF).to_byte())
   dst.write_byte(((raw >> 24) & 0xFF).to_byte())
+}
+
+///|
+fn write_fixed_array_bytes(
+  dst : @blit.Buffer,
+  src : FixedArray[Byte],
+  len : Int,
+) -> Unit {
+  for i in 0..<len {
+    dst.write_byte(src.unsafe_get(i))
+  }
+}
+
+///|
+fn fixed_array_prefix_view(src : FixedArray[Byte], len : Int) -> BytesView {
+  Bytes::makei(len, fn(i) { src.unsafe_get(i) })[:]
+}
+
+///|
+fn write_u32_le_buffer(dst : @blit.Buffer, value : UInt) -> Unit {
+  dst.write_byte((value & 0xFFU).to_byte())
+  dst.write_byte(((value >> 8) & 0xFFU).to_byte())
+  dst.write_byte(((value >> 16) & 0xFFU).to_byte())
+  dst.write_byte(((value >> 24) & 0xFFU).to_byte())
 }

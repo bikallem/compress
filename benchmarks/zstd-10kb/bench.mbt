@@ -1,12 +1,12 @@
 ///|
 fn compress_setup(size : Int) -> Bytes {
-  @zs.compress(@benchmarks.gen_text(size))
+  try! @zs.compress(@benchmarks.gen_text(size))
 }
 
 ///|
 fn bench_compress(b : @bench.T, name~ : String, size : Int) -> Unit {
   let data = @benchmarks.gen_text(size)
-  b.bench(name~, fn() { b.keep(@zs.compress(data)) })
+  b.bench(name~, fn() { b.keep(try! @zs.compress(data)) })
 }
 
 ///|
