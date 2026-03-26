@@ -456,9 +456,9 @@ fn step_decode_symbols(s : Decoder) -> Decode {
       s.current_tree_idx = s.selectors[s.group_no]
       s.group_pos = 50
     }
-    s.group_pos -= 1
     let tree = s.trees[s.current_tree_idx]
     guard tree.try_decode(s.bb) is Some(sym) else { return Await }
+    s.group_pos -= 1
     if sym == eob {
       // Block complete — finalize
       return finish_block(s)
@@ -504,9 +504,9 @@ fn step_decode_run_symbols(s : Decoder) -> Decode {
       s.current_tree_idx = s.selectors[s.group_no]
       s.group_pos = 50
     }
-    s.group_pos -= 1
     let tree = s.trees[s.current_tree_idx]
     guard tree.try_decode(s.bb) is Some(sym) else { return Await }
+    s.group_pos -= 1
     if sym == 0 || sym == 1 {
       s.run_len += (sym + 1) * s.run_power
       s.run_power *= 2

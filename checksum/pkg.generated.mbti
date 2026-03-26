@@ -59,4 +59,3 @@ pub(open) trait Hasher {
   update(Self, BytesView) -> Unit
   checksum(Self) -> UInt
 }
-

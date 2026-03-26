@@ -183,6 +183,205 @@ fn flush_zero_run(symbols : Array[Int], run : Int) -> Unit {
 }
 
 ///|
+const BZIP2_GROUP_SIZE : Int = 50
+
+///|
+const BZIP2_MAX_TREES : Int = 6
+
+///|
+priv struct Bzip2EncodingTree {
+  lengths : FixedArray[Int]
+  codes : FixedArray[UInt]
+}
+
+///|
+priv struct Bzip2EncodingPlan {
+  num_trees : Int
+  selectors : Array[Int]
+  trees : Array[Bzip2EncodingTree]
+}
+
+///|
+fn choose_bzip2_num_trees(num_symbols : Int, num_groups : Int) -> Int {
+  let base = if num_symbols < 200 {
+    2
+  } else if num_symbols < 600 {
+    3
+  } else if num_symbols < 1200 {
+    4
+  } else if num_symbols < 2400 {
+    5
+  } else {
+    6
+  }
+  let capped = if num_groups > 1 && base > num_groups {
+    num_groups
+  } else {
+    base
+  }
+  if capped < 2 {
+    2
+  } else {
+    capped.min(BZIP2_MAX_TREES)
+  }
+}
+
+///|
+fn build_bzip2_encoding_plan(
+  symbols : Array[Int],
+  alpha_size : Int,
+) -> Bzip2EncodingPlan {
+  let num_groups = (symbols.length() + BZIP2_GROUP_SIZE - 1) / BZIP2_GROUP_SIZE
+  let num_trees = choose_bzip2_num_trees(symbols.length(), num_groups)
+  let mut selectors : Array[Int] = Array::make(num_groups, 0)
+  for group_idx in 0..<num_groups {
+    selectors[group_idx] = group_idx * num_trees / num_groups
+  }
+  let mut trees = build_bzip2_encoding_trees(
+    symbols, alpha_size, selectors, num_trees,
+  )
+  for _ in 0..<4 {
+    selectors = choose_bzip2_group_selectors(symbols, trees)
+    trees = build_bzip2_encoding_trees(
+      symbols, alpha_size, selectors, num_trees,
+    )
+  }
+  { num_trees, selectors, trees }
+}
+
+///|
+fn build_bzip2_encoding_trees(
+  symbols : Array[Int],
+  alpha_size : Int,
+  selectors : Array[Int],
+  num_trees : Int,
+) -> Array[Bzip2EncodingTree] {
+  let freqs = FixedArray::make(num_trees * alpha_size, 0)
+  for group_idx in 0..<selectors.length() {
+    let tree_idx = selectors[group_idx]
+    let start = group_idx * BZIP2_GROUP_SIZE
+    let end = if start + BZIP2_GROUP_SIZE < symbols.length() {
+      start + BZIP2_GROUP_SIZE
+    } else {
+      symbols.length()
+    }
+    let base = tree_idx * alpha_size
+    for i in start..<end {
+      let sym = symbols[i]
+      let idx = base + sym
+      freqs.unsafe_set(idx, freqs.unsafe_get(idx) + 1)
+    }
+  }
+  let trees : Array[Bzip2EncodingTree] = []
+  for tree_idx in 0..<num_trees {
+    let tree_freqs = FixedArray::make(alpha_size, 0)
+    let base = tree_idx * alpha_size
+    for sym in 0..<alpha_size {
+      tree_freqs.unsafe_set(sym, freqs.unsafe_get(base + sym))
+    }
+    let lengths = bzip2_compute_lengths(
+      tree_freqs,
+      alpha_size,
+      BZIP2_MAX_CODE_LEN,
+    )
+    trees.push({ lengths, codes: build_canonical_codes(lengths, alpha_size) })
+  }
+  trees
+}
+
+///|
+fn choose_bzip2_group_selectors(
+  symbols : Array[Int],
+  trees : Array[Bzip2EncodingTree],
+) -> Array[Int] {
+  let num_groups = (symbols.length() + BZIP2_GROUP_SIZE - 1) / BZIP2_GROUP_SIZE
+  let selectors : Array[Int] = Array::make(num_groups, 0)
+  for group_idx in 0..<num_groups {
+    let start = group_idx * BZIP2_GROUP_SIZE
+    let end = if start + BZIP2_GROUP_SIZE < symbols.length() {
+      start + BZIP2_GROUP_SIZE
+    } else {
+      symbols.length()
+    }
+    let mut best_tree = 0
+    let mut best_cost = bzip2_group_cost(symbols, start, end, trees[0].lengths)
+    for tree_idx in 1..<trees.length() {
+      let cost = bzip2_group_cost(symbols, start, end, trees[tree_idx].lengths)
+      if cost < best_cost {
+        best_tree = tree_idx
+        best_cost = cost
+      }
+    }
+    selectors[group_idx] = best_tree
+  }
+  selectors
+}
+
+///|
+fn bzip2_group_cost(
+  symbols : Array[Int],
+  start : Int,
+  end : Int,
+  lengths : FixedArray[Int],
+) -> Int {
+  let mut cost = 0
+  for i in start..<end {
+    cost += lengths.unsafe_get(symbols[i])
+  }
+  cost
+}
+
+///|
+fn write_bzip2_selectors(
+  bw : Bzip2BitWriter,
+  selectors : Array[Int],
+  num_trees : Int,
+) -> Unit {
+  let mtf = FixedArray::make(num_trees, 0)
+  for i in 0..<num_trees {
+    mtf.unsafe_set(i, i)
+  }
+  for selector in selectors {
+    let mut idx = 0
+    while idx < num_trees && mtf.unsafe_get(idx) != selector {
+      idx += 1
+    }
+    for _ in 0..<idx {
+      bw.write_bits(1U, 1)
+    }
+    bw.write_bits(0U, 1)
+    let val = mtf.unsafe_get(idx)
+    for j = idx; j > 0; j = j - 1 {
+      mtf.unsafe_set(j, mtf.unsafe_get(j - 1))
+    }
+    mtf.unsafe_set(0, val)
+  }
+}
+
+///|
+fn write_bzip2_tree_lengths(
+  bw : Bzip2BitWriter,
+  lengths : FixedArray[Int],
+  alpha_size : Int,
+) -> Unit {
+  let mut curr = lengths.unsafe_get(0)
+  bw.write_bits(curr.reinterpret_as_uint(), 5)
+  for j in 0..<alpha_size {
+    while curr != lengths.unsafe_get(j) {
+      bw.write_bits(1U, 1)
+      if curr < lengths.unsafe_get(j) {
+        bw.write_bits(0U, 1)
+        curr += 1
+      } else {
+        bw.write_bits(1U, 1)
+        curr -= 1
+      }
+    }
+    bw.write_bits(0U, 1)
+  }
+}
+
+///|
 /// Write a single bzip2 compressed block.
 fn write_block(
   bw : Bzip2BitWriter,
@@ -230,47 +429,28 @@ fn write_block(
   }
   // Build Huffman tree for the symbols
   let alpha_size = num_in_use + 2 // RUNA, RUNB, symbols 1..num_in_use-1, EOB
-  let freqs = FixedArray::make(alpha_size, 0)
-  for s in symbols {
-    freqs.unsafe_set(s, freqs.unsafe_get(s) + 1)
-  }
-  let lengths = bzip2_compute_lengths(freqs, alpha_size, BZIP2_MAX_CODE_LEN)
-  // Use a single Huffman tree (num_trees = 2 is minimum, but we duplicate)
-  let num_trees = 2
-  let num_selectors = (symbols.length() + 49) / 50
+  let plan = build_bzip2_encoding_plan(symbols, alpha_size)
+  let num_selectors = plan.selectors.length()
   // Number of trees (3 bits)
-  bw.write_bits(num_trees.reinterpret_as_uint(), 3)
+  bw.write_bits(plan.num_trees.reinterpret_as_uint(), 3)
   // Number of selectors (15 bits)
   bw.write_bits(num_selectors.reinterpret_as_uint(), 15)
-  // Selectors: all select tree 0, MTF encoded (tree 0 = 0 zeros)
-  for _ in 0..<num_selectors {
-    bw.write_bits(0U, 1) // 0 = select first tree (no prefix 1-bits)
+  write_bzip2_selectors(bw, plan.selectors, plan.num_trees)
+  for tree in plan.trees {
+    write_bzip2_tree_lengths(bw, tree.lengths, alpha_size)
   }
-  // Write code lengths for both trees (they're identical)
-  for _ in 0..<num_trees {
-    let mut curr = lengths.unsafe_get(0)
-    bw.write_bits(curr.reinterpret_as_uint(), 5)
-    for j in 0..<alpha_size {
-      while curr != lengths.unsafe_get(j) {
-        bw.write_bits(1U, 1) // need adjustment
-        if curr < lengths.unsafe_get(j) {
-          bw.write_bits(0U, 1) // increment
-          curr += 1
-        } else {
-          bw.write_bits(1U, 1) // decrement
-          curr -= 1
-        }
-      }
-      bw.write_bits(0U, 1) // done with this symbol
+  for group_idx in 0..<num_selectors {
+    let tree = plan.trees[plan.selectors[group_idx]]
+    let start = group_idx * BZIP2_GROUP_SIZE
+    let end = if start + BZIP2_GROUP_SIZE < symbols.length() {
+      start + BZIP2_GROUP_SIZE
+    } else {
+      symbols.length()
     }
-  }
-  // Build canonical codes
-  let codes = build_canonical_codes(lengths, alpha_size)
-  // Encode symbols
-  for s in symbols {
-    let code = codes.unsafe_get(s)
-    let len = lengths.unsafe_get(s)
-    bw.write_bits(code, len)
+    for i in start..<end {
+      let sym = symbols[i]
+      bw.write_bits(tree.codes.unsafe_get(sym), tree.lengths.unsafe_get(sym))
+    }
   }
 }
 
