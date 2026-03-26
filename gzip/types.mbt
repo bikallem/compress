@@ -72,3 +72,6 @@ const GZIP_FNAME : Int = 8
 
 ///|
 const GZIP_FCOMMENT : Int = 16
+
+///|
+const GZIP_RESERVED_FLAGS : Int = 0xE0

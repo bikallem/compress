@@ -136,3 +136,22 @@ test "signal protocol: deflater streaming" {
   let decompressed = @lz4.decompress(compressed)
   assert_eq(decompressed, data)
 }
+
+///|
+test "signal protocol: buffered inflater consumes concatenated frames" {
+  let compressed = @lz4.compress(b"first frame") +
+    @lz4.compress(b"second frame")
+  let d = @lz4.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with full concatenated LZ4 input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"first framesecond frame")
+}

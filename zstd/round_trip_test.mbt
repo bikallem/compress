@@ -198,6 +198,43 @@ test "round-trip: with short raw dictionary" {
 }
 
 ///|
+test "round-trip: with short raw dictionary using zstd magic prefix" {
+  let dict = b"\x37\xa4\x30\xecxy"
+  let data = dict + dict + b" trailing payload"
+  let compressed = @zstd.compress(data, dict~)
+  let decompressed = @zstd.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "round-trip: malformed formatted dictionary falls back to raw prefix" {
+  let valid = formatted_dict_fixture()
+  let dict = Bytes::makei(32, fn(i) { valid[i] })
+  let data = dict + dict + b" raw fallback payload"
+  let compressed = @zstd.compress(data, dict~)
+  let decompressed = @zstd.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
+  let missing_dict = try? @zstd.decompress(compressed)
+  match missing_dict {
+    Err(_) => ()
+    Ok(_) => fail("expected raw-prefix frame to still require the dictionary")
+  }
+}
+
+///|
+test "zstd formatted frame rejects malformed fallback dictionary" {
+  let valid = formatted_dict_fixture()
+  let malformed = Bytes::makei(32, fn(i) { valid[i] })
+  let compressed = @zstd.compress(formatted_dict_fixture_input(), dict=valid)
+  let result = try? @zstd.decompress(compressed, dict=malformed)
+  guard result is Err(_) else {
+    fail(
+      "expected formatted dictionary frame to reject malformed fallback dictionary",
+    )
+  }
+}
+
+///|
 test "signal protocol: inflater emits before checksum" {
   let data = Bytes::makei(4096, fn(i) { (i * 17 % 251).to_byte() })
   let compressed = @zstd.compress(data)

@@ -285,3 +285,29 @@ test "streaming gzip inflater validates FHCRC across header chunks" {
     Error(e) => raise e
   }
 }
+
+///|
+test "streaming gzip inflater consumes buffered concatenated members" {
+  let first = @gzip.compress(
+    b"first member",
+    header=gzip_named_header("first.txt"),
+  )
+  let second = @gzip.compress(
+    b"second member",
+    header=gzip_named_header("second.txt"),
+  )
+  let d = @gzip.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src((first + second)[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with buffered concatenated members")
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"first membersecond member")
+  assert_eq(d.header().name, "second.txt")
+}

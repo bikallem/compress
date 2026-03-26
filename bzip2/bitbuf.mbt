@@ -78,3 +78,20 @@ fn BitBuf::read_bit(self : BitBuf) -> Bool? {
     None => None
   }
 }
+
+///|
+fn BitBuf::remaining(self : BitBuf) -> Bytes {
+  let skip_bits = self.count % 8
+  let buffered_bits = self.count - skip_bits
+  let buffered_bytes = buffered_bits / 8
+  let trailing_len = self.input.length() - self.pos
+  let out = @blit.Buffer::new(size_hint=buffered_bytes + trailing_len)
+  let shifted = self.buf << skip_bits
+  for i in 0..<buffered_bytes {
+    out.write_byte(((shifted >> (56 - i * 8)) & 0xFFUL).to_byte())
+  }
+  if trailing_len > 0 {
+    out.write_bytesview(self.input[self.pos:])
+  }
+  out.to_bytes()
+}

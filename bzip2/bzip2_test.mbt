@@ -98,6 +98,14 @@ test "bzip2 corrupt block magic" {
 }
 
 ///|
+test "bzip2 decompress concatenated streams" {
+  let compressed = @bzip2.compress(b"first stream") +
+    @bzip2.compress(b"second stream")
+  let decompressed = @bzip2.decompress(compressed)
+  assert_eq(decompressed, b"first streamsecond stream")
+}
+
+///|
 test "bzip2 round-trip Hello" {
   let original : Bytes = b"Hello"
   let compressed = @bzip2.compress(original)

@@ -24,35 +24,46 @@ fn empty_dictionary() -> ZstdDictionary {
 }
 
 ///|
+fn raw_dictionary(dict : Bytes) -> ZstdDictionary {
+  {
+    content: dict,
+    dict_id: 0U,
+    rep: default_rep_offsets(),
+    lit_table: None,
+    seq_tables: None,
+  }
+}
+
+///|
 fn copy_rep_offsets(rep : Array[Int]) -> Array[Int] {
   [rep.unsafe_get(0), rep.unsafe_get(1), rep.unsafe_get(2)]
 }
 
 ///|
-fn parse_dictionary_bytes(dict : Bytes) -> ZstdDictionary raise ZstdError {
+fn parse_dictionary_bytes(dict : Bytes) -> ZstdDictionary {
   if dict.length() == 0 {
     return empty_dictionary()
   }
-  if dict.length() < 4 {
-    return {
-      content: dict,
-      dict_id: 0U,
-      rep: default_rep_offsets(),
-      lit_table: None,
-      seq_tables: None,
-    }
+  if dict.length() < 8 {
+    return raw_dictionary(dict)
   }
   let src = dict[:]
   let magic = read_u32_le(src, 0)
   if magic != 0xEC30A437_U {
-    return {
-      content: dict,
-      dict_id: 0U,
-      rep: default_rep_offsets(),
-      lit_table: None,
-      seq_tables: None,
-    }
+    return raw_dictionary(dict)
   }
+  let parsed = try? parse_formatted_dictionary_bytes(dict)
+  match parsed {
+    Ok(formatted) => formatted
+    Err(_) => raw_dictionary(dict)
+  }
+}
+
+///|
+fn parse_formatted_dictionary_bytes(
+  dict : Bytes,
+) -> ZstdDictionary raise ZstdError {
+  let src = dict[:]
   let dict_id = read_u32_le(src, 4)
   guard dict_id != 0U else {
     raise ZstdError::InvalidHeader("formatted zstd dictionary id cannot be 0")
@@ -100,24 +111,5 @@ fn parse_dictionary_bytes(dict : Bytes) -> ZstdDictionary raise ZstdError {
 
 ///|
 fn parse_dictionary_for_encoder(dict : Bytes) -> ZstdDictionary {
-  let parsed = try? parse_dictionary_bytes(dict)
-  match parsed {
-    Ok(parsed) => parsed
-    Err(_) => {
-      if dict.length() == 0 {
-        return empty_dictionary()
-      }
-      let src = dict[:]
-      if dict.length() < 4 || read_u32_le(src, 0) != 0xEC30A437_U {
-        return {
-          content: dict,
-          dict_id: 0U,
-          rep: default_rep_offsets(),
-          lit_table: None,
-          seq_tables: None,
-        }
-      }
-      empty_dictionary()
-    }
-  }
+  parse_dictionary_bytes(dict)
 }

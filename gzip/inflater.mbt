@@ -3,12 +3,12 @@
 ///
 /// Wraps @flate.Inflater with gzip header parsing and CRC-32/ISIZE verification.
 priv struct Decoder {
-  inflater : @flate.Inflater
+  mut inflater : @flate.Inflater
   crc : @checksum.CRC32
   mut size : UInt
   mut phase : InflatePhase
   // Header accumulator
-  hdr_buf : @blit.Buffer
+  mut hdr_buf : @blit.Buffer
   mut header : Header
 }
 
@@ -48,21 +48,7 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   match s.phase {
     ParseHeader => {
       s.hdr_buf.write_bytesview(data)
-      // Try to parse header from accumulated bytes
-      let buf = s.hdr_buf.to_bytes()
-      match try_parse_gzip_header(buf) {
-        Ok((pos, header)) => {
-          s.header = header
-          // Feed all remaining bytes after header to inflater in one call
-          let remaining_len = buf.length() - pos
-          if remaining_len > 0 {
-            s.inflater.src(buf[pos:])
-          }
-          s.phase = Inflate
-        }
-        Err(NeedMore) => ()
-        Err(HeaderError(e)) => s.phase = Failed(e)
-      }
+      pump_header(s)
     }
     Inflate => s.inflater.src(data)
     VerifyTrailer(prev) => {
@@ -76,25 +62,43 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
 ///|
 pub fn Inflater::decode(self : Inflater) -> Decode {
   let s = self.0
-  match s.phase {
-    ParseHeader => Await
-    Inflate =>
-      match s.inflater.decode() {
-        @flate.Await => Await
-        @flate.Data(out) => {
-          s.crc.update(out)
-          s.size = (s.size + out.length().reinterpret_as_uint()) & 0xFFFFFFFF_U
-          Data(out)
+  for ;; {
+    match s.phase {
+      ParseHeader => {
+        pump_header(s)
+        match s.phase {
+          ParseHeader => return Await
+          Failed(e) => return Error(e)
+          _ => continue
         }
-        @flate.End => {
-          let remaining = s.inflater.remaining()
-          verify_gzip_trailer(s, remaining)
-        }
-        @flate.Error(e) => fail_with(s, GzipError::DeflateError(e.to_string()))
       }
-    VerifyTrailer(remaining) => verify_gzip_trailer(s, remaining)
-    Done => End
-    Failed(e) => Error(e)
+      Inflate =>
+        match s.inflater.decode() {
+          @flate.Await => return Await
+          @flate.Data(out) => {
+            s.crc.update(out)
+            s.size = (s.size + out.length().reinterpret_as_uint()) &
+              0xFFFFFFFF_U
+            return Data(out)
+          }
+          @flate.End => {
+            let remaining = s.inflater.remaining()
+            match verify_gzip_trailer(s, remaining) {
+              Some(result) => return result
+              None => continue
+            }
+          }
+          @flate.Error(e) =>
+            return fail_with(s, GzipError::DeflateError(e.to_string()))
+        }
+      VerifyTrailer(remaining) =>
+        match verify_gzip_trailer(s, remaining) {
+          Some(result) => return result
+          None => continue
+        }
+      Done => return End
+      Failed(e) => return Error(e)
+    }
   }
 }
 
@@ -124,6 +128,13 @@ fn try_parse_gzip_header(
     )
   }
   let flg = data[3].to_int()
+  if (flg & GZIP_RESERVED_FLAGS) != 0 {
+    return Err(
+      HeaderError(
+        GzipError::InvalidHeader("reserved gzip header flags are set"),
+      ),
+    )
+  }
   let mtime = data[4].to_uint() |
     (data[5].to_uint() << 8) |
     (data[6].to_uint() << 16) |
@@ -196,35 +207,71 @@ fn try_parse_gzip_header(
 }
 
 ///|
-fn verify_gzip_trailer(s : Decoder, remaining : Bytes) -> Decode {
+fn verify_gzip_trailer(s : Decoder, remaining : Bytes) -> Decode? {
   if remaining.length() < 8 {
     s.phase = VerifyTrailer(remaining)
-    return Await
-  } else {
-    let expected_crc = remaining[0].to_uint() |
-      (remaining[1].to_uint() << 8) |
-      (remaining[2].to_uint() << 16) |
-      (remaining[3].to_uint() << 24)
-    let actual_crc = s.crc.checksum()
-    if actual_crc != expected_crc {
-      return fail_with(
+    return Some(Await)
+  }
+  let expected_crc = remaining[0].to_uint() |
+    (remaining[1].to_uint() << 8) |
+    (remaining[2].to_uint() << 16) |
+    (remaining[3].to_uint() << 24)
+  let actual_crc = s.crc.checksum()
+  if actual_crc != expected_crc {
+    return Some(
+      fail_with(
         s,
         GzipError::ChecksumMismatch(expected=expected_crc, got=actual_crc),
-      )
-    }
-    let expected_size = remaining[4].to_uint() |
-      (remaining[5].to_uint() << 8) |
-      (remaining[6].to_uint() << 16) |
-      (remaining[7].to_uint() << 24)
-    if s.size != expected_size {
-      return fail_with(
-        s,
-        GzipError::SizeMismatch(expected=expected_size, got=s.size),
-      )
-    }
-    s.phase = Done
-    End
+      ),
+    )
   }
+  let expected_size = remaining[4].to_uint() |
+    (remaining[5].to_uint() << 8) |
+    (remaining[6].to_uint() << 16) |
+    (remaining[7].to_uint() << 24)
+  if s.size != expected_size {
+    return Some(
+      fail_with(s, GzipError::SizeMismatch(expected=expected_size, got=s.size)),
+    )
+  }
+  let trailing = remaining[8:]
+  if trailing.length() > 0 {
+    reset_for_next_member(s, trailing)
+    return None
+  }
+  s.phase = Done
+  Some(End)
+}
+
+///|
+fn pump_header(s : Decoder) -> Unit {
+  let buf = s.hdr_buf.to_bytes()
+  match try_parse_gzip_header(buf) {
+    Ok((pos, header)) => {
+      s.header = header
+      s.inflater = @flate.Inflater::new()
+      let remaining_len = buf.length() - pos
+      if remaining_len > 0 {
+        s.inflater.src(buf[pos:])
+      }
+      s.hdr_buf = @blit.Buffer::new()
+      s.phase = Inflate
+    }
+    Err(NeedMore) => ()
+    Err(HeaderError(e)) => s.phase = Failed(e)
+  }
+}
+
+///|
+fn reset_for_next_member(s : Decoder, trailing : BytesView) -> Unit {
+  s.crc.reset()
+  s.size = 0U
+  s.inflater = @flate.Inflater::new()
+  s.hdr_buf = @blit.Buffer::new(size_hint=trailing.length())
+  if trailing.length() > 0 {
+    s.hdr_buf.write_bytesview(trailing)
+  }
+  s.phase = ParseHeader
 }
 
 ///|

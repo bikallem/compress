@@ -116,3 +116,19 @@ test "lz4 missing end mark" {
   let result = try? @lz4.decompress(truncated)
   guard result is Err(_) else { fail("expected error for missing end mark") }
 }
+
+///|
+test "lz4 decompress concatenated frames" {
+  let combined = @lz4.compress(b"first frame") + @lz4.compress(b"second frame")
+  let decompressed = @lz4.decompress(combined)
+  assert_eq(decompressed, b"first framesecond frame")
+}
+
+///|
+test "lz4 rejects trailing bytes after last frame" {
+  let compressed = @lz4.compress(b"Hello, World!") + b"\x00"
+  let result = try? @lz4.decompress(compressed)
+  guard result is Err(_) else {
+    fail("expected error for trailing bytes after last LZ4 frame")
+  }
+}

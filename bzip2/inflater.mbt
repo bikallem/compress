@@ -13,7 +13,7 @@
 ///     Error(e) => ...
 ///   }
 priv struct Decoder {
-  bb : BitBuf
+  mut bb : BitBuf
   mut phase : InflatePhase
   mut stream_crc : UInt
   // Stream params
@@ -21,6 +21,7 @@ priv struct Decoder {
   mut max_block_bytes : Int
   // Block state
   mut block_crc : UInt
+  mut block_randomized : Bool
   mut orig_ptr : Int
   // Symbol map
   in_use : FixedArray[Bool]
@@ -97,6 +98,7 @@ pub fn Inflater::new() -> Inflater {
     block_size_100k: 0,
     max_block_bytes: 0,
     block_crc: 0U,
+    block_randomized: false,
     orig_ptr: 0,
     in_use: FixedArray::make(256, false),
     num_in_use: 0,
@@ -229,9 +231,7 @@ fn step_block_header(s : Decoder) -> Decode {
   let crc_lo = s.bb.read_unchecked(16)
   s.block_crc = (crc_hi << 16) | crc_lo
   let randomized = s.bb.read_unchecked(1)
-  if randomized != 0U {
-    return fail(s, Bzip2Error::CorruptData("randomized blocks not supported"))
-  }
+  s.block_randomized = randomized != 0U
   s.orig_ptr = s.bb.read_unchecked(24).reinterpret_as_int()
   s.phase = ReadSymbolMap
   step(s)
@@ -526,7 +526,12 @@ fn finish_block(s : Decoder) -> Decode {
     return fail(s, Bzip2Error::CorruptData("invalid original pointer"))
   }
   let bwt_output = inverse_bwt(s.tt, s.decoded_len, s.orig_ptr)
-  let result = try? undo_rle1(bwt_output, s.max_block_bytes)
+  let block_input = if s.block_randomized {
+    bzip2_apply_randomization(bwt_output)
+  } else {
+    bwt_output
+  }
+  let result = try? undo_rle1(block_input, s.max_block_bytes)
   match result {
     Err(e) => return fail(s, e)
     Ok(block_data) => {
@@ -561,6 +566,45 @@ fn step_end_of_stream(s : Decoder) -> Decode {
       Bzip2Error::ChecksumMismatch(expected=stored_crc, got=s.stream_crc),
     )
   }
+  let remaining = s.bb.remaining()
+  if remaining.length() > 0 {
+    reset_stream(s, remaining)
+    return step(s)
+  }
   s.phase = Done
   End
+}
+
+///|
+fn reset_stream(s : Decoder, remaining : Bytes) -> Unit {
+  s.bb = BitBuf::new()
+  s.bb.set_input(remaining[:])
+  s.phase = StreamHeader
+  s.stream_crc = 0U
+  s.block_size_100k = 0
+  s.max_block_bytes = 0
+  s.block_crc = 0U
+  s.block_randomized = false
+  s.orig_ptr = 0
+  s.num_in_use = 0
+  s.alpha_size = 0
+  s.trees = []
+  s.selectors = []
+  s.num_trees = 0
+  s.num_selectors = 0
+  s.selector_idx = 0
+  s.selector_j = 0
+  s.symmap_group = 0
+  s.symmap_bitmap = 0U
+  s.tree_idx = 0
+  s.length_idx = 0
+  s.current_length = 0
+  s.group_pos = 0
+  s.group_no = -1
+  s.current_tree_idx = 0
+  s.decoded_len = 0
+  s.run_len = 0
+  s.run_power = 0
+  s.run_byte = b'\x00'
+  s.pending_sym = -1
 }

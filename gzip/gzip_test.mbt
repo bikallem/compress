@@ -122,6 +122,11 @@ fn gzip_hex_to_bytes(hex : String) -> Bytes {
 }
 
 ///|
+fn gzip_named_header(name : String) -> @gzip.Header {
+  { name, comment: "", extra: Bytes::default(), mod_time: 0U, os: b'\xFF' }
+}
+
+///|
 fn gzip_with_fhcrc(data : Bytes) -> Bytes {
   let header = Bytes::makei(10, fn(i) {
     if i == 3 {
@@ -223,6 +228,37 @@ test "gzip rejects invalid FHCRC" {
   let compressed = gzip_with_bad_fhcrc(@gzip.compress(data))
   let result = try? @gzip.decompress(compressed)
   guard result is Err(_) else { fail("expected error for bad header checksum") }
+}
+
+///|
+test "gzip rejects reserved header flags" {
+  let compressed = @gzip.compress(b"reserved flags")
+  let corrupted = Bytes::makei(compressed.length(), fn(i) {
+    if i == 3 {
+      (compressed[i].to_int() | 0x20).to_byte()
+    } else {
+      compressed[i]
+    }
+  })
+  let result = try? @gzip.decompress(corrupted)
+  guard result is Err(_) else {
+    fail("expected error for reserved gzip header flags")
+  }
+}
+
+///|
+test "gzip decompress concatenated members" {
+  let first = @gzip.compress(
+    b"first member",
+    header=gzip_named_header("first.txt"),
+  )
+  let second = @gzip.compress(
+    b"second member",
+    header=gzip_named_header("second.txt"),
+  )
+  let (decompressed, header) = @gzip.decompress(first + second)
+  assert_eq(decompressed, b"first membersecond member")
+  assert_eq(header.name, "second.txt")
 }
 
 ///|

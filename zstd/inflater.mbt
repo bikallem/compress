@@ -31,43 +31,23 @@ struct Inflater(InflaterState)
 
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
-  let parsed = try? parse_dictionary_bytes(dict)
-  match parsed {
-    Ok(dict) =>
-      Inflater({
-        input_buf: @blit.Buffer::new(),
-        input_pos: 0,
-        phase: FrameHeader,
-        failed: None,
-        sink: None,
-        pending_output: None,
-        dict,
-        header: None,
-        prev_lit_table: None,
-        prev_seq_tables: None,
-        rep: default_rep_offsets(),
-        history: @blit.Buffer::new(),
-        total_output: 0,
-        xxh: @checksum.XXH64::new(),
-      })
-    Err(e) =>
-      Inflater({
-        input_buf: @blit.Buffer::new(),
-        input_pos: 0,
-        phase: Done,
-        failed: Some(e),
-        sink: None,
-        pending_output: None,
-        dict: empty_dictionary(),
-        header: None,
-        prev_lit_table: None,
-        prev_seq_tables: None,
-        rep: default_rep_offsets(),
-        history: @blit.Buffer::new(),
-        total_output: 0,
-        xxh: @checksum.XXH64::new(),
-      })
-  }
+  let parsed = parse_dictionary_bytes(dict)
+  Inflater({
+    input_buf: @blit.Buffer::new(),
+    input_pos: 0,
+    phase: FrameHeader,
+    failed: None,
+    sink: None,
+    pending_output: None,
+    dict: parsed,
+    header: None,
+    prev_lit_table: None,
+    prev_seq_tables: None,
+    rep: default_rep_offsets(),
+    history: @blit.Buffer::new(),
+    total_output: 0,
+    xxh: @checksum.XXH64::new(),
+  })
 }
 
 ///|
@@ -128,15 +108,15 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
           Parsed(header, consumed) => {
             s.xxh.reset()
             if header.dict_id != 0U {
-              if s.dict.content.length() == 0 {
+              if s.dict.dict_id == 0U {
                 return fail_inflater(
                   s,
                   ZstdError::InvalidHeader(
-                    "dictionary id \{header.dict_id} requires external dictionary",
+                    "dictionary id \{header.dict_id} requires matching formatted dictionary",
                   ),
                 )
               }
-              if s.dict.dict_id != 0U && s.dict.dict_id != header.dict_id {
+              if s.dict.dict_id != header.dict_id {
                 return fail_inflater(
                   s,
                   ZstdError::InvalidHeader("dictionary id mismatch"),

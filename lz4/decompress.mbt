@@ -2,20 +2,29 @@
 /// Decompresses LZ4 frame format data.
 pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
   let src = data[:]
-  let (data_pos, content_size, has_content_checksum, block_max_size) = parse_frame_header(
-    src,
-  )
-  let initial_capacity = match content_size {
-    Some(size) => size
-    None => (data.length() * 2).max(block_max_size)
+  let sink = @blit.Buffer::new(size_hint=(data.length() * 2).max(65536))
+  let mut pos = 0
+  while pos < data.length() {
+    pos = decompress_frame(src, data, pos, sink)
   }
-  let sink = @blit.Buffer::new(size_hint=initial_capacity)
-  // Temporary buffer for decompressed blocks
+  sink.to_bytes()
+}
+
+///|
+fn decompress_frame(
+  src : BytesView,
+  data : Bytes,
+  start : Int,
+  sink : @blit.Buffer,
+) -> Int raise Lz4Error {
+  let (data_pos, content_size, has_content_checksum, block_max_size) = parse_frame_header(
+    src[start:],
+  )
   let block_buf = FixedArray::make(block_max_size, b'\x00')
-  let mut pos = data_pos
+  let mut pos = start + data_pos
   let xxh = @checksum.XXH32::new()
+  let mut frame_output_len = 0
   let mut saw_end_mark = false
-  // Read blocks
   while !saw_end_mark {
     guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
     let block_size_raw = data.unsafe_get(pos).to_int() |
@@ -23,7 +32,6 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
       (data.unsafe_get(pos + 2).to_int() << 16) |
       (data.unsafe_get(pos + 3).to_int() << 24)
     pos += 4
-    // End mark
     if block_size_raw == 0 {
       saw_end_mark = true
       continue
@@ -39,6 +47,7 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
       })
       sink.write_bytes(block_bytes)
       xxh.update(block_bytes[:])
+      frame_output_len += block_size
     } else {
       let (decoded_len, _) = block_decompress(
         src,
@@ -53,10 +62,10 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
       })
       sink.write_bytes(decoded_bytes)
       xxh.update(decoded_bytes[:])
+      frame_output_len += decoded_len
     }
     pos += block_size
   }
-  // Verify content checksum
   if has_content_checksum {
     guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
     let expected_cs = data.unsafe_get(pos).to_uint() |
@@ -67,15 +76,14 @@ pub fn decompress(data : Bytes) -> Bytes raise Lz4Error {
     guard expected_cs == actual_cs else {
       raise Lz4Error::ChecksumMismatch(expected=expected_cs, got=actual_cs)
     }
+    pos += 4
   }
-  // Verify content size
-  let result = sink.to_bytes()
   match content_size {
     Some(expected) =>
-      if result.length() != expected {
+      if frame_output_len != expected {
         raise Lz4Error::ContentSizeMismatch
       }
     None => ()
   }
-  result
+  pos
 }

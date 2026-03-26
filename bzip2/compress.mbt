@@ -191,6 +191,7 @@ fn write_block(
   in_use : FixedArray[Bool],
   orig_ptr : Int,
   block_crc : UInt,
+  randomized? : Bool = false,
 ) -> Unit {
   // Block magic: 0x314159265359
   bw.write_bits(0x314159U, 24)
@@ -198,8 +199,7 @@ fn write_block(
   // Block CRC
   bw.write_bits(block_crc >> 16, 16)
   bw.write_bits(block_crc & 0xFFFFU, 16)
-  // Randomized flag (always false)
-  bw.write_bits(0U, 1)
+  bw.write_bits(if randomized { 1U } else { 0U }, 1)
   // Original pointer
   bw.write_bits(orig_ptr.reinterpret_as_uint(), 24)
   // Symbol map: 16 groups of 16

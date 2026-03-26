@@ -185,3 +185,22 @@ test "streaming bzip2 deflater emits blocks incrementally" {
   let decompressed = @bzip2.decompress(cbuf.to_bytes())
   assert_eq(decompressed, original)
 }
+
+///|
+test "streaming bzip2 inflater consumes buffered concatenated streams" {
+  let compressed = @bzip2.compress(b"first stream") +
+    @bzip2.compress(b"second stream")
+  let d = @bzip2.Inflater::new()
+  let buf = @blit.Buffer::new()
+  d.src(compressed[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with full concatenated bzip2 input")
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"first streamsecond stream")
+}
