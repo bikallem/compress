@@ -67,7 +67,7 @@ fn encode_uncompressed_metablock_into(
   let (mnibbles, _) = meta_block_nibbles(src_len)
   bw.write_bits(mnibbles - 4, 2)
   bw.write_bits(src_len - 1, mnibbles * 4)
-  if not(is_last) {
+  if !is_last {
     bw.write_bits(1, 1)
   }
   if bw.n_bits > 0 {
@@ -1668,7 +1668,7 @@ fn encode_metablock_into(
   let (mnibbles, _) = meta_block_nibbles(src_len)
   bw.write_bits(mnibbles - 4, 2)
   bw.write_bits(src_len - 1, mnibbles * 4)
-  if not(is_last) {
+  if !is_last {
     bw.write_bits(0, 1) // ISUNCOMPRESSED=0 (only present for non-last)
   }
 
@@ -1799,7 +1799,7 @@ fn build_context_model(
   use_context : Bool,
   prev_byte : Int,
 ) -> (Int, FixedArray[Int], Array[FixedArray[Int]]) {
-  if not(use_context) {
+  if !use_context {
     let lit_freqs = FixedArray::make(256, 0)
     for cmd in cmds {
       for j in 0..<cmd.insert_len {
@@ -1860,7 +1860,7 @@ fn build_context_model(
     }
   }
 
-  if not(has_tree0 && has_tree1) {
+  if !has_tree0 && has_tree1 {
     // All contexts map to one tree; fall back to single tree
     // Merge both tree_freqs into one
     let lit_freqs = tree_freqs.unsafe_get(0)
@@ -1922,11 +1922,11 @@ fn cluster_contexts(
     // For efficiency, find the two smallest clusters to merge
     // (simplification: merge the two clusters with smallest combined count)
     for i in 0..<n {
-      if not(alive.unsafe_get(i)) {
+      if !alive.unsafe_get(i) {
         continue
       }
       for j in (i + 1)..<n {
-        if not(alive.unsafe_get(j)) {
+        if !alive.unsafe_get(j) {
           continue
         }
         let cost = counts.unsafe_get(i) + counts.unsafe_get(j)
