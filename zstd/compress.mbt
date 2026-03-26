@@ -762,26 +762,7 @@ fn compress_block_from_sequences(
     return 0
   }
   let mut pos = 0
-  // Write literals section header (raw literals, type=0)
-  if lit_count < 32 {
-    dst.unsafe_set(pos, ((lit_count << 3) | 0).to_byte())
-    pos += 1
-  } else if lit_count < 4096 {
-    let header = (lit_count << 4) | (1 << 2) | 0
-    dst.unsafe_set(pos, (header & 0xFF).to_byte())
-    dst.unsafe_set(pos + 1, ((header >> 8) & 0xFF).to_byte())
-    pos += 2
-  } else {
-    let header = (lit_count << 4) | (3 << 2) | 0
-    dst.unsafe_set(pos, (header & 0xFF).to_byte())
-    dst.unsafe_set(pos + 1, ((header >> 8) & 0xFF).to_byte())
-    dst.unsafe_set(pos + 2, ((header >> 16) & 0xFF).to_byte())
-    pos += 3
-  }
-  for i in 0..<lit_count {
-    dst.unsafe_set(pos + i, literals.unsafe_get(lit_start + i))
-  }
-  pos += lit_count
+  pos += write_literal_section(dst, pos, literals, lit_start, lit_count)
   // Write sequences section header
   let num_seq = sequences.length()
   if num_seq < 128 {
@@ -798,11 +779,80 @@ fn compress_block_from_sequences(
     dst.unsafe_set(pos + 2, ((val >> 8) & 0xFF).to_byte())
     pos += 3
   }
-  // Compression modes: all predefined (0)
-  dst.unsafe_set(pos, b'\x00')
+  let ll_codes = FixedArray::make(num_seq, 0)
+  let of_codes = FixedArray::make(num_seq, 0)
+  let ml_codes = FixedArray::make(num_seq, 0)
+  let mut ll_symbol = -1
+  let mut of_symbol = -1
+  let mut ml_symbol = -1
+  let mut ll_rle = num_seq > 1
+  let mut of_rle = num_seq > 1
+  let mut ml_rle = num_seq > 1
+  for i in 0..<num_seq {
+    let seq = sequences.unsafe_get(i)
+    let (ll_code, _, _) = get_ll_code(seq.lit_len)
+    let (of_code, _, _) = get_offset_code(seq.offset)
+    let (ml_code, _, _) = get_ml_code(seq.match_len)
+    ll_codes.unsafe_set(i, ll_code)
+    of_codes.unsafe_set(i, of_code)
+    ml_codes.unsafe_set(i, ml_code)
+    if i == 0 {
+      ll_symbol = ll_code
+      of_symbol = of_code
+      ml_symbol = ml_code
+    } else {
+      if ll_code != ll_symbol {
+        ll_rle = false
+      }
+      if of_code != of_symbol {
+        of_rle = false
+      }
+      if ml_code != ml_symbol {
+        ml_rle = false
+      }
+    }
+  }
+  let modes = (if ll_rle { 1 << 6 } else { 0 }) |
+    (if of_rle { 1 << 4 } else { 0 }) |
+    (if ml_rle { 1 << 2 } else { 0 })
+  dst.unsafe_set(pos, modes.to_byte())
   pos += 1
+  if ll_rle {
+    dst.unsafe_set(pos, ll_symbol.to_byte())
+    pos += 1
+  }
+  if of_rle {
+    dst.unsafe_set(pos, of_symbol.to_byte())
+    pos += 1
+  }
+  if ml_rle {
+    dst.unsafe_set(pos, ml_symbol.to_byte())
+    pos += 1
+  }
   // Encode sequences
-  let stream_size = encode_sequences(sequences, dst, pos)
+  let stream_size = encode_sequences(
+    sequences,
+    ll_codes,
+    of_codes,
+    ml_codes,
+    if ll_rle {
+      Some(ll_symbol)
+    } else {
+      None
+    },
+    if of_rle {
+      Some(of_symbol)
+    } else {
+      None
+    },
+    if ml_rle {
+      Some(ml_symbol)
+    } else {
+      None
+    },
+    dst,
+    pos,
+  )
   if stream_size == 0 {
     return 0
   }
@@ -811,10 +861,66 @@ fn compress_block_from_sequences(
 }
 
 ///|
+fn write_literal_section(
+  dst : FixedArray[Byte],
+  pos_ : Int,
+  literals : FixedArray[Byte],
+  lit_start : Int,
+  lit_count : Int,
+) -> Int {
+  let mut pos = pos_
+  let use_rle = if lit_count > 1 {
+    let first = literals.unsafe_get(lit_start)
+    let mut same = true
+    for i in 1..<lit_count {
+      if literals.unsafe_get(lit_start + i) != first {
+        same = false
+        break
+      }
+    }
+    same
+  } else {
+    false
+  }
+  let lit_type = if use_rle { 1 } else { 0 }
+  if lit_count < 32 {
+    dst.unsafe_set(pos, ((lit_count << 3) | lit_type).to_byte())
+    pos += 1
+  } else if lit_count < 4096 {
+    let header = (lit_count << 4) | (1 << 2) | lit_type
+    dst.unsafe_set(pos, (header & 0xFF).to_byte())
+    dst.unsafe_set(pos + 1, ((header >> 8) & 0xFF).to_byte())
+    pos += 2
+  } else {
+    let header = (lit_count << 4) | (3 << 2) | lit_type
+    dst.unsafe_set(pos, (header & 0xFF).to_byte())
+    dst.unsafe_set(pos + 1, ((header >> 8) & 0xFF).to_byte())
+    dst.unsafe_set(pos + 2, ((header >> 16) & 0xFF).to_byte())
+    pos += 3
+  }
+  if use_rle {
+    dst.unsafe_set(pos, literals.unsafe_get(lit_start))
+    pos += 1
+  } else {
+    for i in 0..<lit_count {
+      dst.unsafe_set(pos + i, literals.unsafe_get(lit_start + i))
+    }
+    pos += lit_count
+  }
+  pos - pos_
+}
+
+///|
 /// Encode sequences into a backward bitstream using predefined FSE CTables.
 /// Follows the reference ZSTD_encodeSequences_body algorithm exactly.
 fn encode_sequences(
   sequences : Array[ZstdSequence],
+  ll_codes : FixedArray[Int],
+  of_codes : FixedArray[Int],
+  ml_codes : FixedArray[Int],
+  ll_rle : Int?,
+  of_rle : Int?,
+  ml_rle : Int?,
   dst : FixedArray[Byte],
   dst_pos : Int,
 ) -> Int {
@@ -822,19 +928,43 @@ fn encode_sequences(
   if num_seq == 0 {
     return 0
   }
-  let ll_ct = build_fse_ctable(ll_default_norm, 35, LL_DEFAULT_ACCURACY)
-  let of_ct = build_fse_ctable(of_default_norm, 28, OF_DEFAULT_ACCURACY)
-  let ml_ct = build_fse_ctable(ml_default_norm, 52, ML_DEFAULT_ACCURACY)
+  let ll_ct : FseCTable? = match ll_rle {
+    Some(_) => None
+    None => Some(build_fse_ctable(ll_default_norm, 35, LL_DEFAULT_ACCURACY))
+  }
+  let of_ct : FseCTable? = match of_rle {
+    Some(_) => None
+    None => Some(build_fse_ctable(of_default_norm, 28, OF_DEFAULT_ACCURACY))
+  }
+  let ml_ct : FseCTable? = match ml_rle {
+    Some(_) => None
+    None => Some(build_fse_ctable(ml_default_norm, 52, ML_DEFAULT_ACCURACY))
+  }
   let bw = FseBitWriter::new(num_seq * 20 + 64)
   // Get codes for the last sequence
   let last = sequences.unsafe_get(num_seq - 1)
-  let (ll_code_last, ll_xb_last, ll_xv_last) = get_ll_code(last.lit_len)
-  let (of_code_last, _of_xb_last, of_xv_last) = get_offset_code(last.offset)
-  let (ml_code_last, ml_xb_last, ml_xv_last) = get_ml_code(last.match_len)
-  // Initialize FSE states with the last sequence's symbols
-  let mut ll_state = fse_init_state(ll_ct, ll_code_last)
-  let mut of_state = fse_init_state(of_ct, of_code_last)
-  let mut ml_state = fse_init_state(ml_ct, ml_code_last)
+  let ll_code_last = ll_codes.unsafe_get(num_seq - 1)
+  let of_code_last = of_codes.unsafe_get(num_seq - 1)
+  let ml_code_last = ml_codes.unsafe_get(num_seq - 1)
+  let (_ll_code_last_check, ll_xb_last, ll_xv_last) = get_ll_code(last.lit_len)
+  let (_of_code_last_check, _of_xb_last, of_xv_last) = get_offset_code(
+    last.offset,
+  )
+  let (_ml_code_last_check, ml_xb_last, ml_xv_last) = get_ml_code(
+    last.match_len,
+  )
+  let mut ll_state = match ll_ct {
+    Some(ct) => fse_init_state(ct, ll_code_last)
+    None => 0
+  }
+  let mut of_state = match of_ct {
+    Some(ct) => fse_init_state(ct, of_code_last)
+    None => 0
+  }
+  let mut ml_state = match ml_ct {
+    Some(ct) => fse_init_state(ct, ml_code_last)
+    None => 0
+  }
   // Write extra bits for the last sequence (written first in forward buffer,
   // read last by decoder for the last sequence)
   bw.add_bits(ll_xv_last, ll_xb_last)
@@ -852,14 +982,26 @@ fn encode_sequences(
   //   6. BIT_addBits(OF extra)
   for n = num_seq - 2; n >= 0; n = n - 1 {
     let seq = sequences.unsafe_get(n)
-    let (of_code, _of_xb, of_xv) = get_offset_code(seq.offset)
-    let (ml_code, ml_xb, ml_xv) = get_ml_code(seq.match_len)
-    let (ll_code, ll_xb, ll_xv) = get_ll_code(seq.lit_len)
+    let of_code = of_codes.unsafe_get(n)
+    let ml_code = ml_codes.unsafe_get(n)
+    let ll_code = ll_codes.unsafe_get(n)
+    let (_of_code_check, _of_xb, of_xv) = get_offset_code(seq.offset)
+    let (_ml_code_check, ml_xb, ml_xv) = get_ml_code(seq.match_len)
+    let (_ll_code_check, ll_xb, ll_xv) = get_ll_code(seq.lit_len)
     // FSE encode symbols (outputs state bits, transitions state)
-    of_state = fse_encode_symbol(of_ct, bw, of_state, of_code)
-    ml_state = fse_encode_symbol(ml_ct, bw, ml_state, ml_code)
+    match of_ct {
+      Some(ct) => of_state = fse_encode_symbol(ct, bw, of_state, of_code)
+      None => ()
+    }
+    match ml_ct {
+      Some(ct) => ml_state = fse_encode_symbol(ct, bw, ml_state, ml_code)
+      None => ()
+    }
     bw.flush()
-    ll_state = fse_encode_symbol(ll_ct, bw, ll_state, ll_code)
+    match ll_ct {
+      Some(ct) => ll_state = fse_encode_symbol(ct, bw, ll_state, ll_code)
+      None => ()
+    }
     bw.flush()
     // Extra bits
     bw.add_bits(ll_xv, ll_xb)
@@ -869,9 +1011,18 @@ fn encode_sequences(
     bw.flush()
   }
   // Flush final states (reverse of decoder init order: ML, OF, LL)
-  fse_flush_state(bw, ml_state, ML_DEFAULT_ACCURACY)
-  fse_flush_state(bw, of_state, OF_DEFAULT_ACCURACY)
-  fse_flush_state(bw, ll_state, LL_DEFAULT_ACCURACY)
+  match ml_ct {
+    Some(_) => fse_flush_state(bw, ml_state, ML_DEFAULT_ACCURACY)
+    None => ()
+  }
+  match of_ct {
+    Some(_) => fse_flush_state(bw, of_state, OF_DEFAULT_ACCURACY)
+    None => ()
+  }
+  match ll_ct {
+    Some(_) => fse_flush_state(bw, ll_state, LL_DEFAULT_ACCURACY)
+    None => ()
+  }
   // Close and copy (no reversal needed - backward stream is stored forward)
   bw.close()
   bw.copy_to(dst, dst_pos)

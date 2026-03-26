@@ -148,15 +148,21 @@ fn Encoder::write(self : Encoder, data : BytesView) -> Unit {
     } else {
       len
     }
-    self.compress_block(data, block_start, block_end)
+    let prefix_start = if block_start > MAX_BLOCK_SIZE {
+      block_start - MAX_BLOCK_SIZE
+    } else {
+      0
+    }
+    self.compress_block_window(data, prefix_start, block_start, block_end)
     block_start = block_end
   }
 }
 
 ///|
-fn Encoder::compress_block(
+fn Encoder::compress_block_window(
   self : Encoder,
   data : BytesView,
+  prefix_start : Int,
   block_start : Int,
   block_end : Int,
 ) -> Unit {
@@ -170,19 +176,23 @@ fn Encoder::compress_block(
   for i in 0..<HASH_TABLE_SIZE {
     table.unsafe_set(i, 0)
   }
+  let prefix_end = if block_start >= 4 { block_start - 3 } else { block_start }
+  for i in prefix_start..<prefix_end {
+    table.unsafe_set(snappy_hash(data, i), i + 1)
+  }
   let mut ip = block_start // current position
   let mut next_emit = block_start // start of pending literal
   let ip_limit = block_end - 4 // can't hash last 3 bytes
   let mut next_hash = snappy_hash(data, ip)
   while ip <= ip_limit {
     let hash = next_hash
-    let candidate = table.unsafe_get(hash) + block_start
-    table.unsafe_set(hash, ip - block_start)
+    let candidate = table.unsafe_get(hash) - 1
+    table.unsafe_set(hash, ip + 1)
     if ip + 1 <= ip_limit {
       next_hash = snappy_hash(data, ip + 1)
     }
     // Check match (ip == candidate guards against self-match from zero-init table)
-    if candidate < block_start ||
+    if candidate < prefix_start ||
       ip == candidate ||
       ip - candidate >= MAX_BLOCK_SIZE ||
       data.unsafe_get(ip) != data.unsafe_get(candidate) ||

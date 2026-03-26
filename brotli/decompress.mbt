@@ -35,57 +35,74 @@ fn brotli_decompress_into(
   let wbits = decode_wbits(br)
   let window_size = 1 << wbits
   let max_backward = window_size
-  // Distance ring buffer persists across metablocks (RFC 7932)
+  let dist_rb = init_distance_ring_buffer()
+  let mut dist_rb_idx = 0
+  while true {
+    let dist_rb_ref = Ref::new(dist_rb_idx)
+    if decode_next_metablock(br, sink, max_backward, dist_rb, dist_rb_ref) {
+      dist_rb_idx = dist_rb_ref.val
+      break
+    }
+    dist_rb_idx = dist_rb_ref.val
+  }
+}
+
+///|
+fn init_distance_ring_buffer() -> FixedArray[Int] {
   let dist_rb = FixedArray::make(4, 0)
   dist_rb.unsafe_set(0, 16)
   dist_rb.unsafe_set(1, 15)
   dist_rb.unsafe_set(2, 11)
   dist_rb.unsafe_set(3, 4)
-  let mut dist_rb_idx = 0
-  while true {
-    let is_last = br.read_bool()
-    if is_last {
-      let is_last_empty = br.read_bool()
-      if is_last_empty {
-        break
-      }
+  dist_rb
+}
+
+///|
+fn decode_next_metablock(
+  br : BitReader,
+  sink : @blit.Buffer,
+  max_backward : Int,
+  dist_rb : FixedArray[Int],
+  dist_rb_idx : Ref[Int],
+) -> Bool raise BrotliError {
+  let is_last = br.read_bool()
+  if is_last {
+    let is_last_empty = br.read_bool()
+    if is_last_empty {
+      return true
     }
-    let mnibbles_minus_4 = br.read_bits(2)
-    let mnibbles = mnibbles_minus_4 + 4
-    if mnibbles == 7 {
-      br.read_bits(1) |> ignore // reserved bit (must be zero per RFC 7932)
-      let mskip_bytes = br.read_bits(2)
-      if mskip_bytes > 0 {
-        let skip_len_bits = mskip_bytes * 8
-        br.read_bits(skip_len_bits) |> ignore
-        if br.n_bits % 8 != 0 {
-          br.read_bits(br.n_bits % 8) |> ignore
-        }
-      }
-      continue
-    }
-    let mlen_bits = mnibbles * 4
-    let mlen = br.read_bits(mlen_bits) + 1
-    let dist_rb_ref = Ref::new(dist_rb_idx)
-    if is_last {
-      decode_compressed_block(
-        br, mlen, sink, max_backward, dist_rb, dist_rb_ref,
-      )
-      dist_rb_idx = dist_rb_ref.val
-      break
-    }
-    let is_uncompressed = br.read_bool()
-    if is_uncompressed {
+  }
+  let mnibbles_minus_4 = br.read_bits(2)
+  let mnibbles = mnibbles_minus_4 + 4
+  if mnibbles == 7 {
+    br.read_bits(1) |> ignore // reserved bit (must be zero per RFC 7932)
+    let mskip_bytes = br.read_bits(2)
+    if mskip_bytes > 0 {
+      let skip_len_bits = mskip_bytes * 8
+      br.read_bits(skip_len_bits) |> ignore
       if br.n_bits % 8 != 0 {
         br.read_bits(br.n_bits % 8) |> ignore
       }
-      sink.ensure_capacity(mlen)
-      br.read_bytes_to_sink(sink, mlen)
-      continue
     }
-    decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_ref)
-    dist_rb_idx = dist_rb_ref.val
+    return false
   }
+  let mlen_bits = mnibbles * 4
+  let mlen = br.read_bits(mlen_bits) + 1
+  if is_last {
+    decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_idx)
+    return true
+  }
+  let is_uncompressed = br.read_bool()
+  if is_uncompressed {
+    if br.n_bits % 8 != 0 {
+      br.read_bits(br.n_bits % 8) |> ignore
+    }
+    sink.ensure_capacity(mlen)
+    br.read_bytes_to_sink(sink, mlen)
+    return false
+  }
+  decode_compressed_block(br, mlen, sink, max_backward, dist_rb, dist_rb_idx)
+  false
 }
 
 ///|

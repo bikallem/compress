@@ -11,6 +11,7 @@ priv struct Decoder {
   // Header accumulator
   mut hdr_buf : @blit.Buffer
   mut header : Header
+  headers : Array[Header]
 }
 
 ///|
@@ -36,6 +37,7 @@ pub fn Inflater::new() -> Inflater {
     input_finished: false,
     hdr_buf: @blit.Buffer::new(),
     header: Header::default(),
+    headers: [],
   })
 }
 
@@ -43,6 +45,13 @@ pub fn Inflater::new() -> Inflater {
 /// Returns the parsed gzip header. Only valid after decoding has started.
 pub fn Inflater::header(self : Inflater) -> Header {
   self.0.header
+}
+
+///|
+/// Returns all parsed member headers in decode order.
+pub fn Inflater::member_headers(self : Inflater) -> Array[Header] {
+  let headers = self.0.headers
+  Array::makei(headers.length(), fn(i) { headers[i] })
 }
 
 ///|
@@ -294,6 +303,7 @@ fn pump_header(s : Decoder) -> Unit {
   match try_parse_gzip_header(buf) {
     Ok((pos, header)) => {
       s.header = header
+      s.headers.push(header)
       s.inflater = @flate.Inflater::new()
       let remaining_len = buf.length() - pos
       if remaining_len > 0 {

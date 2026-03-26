@@ -262,6 +262,23 @@ test "gzip decompress concatenated members" {
 }
 
 ///|
+test "gzip decompress_members returns per-member headers" {
+  let first = @gzip.compress(
+    b"first member",
+    header=gzip_named_header("first.txt"),
+  )
+  let second = @gzip.compress(
+    b"second member",
+    header=gzip_named_header("second.txt"),
+  )
+  let (decompressed, headers) = @gzip.decompress_members(first + second)
+  assert_eq(decompressed, b"first membersecond member")
+  assert_eq(headers.length(), 2)
+  assert_eq(headers[0].name, "first.txt")
+  assert_eq(headers[1].name, "second.txt")
+}
+
+///|
 test "gzip compression reduces size" {
   let buf = @blit.Buffer::new(size_hint=5000)
   for _ in 0..<5000 {

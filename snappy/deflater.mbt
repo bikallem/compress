@@ -13,6 +13,7 @@ priv struct DeflaterState {
   mut seen_len : Int
   mut header_emitted : Bool
   input_buf : @blit.Buffer
+  mut history : @blit.Buffer
   mut finished : Bool
 }
 
@@ -27,6 +28,7 @@ pub fn Deflater::new(total_len? : Int = -1) -> Deflater {
     seen_len: 0,
     header_emitted: false,
     input_buf: @blit.Buffer::new(),
+    history: @blit.Buffer::new(),
     finished: false,
   })
 }
@@ -53,17 +55,8 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
             CorruptInput("snappy input exceeds declared total length"),
           )
         }
-        let mut offset = 0
-        while offset < chunk.length() {
-          let end = if offset + MAX_BLOCK_SIZE < chunk.length() {
-            offset + MAX_BLOCK_SIZE
-          } else {
-            chunk.length()
-          }
-          s.state.compress_block(chunk, offset, end)
-          offset = end
-        }
         s.seen_len = next_len
+        encode_incremental_snappy_chunk(s, chunk)
         let out = s.state.take_output()
         if out.length() > 0 {
           Data(out[:])
@@ -105,4 +98,38 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       }
     }
   }
+}
+
+///|
+fn encode_incremental_snappy_chunk(
+  s : DeflaterState,
+  chunk : BytesView,
+) -> Unit {
+  if chunk.length() == 0 {
+    return
+  }
+  let history = s.history.to_bytes()
+  let combined = @blit.Buffer::new(size_hint=history.length() + chunk.length())
+  if history.length() > 0 {
+    combined.write_bytes(history)
+  }
+  combined.write_bytesview(chunk)
+  let combined_bytes = combined.to_bytes()
+  s.state.compress_block_window(
+    combined_bytes[:],
+    0,
+    history.length(),
+    combined_bytes.length(),
+  )
+  let keep = if combined_bytes.length() > MAX_BLOCK_SIZE {
+    MAX_BLOCK_SIZE
+  } else {
+    combined_bytes.length()
+  }
+  let keep_start = combined_bytes.length() - keep
+  let next_history = @blit.Buffer::new(size_hint=keep)
+  if keep > 0 {
+    next_history.write_bytesview(combined_bytes[keep_start:])
+  }
+  s.history = next_history
 }

@@ -10,6 +10,8 @@ pub fn compress(Bytes, level? : @flate.CompressionLevel, header? : Header) -> By
 
 pub fn decompress(Bytes) -> (Bytes, Header) raise GzipError
 
+pub fn decompress_members(Bytes) -> (Bytes, Array[Header]) raise GzipError
+
 // Errors
 pub(all) suberror GzipError {
   InvalidHeader(String)
@@ -56,6 +58,7 @@ type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::finish(Self) -> Unit
 pub fn Inflater::header(Self) -> Header
+pub fn Inflater::member_headers(Self) -> Array[Header]
 pub fn Inflater::new() -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit
 

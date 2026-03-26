@@ -4,7 +4,7 @@ package "bikallem/compress/lz4"
 // Values
 pub fn compress(Bytes) -> Bytes
 
-pub fn decompress(Bytes) -> Bytes raise Lz4Error
+pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise Lz4Error
 
 // Errors
 pub(all) suberror Lz4Error {
@@ -41,7 +41,7 @@ type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::enable_direct_output(Self, Int) -> Unit
 pub fn Inflater::finish(Self) -> Unit
-pub fn Inflater::new() -> Self
+pub fn Inflater::new(dict? : Bytes) -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit
 pub fn Inflater::take_output(Self) -> Bytes
 

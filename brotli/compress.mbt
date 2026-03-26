@@ -84,10 +84,9 @@ fn encode_stream_chunk_into(
   src_len : Int,
   level : Int,
   is_last : Bool,
+  history : BytesView,
+  prev_byte : Int,
 ) -> Unit {
-  // Streaming metablocks are encoded independently, so avoid context modeling
-  // that depends on the previous output byte across chunk boundaries.
-  let stream_level = if level >= 5 { 4 } else { level }
   let mut offset = 0
   while offset < src_len {
     let chunk_size = if src_len - offset < MAX_METABLOCK_SIZE {
@@ -97,20 +96,84 @@ fn encode_stream_chunk_into(
     }
     let is_last_chunk = is_last && offset + chunk_size >= src_len
     let chunk = src[offset:offset + chunk_size]
-    if stream_level == 0 || chunk_size < 8 {
+    let prefix = brotli_chunk_prefix(history, src, offset)
+    let chunk_prev_byte = if offset == 0 {
+      prev_byte
+    } else {
+      src.unsafe_get(offset - 1).to_int()
+    }
+    if level == 0 || chunk_size < 8 {
       encode_uncompressed_metablock_into(bw, chunk, chunk_size, is_last_chunk)
     } else {
-      let cmds = if stream_level <= 1 {
-        lz77_find_matches(chunk, chunk_size)
+      let cmds = if level <= 1 {
+        lz77_find_matches_with_prefix(chunk, chunk_size, prefix[:])
       } else {
-        lz77_find_matches_chain(chunk, chunk_size, stream_level)
+        lz77_find_matches_chain_with_prefix(chunk, chunk_size, level, prefix[:])
       }
       encode_metablock_into(
-        bw, chunk, chunk_size, cmds, stream_level, is_last_chunk,
+        bw, chunk, chunk_size, cmds, level, is_last_chunk, chunk_prev_byte,
       )
     }
     offset += chunk_size
   }
+}
+
+///|
+fn brotli_chunk_prefix(
+  history : BytesView,
+  src : BytesView,
+  offset : Int,
+) -> Bytes {
+  let local_len = offset
+  let total = history.length() + local_len
+  if total == 0 {
+    return b""
+  }
+  let keep = if total > MAX_BACKWARD_DISTANCE {
+    MAX_BACKWARD_DISTANCE
+  } else {
+    total
+  }
+  let skip = total - keep
+  let out = @blit.Buffer::new(size_hint=keep)
+  if skip < history.length() {
+    out.write_bytesview(history[skip:])
+    if local_len > 0 {
+      out.write_bytesview(src[0:offset])
+    }
+  } else {
+    let local_skip = skip - history.length()
+    if local_skip < local_len {
+      out.write_bytesview(src[local_skip:offset])
+    }
+  }
+  out.to_bytes()
+}
+
+///|
+fn append_brotli_history(
+  history : @blit.Buffer,
+  chunk : BytesView,
+) -> @blit.Buffer {
+  let current = history.to_bytes()
+  let total = current.length() + chunk.length()
+  let keep = if total > MAX_BACKWARD_DISTANCE {
+    MAX_BACKWARD_DISTANCE
+  } else {
+    total
+  }
+  let skip = total - keep
+  let next = @blit.Buffer::new(size_hint=keep)
+  if skip < current.length() {
+    next.write_bytesview(current[skip:])
+    next.write_bytesview(chunk)
+  } else {
+    let chunk_skip = skip - current.length()
+    if chunk_skip < chunk.length() {
+      next.write_bytesview(chunk[chunk_skip:])
+    }
+  }
+  next
 }
 
 ///|
@@ -172,6 +235,8 @@ fn compress_lz77_chunked(src : BytesView, src_len : Int) -> Bytes {
   let bw = BitWriter::new(1048576)
   encode_wbits(bw, wbits)
   let mut offset = 0
+  let mut prev_byte = 0
+  let mut history = @blit.Buffer::new()
   while offset < src_len {
     let chunk_size = if src_len - offset < MAX_METABLOCK_SIZE {
       src_len - offset
@@ -180,8 +245,11 @@ fn compress_lz77_chunked(src : BytesView, src_len : Int) -> Bytes {
     }
     let is_last = offset + chunk_size >= src_len
     let chunk = src[offset:offset + chunk_size]
-    let cmds = lz77_find_matches(chunk, chunk_size)
-    encode_metablock_into(bw, chunk, chunk_size, cmds, 1, is_last)
+    let prefix = history.to_bytes()
+    let cmds = lz77_find_matches_with_prefix(chunk, chunk_size, prefix[:])
+    encode_metablock_into(bw, chunk, chunk_size, cmds, 1, is_last, prev_byte)
+    history = append_brotli_history(history, chunk)
+    prev_byte = chunk.unsafe_get(chunk.length() - 1).to_int()
     offset += chunk_size
   }
   let compressed = bw.to_bytes()
@@ -252,6 +320,95 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
     cmds.push({
       insert_pos: insert_start,
       insert_len: src_len - insert_start,
+      copy_len: 0,
+      distance: 0,
+    })
+  }
+  cmds
+}
+
+///|
+fn lz77_find_matches_with_prefix(
+  src : BytesView,
+  src_len : Int,
+  prefix : BytesView,
+) -> Array[BrotliCmd] {
+  if prefix.length() == 0 {
+    return lz77_find_matches(src, src_len)
+  }
+  let keep_prefix = if prefix.length() > MAX_BACKWARD_DISTANCE {
+    MAX_BACKWARD_DISTANCE
+  } else {
+    prefix.length()
+  }
+  let combined = @blit.Buffer::new(size_hint=keep_prefix + src_len)
+  combined.write_bytesview(prefix[prefix.length() - keep_prefix:])
+  combined.write_bytesview(src[0:src_len])
+  let combined_bytes = combined.to_bytes()
+  let combined_view = combined_bytes[:]
+  let base = keep_prefix
+  let total_len = combined_bytes.length()
+  let cmds : Array[BrotliCmd] = []
+  if src_len < MIN_MATCH_LENGTH {
+    cmds.push({ insert_pos: 0, insert_len: src_len, copy_len: 0, distance: 0 })
+    return cmds
+  }
+  let hash_table : FixedArray[Int] = FixedArray::make(BROTLI_HASH_SIZE, -1)
+  for i in 0..<base {
+    if i + 3 >= total_len {
+      break
+    }
+    hash_table.unsafe_set(brotli_hash4(combined_view, i), i)
+  }
+  let mut pos = base
+  let mut insert_start = base
+  while pos + 3 < total_len {
+    let h = brotli_hash4(combined_view, pos)
+    let match_pos = hash_table.unsafe_get(h)
+    hash_table.unsafe_set(h, pos)
+    if match_pos >= 0 &&
+      pos - match_pos <= MAX_BACKWARD_DISTANCE &&
+      pos - match_pos > 0 {
+      let max_len = if total_len - pos < MAX_MATCH_LENGTH {
+        total_len - pos
+      } else {
+        MAX_MATCH_LENGTH
+      }
+      let mlen = count_match(combined_view, pos, match_pos, max_len)
+      if mlen >= MIN_MATCH_LENGTH {
+        let insert_len = pos - insert_start
+        let dist = pos - match_pos
+        cmds.push({
+          insert_pos: insert_start - base,
+          insert_len,
+          copy_len: mlen,
+          distance: dist,
+        })
+        let match_end = if pos + mlen < total_len - 3 {
+          pos + mlen
+        } else {
+          total_len - 4
+        }
+        let rehash_limit = if mlen > 32 { 4 } else { mlen }
+        let rehash_end = if pos + rehash_limit < match_end {
+          pos + rehash_limit
+        } else {
+          match_end
+        }
+        for i = pos + 1; i <= rehash_end; i = i + 1 {
+          hash_table.unsafe_set(brotli_hash4(combined_view, i), i)
+        }
+        pos += mlen
+        insert_start = pos
+        continue
+      }
+    }
+    pos += 1
+  }
+  if insert_start < total_len {
+    cmds.push({
+      insert_pos: insert_start - base,
+      insert_len: total_len - insert_start,
       copy_len: 0,
       distance: 0,
     })
@@ -480,6 +637,151 @@ fn lz77_find_matches_chain(
     cmds.push({
       insert_pos: insert_start,
       insert_len: src_len - insert_start,
+      copy_len: 0,
+      distance: 0,
+    })
+  }
+  cmds
+}
+
+///|
+fn lz77_find_matches_chain_with_prefix(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+  prefix : BytesView,
+) -> Array[BrotliCmd] {
+  if prefix.length() == 0 {
+    return lz77_find_matches_chain(src, src_len, level)
+  }
+  let keep_prefix = if prefix.length() > MAX_BACKWARD_DISTANCE {
+    MAX_BACKWARD_DISTANCE
+  } else {
+    prefix.length()
+  }
+  let combined = @blit.Buffer::new(size_hint=keep_prefix + src_len)
+  combined.write_bytesview(prefix[prefix.length() - keep_prefix:])
+  combined.write_bytesview(src[0:src_len])
+  let combined_bytes = combined.to_bytes()
+  let combined_view = combined_bytes[:]
+  let base = keep_prefix
+  let total_len = combined_bytes.length()
+  let cmds : Array[BrotliCmd] = []
+  if src_len < MIN_MATCH_LENGTH {
+    cmds.push({ insert_pos: 0, insert_len: src_len, copy_len: 0, distance: 0 })
+    return cmds
+  }
+  let max_chain = chain_depth(level)
+  let use_lazy = level >= 4
+  let rehash_cap = if level <= 9 { 4 } else { MAX_MATCH_LENGTH }
+  let hash_size = BROTLI_HASH_SIZE
+  let hash_mask = hash_size - 1
+  let head : FixedArray[Int] = FixedArray::make(hash_size, -1)
+  let prev_size = if total_len < MAX_BACKWARD_DISTANCE {
+    let mut s = 1
+    while s < total_len {
+      s = s << 1
+    }
+    s
+  } else {
+    MAX_BACKWARD_DISTANCE
+  }
+  let win_mask = prev_size - 1
+  let prev : FixedArray[Int] = FixedArray::make(prev_size, -1)
+  let mut pos = base
+  let mut insert_start = base
+
+  fn insert_hash(p : Int) -> Unit {
+    let h = brotli_hash4(combined_view, p) & hash_mask
+    prev.unsafe_set(p & win_mask, head.unsafe_get(h))
+    head.unsafe_set(h, p)
+  }
+
+  fn find_best(p : Int) -> (Int, Int) {
+    if p + 3 >= total_len {
+      return (0, 0)
+    }
+    let h = brotli_hash4(combined_view, p) & hash_mask
+    let mut best_len = 3
+    let mut best_dist = 0
+    let mut candidate = head.unsafe_get(h)
+    let mut chains = 0
+    let max_len = if total_len - p < MAX_MATCH_LENGTH {
+      total_len - p
+    } else {
+      MAX_MATCH_LENGTH
+    }
+    while candidate >= 0 && chains < max_chain {
+      let dist = p - candidate
+      if dist <= 0 || dist > MAX_BACKWARD_DISTANCE {
+        break
+      }
+      let mlen = count_match(combined_view, p, candidate, max_len)
+      if mlen > best_len {
+        best_len = mlen
+        best_dist = dist
+        if mlen == max_len || mlen >= 32 {
+          break
+        }
+      }
+      candidate = prev.unsafe_get(candidate & win_mask)
+      chains += 1
+    }
+    if best_dist > 0 {
+      (best_len, best_dist)
+    } else {
+      (0, 0)
+    }
+  }
+
+  for i in 0..<base {
+    if i + 3 >= total_len {
+      break
+    }
+    insert_hash(i)
+  }
+
+  while pos + 3 < total_len {
+    let (mlen, mdist) = find_best(pos)
+    if mlen < MIN_MATCH_LENGTH {
+      insert_hash(pos)
+      pos += 1
+      continue
+    }
+    if use_lazy && pos + 1 + 3 < total_len {
+      insert_hash(pos)
+      let (mlen2, _mdist2) = find_best(pos + 1)
+      if mlen2 > mlen + 1 {
+        pos += 1
+        continue
+      }
+    }
+    let insert_len = pos - insert_start
+    cmds.push({
+      insert_pos: insert_start - base,
+      insert_len,
+      copy_len: mlen,
+      distance: mdist,
+    })
+    let mut rehash_end = pos + mlen
+    if rehash_end > total_len - 3 {
+      rehash_end = total_len - 3
+    }
+    let capped_end = if pos + rehash_cap < rehash_end {
+      pos + rehash_cap
+    } else {
+      rehash_end
+    }
+    for i = pos; i < capped_end; i = i + 1 {
+      insert_hash(i)
+    }
+    pos += mlen
+    insert_start = pos
+  }
+  if insert_start < total_len {
+    cmds.push({
+      insert_pos: insert_start - base,
+      insert_len: total_len - insert_start,
       copy_len: 0,
       distance: 0,
     })
@@ -1345,7 +1647,7 @@ fn encode_compressed_metablock(
     },
   )
   encode_wbits(bw, wbits)
-  encode_metablock_into(bw, src, src_len, cmds, level, true)
+  encode_metablock_into(bw, src, src_len, cmds, level, true, 0)
   bw.to_bytes()
 }
 
@@ -1357,6 +1659,7 @@ fn encode_metablock_into(
   cmds : Array[BrotliCmd],
   level : Int,
   is_last : Bool,
+  prev_byte : Int,
 ) -> Unit {
   bw.write_bits(if is_last { 1 } else { 0 }, 1) // ISLAST
   if is_last {
@@ -1394,7 +1697,9 @@ fn encode_metablock_into(
   let use_context = level >= 5 && src_len >= 256
 
   // Compute context map and per-tree literal histograms
-  let (ntreesl, cmap, tree_freqs) = build_context_model(src, cmds, use_context)
+  let (ntreesl, cmap, tree_freqs) = build_context_model(
+    src, cmds, use_context, prev_byte,
+  )
 
   // ---- Write meta-block header in correct RFC 7932 order ----
 
@@ -1455,7 +1760,11 @@ fn encode_metablock_into(
     if ntreesl > 1 {
       for j in 0..<cmd.insert_len {
         let pos = cmd.insert_pos + j
-        let p1 = if pos > 0 { src.unsafe_get(pos - 1).to_int() } else { 0 }
+        let p1 = if pos > 0 {
+          src.unsafe_get(pos - 1).to_int()
+        } else {
+          prev_byte
+        }
         let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
         let tree_idx = cmap.unsafe_get(ctx)
         let codes = lit_codes_arr.unsafe_get(tree_idx)
@@ -1488,6 +1797,7 @@ fn build_context_model(
   src : BytesView,
   cmds : Array[BrotliCmd],
   use_context : Bool,
+  prev_byte : Int,
 ) -> (Int, FixedArray[Int], Array[FixedArray[Int]]) {
   if not(use_context) {
     let lit_freqs = FixedArray::make(256, 0)
@@ -1511,7 +1821,11 @@ fn build_context_model(
   for cmd in cmds {
     for j in 0..<cmd.insert_len {
       let pos = cmd.insert_pos + j
-      let p1 = if pos > 0 { src.unsafe_get(pos - 1).to_int() } else { 0 }
+      let p1 = if pos > 0 {
+        src.unsafe_get(pos - 1).to_int()
+      } else {
+        prev_byte
+      }
       let ctx = p1 & (NUM_LITERAL_CONTEXTS - 1)
       let _ch_idx = src.unsafe_get(pos).to_int()
       let _ch = ctx_hists.unsafe_get(ctx)

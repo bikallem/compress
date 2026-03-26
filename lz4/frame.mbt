@@ -1,4 +1,15 @@
 ///|
+priv struct Lz4FrameHeader {
+  data_offset : Int
+  content_size : Int?
+  has_content_checksum : Bool
+  has_block_checksum : Bool
+  block_max_size : Int
+  block_independence : Bool
+  dict_id : UInt
+}
+
+///|
 /// Writes an LZ4 frame header to the output buffer.
 /// Returns the number of bytes written.
 fn write_frame_header(
@@ -78,10 +89,8 @@ fn write_frame_footer(
 }
 
 ///|
-/// Parses an LZ4 frame header. Returns (data_offset, content_size?, has_content_checksum, block_max_size).
-fn parse_frame_header(
-  data : BytesView,
-) -> (Int, Int?, Bool, Int) raise Lz4Error {
+/// Parses an LZ4 frame header.
+fn parse_frame_header(data : BytesView) -> Lz4FrameHeader raise Lz4Error {
   guard data.length() >= 7 else {
     raise Lz4Error::InvalidHeader("frame too short")
   }
@@ -103,12 +112,6 @@ fn parse_frame_header(
   let has_content_size = (flg & 0x08) != 0
   let has_content_checksum = (flg & 0x04) != 0
   let has_dict_id = (flg & 0x01) != 0
-  guard block_independence else {
-    raise Lz4Error::InvalidHeader("dependent blocks not supported")
-  }
-  guard !has_block_checksum else {
-    raise Lz4Error::InvalidHeader("block checksums not supported")
-  }
   guard (flg & 0x02) == 0 else {
     raise Lz4Error::InvalidHeader("reserved FLG bit set")
   }
@@ -130,9 +133,16 @@ fn parse_frame_header(
   } else {
     None
   }
-  if has_dict_id {
+  let dict_id = if has_dict_id {
     guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
-    raise Lz4Error::InvalidHeader("dictionary id not supported")
+    let dict_id = data.unsafe_get(pos).to_uint() |
+      (data.unsafe_get(pos + 1).to_uint() << 8) |
+      (data.unsafe_get(pos + 2).to_uint() << 16) |
+      (data.unsafe_get(pos + 3).to_uint() << 24)
+    pos += 4
+    dict_id
+  } else {
+    0U
   }
   // Verify header checksum
   let header_start = 4 // after magic
@@ -147,5 +157,13 @@ fn parse_frame_header(
     raise Lz4Error::ChecksumMismatch(expected=expected_hc, got=actual_hc)
   }
   pos += 1
-  (pos, content_size, has_content_checksum, block_max_size)
+  {
+    data_offset: pos,
+    content_size,
+    has_content_checksum,
+    has_block_checksum,
+    block_max_size,
+    block_independence,
+    dict_id,
+  }
 }

@@ -331,6 +331,10 @@ test "streaming gzip inflater consumes buffered concatenated members" {
   }
   assert_eq(buf.to_bytes(), b"first membersecond member")
   assert_eq(d.header().name, "second.txt")
+  let headers = d.member_headers()
+  assert_eq(headers.length(), 2)
+  assert_eq(headers[0].name, "first.txt")
+  assert_eq(headers[1].name, "second.txt")
 }
 
 ///|

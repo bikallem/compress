@@ -94,10 +94,80 @@ test "lz4 frame header checksum" {
 }
 
 ///|
-test "lz4 unsupported dependent blocks" {
-  let data : Bytes = b"\x04\x22\x4d\x18\x40\x40\x00"
-  let result = try? @lz4.decompress(data)
-  guard result is Err(_) else { fail("expected error for dependent blocks") }
+fn lz4_write_u32_le(buf : @blit.Buffer, value : UInt) -> Unit {
+  buf.write_byte((value & 0xFFU).to_byte())
+  buf.write_byte(((value >> 8) & 0xFFU).to_byte())
+  buf.write_byte(((value >> 16) & 0xFFU).to_byte())
+  buf.write_byte(((value >> 24) & 0xFFU).to_byte())
+}
+
+///|
+fn lz4_custom_frame(
+  block_independence : Bool,
+  block_checksum : Bool,
+  dict_id : UInt,
+  blocks : Array[Bytes],
+  uncompressed : Array[Bool],
+) -> Bytes {
+  let out = @blit.Buffer::new()
+  lz4_write_u32_le(out, 0x184D2204U)
+  let flg = 0x40 |
+    (if block_independence { 0x20 } else { 0 }) |
+    (if block_checksum { 0x10 } else { 0 }) |
+    (if dict_id != 0U { 0x01 } else { 0 })
+  out.write_byte(flg.to_byte())
+  out.write_byte((4 << 4).to_byte())
+  if dict_id != 0U {
+    lz4_write_u32_le(out, dict_id)
+  }
+  let header_bytes = out.to_bytes()
+  let hc = (@checksum.xxh32(header_bytes[4:]) >> 8) & 0xFFU
+  out.write_byte(hc.to_byte())
+  for i in 0..<blocks.length() {
+    let payload = blocks[i]
+    let size = payload.length().reinterpret_as_uint()
+    let header = if uncompressed[i] { size | 0x80000000U } else { size }
+    lz4_write_u32_le(out, header)
+    out.write_bytes(payload)
+    if block_checksum {
+      lz4_write_u32_le(out, @checksum.xxh32(payload[:]))
+    }
+  }
+  lz4_write_u32_le(out, 0U)
+  out.to_bytes()
+}
+
+///|
+test "lz4 decompresses dependent blocks" {
+  let frame = lz4_custom_frame(false, false, 0U, [b"ABCD", b"\x00\x04\x00"], [
+    true, false,
+  ])
+  let decompressed = @lz4.decompress(frame)
+  assert_eq(decompressed, b"ABCDABCD")
+}
+
+///|
+test "lz4 accepts frames with block checksums" {
+  let frame = lz4_custom_frame(true, true, 0U, [b"checked block"], [true])
+  let decompressed = @lz4.decompress(frame)
+  assert_eq(decompressed, b"checked block")
+}
+
+///|
+test "lz4 accepts dict-id frames when a dictionary is provided" {
+  let frame = lz4_custom_frame(
+    false,
+    false,
+    0x12345678U,
+    [b"dict-id payload"],
+    [true],
+  )
+  let result = try? @lz4.decompress(frame)
+  guard result is Err(_) else {
+    fail("expected dict-id frame to require a dictionary")
+  }
+  let decompressed = @lz4.decompress(frame, dict=b"external dictionary")
+  assert_eq(decompressed, b"dict-id payload")
 }
 
 ///|
