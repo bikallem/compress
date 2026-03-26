@@ -13,8 +13,7 @@ pub(all) suberror ZstdError {
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   WindowTooLarge(String)
   UnexpectedEOF
-}
-pub impl Show for ZstdError
+} derive(Show)
 
 // Types and methods
 pub(all) enum CompressionLevel {
@@ -22,17 +21,14 @@ pub(all) enum CompressionLevel {
   Default
   Best
   Level(Int)
-}
-pub impl Eq for CompressionLevel
-pub impl Show for CompressionLevel
+} derive(Eq, Show)
 
 pub(all) enum Decode {
   Await
   Data(BytesView)
   End
   Error(ZstdError)
-}
-pub impl Show for Decode
+} derive(Show)
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
@@ -43,8 +39,7 @@ pub(all) enum Encode {
   Data(BytesView)
   End
   Error(ZstdError)
-}
-pub impl Show for Encode
+} derive(Show)
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

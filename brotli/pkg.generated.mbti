@@ -13,25 +13,21 @@ pub(all) suberror BrotliError {
   InvalidDistance(String)
   WindowTooLarge
   UnexpectedEOF
-}
-pub impl Show for BrotliError
+} derive(Show)
 
 // Types and methods
 pub(all) enum CompressionLevel {
   Level(Int)
   Default
   Best
-}
-pub impl Eq for CompressionLevel
-pub impl Show for CompressionLevel
+} derive(Eq, Show)
 
 pub(all) enum Decode {
   Await
   Data(BytesView)
   End
   Error(BrotliError)
-}
-pub impl Show for Decode
+} derive(Show)
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
@@ -42,8 +38,7 @@ pub(all) enum Encode {
   Data(BytesView)
   End
   Error(BrotliError)
-}
-pub impl Show for Encode
+} derive(Show)
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

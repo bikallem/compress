@@ -19,8 +19,7 @@ pub(all) suberror GzipError {
   SizeMismatch(expected~ : UInt, got~ : UInt)
   DeflateError(String)
   UnexpectedEOF
-}
-pub impl Show for GzipError
+} derive(Show)
 
 // Types and methods
 pub(all) enum Decode {
@@ -28,8 +27,7 @@ pub(all) enum Decode {
   Data(BytesView)
   End
   Error(GzipError)
-}
-pub impl Show for Decode
+} derive(Show)
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
@@ -40,8 +38,7 @@ pub(all) enum Encode {
   Data(BytesView)
   End
   Error(GzipError)
-}
-pub impl Show for Encode
+} derive(Show)
 
 pub(all) struct Header {
   name : String
@@ -49,10 +46,8 @@ pub(all) struct Header {
   extra : Bytes
   mod_time : UInt
   os : Byte
-}
+} derive(Eq, Show)
 pub fn Header::default() -> Self
-pub impl Eq for Header
-pub impl Show for Header
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

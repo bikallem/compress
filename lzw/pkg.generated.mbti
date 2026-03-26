@@ -11,24 +11,20 @@ pub(all) suberror LzwError {
   InvalidLitWidth(Int)
   InvalidCode(String)
   UnexpectedEOF
-}
-pub impl Show for LzwError
+} derive(Show)
 
 // Types and methods
 pub(all) enum BitOrder {
   LSB
   MSB
-}
-pub impl Eq for BitOrder
-pub impl Show for BitOrder
+} derive(Eq, Show)
 
 pub(all) enum Decode {
   Await
   Data(BytesView)
   End
   Error(LzwError)
-}
-pub impl Show for Decode
+} derive(Show)
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
@@ -39,8 +35,7 @@ pub(all) enum Encode {
   Data(BytesView)
   End
   Error(LzwError)
-}
-pub impl Show for Encode
+} derive(Show)
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

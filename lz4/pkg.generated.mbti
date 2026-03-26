@@ -13,8 +13,7 @@ pub(all) suberror Lz4Error {
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   ContentSizeMismatch
   UnexpectedEOF
-}
-pub impl Show for Lz4Error
+} derive(Show)
 
 // Types and methods
 pub(all) enum Decode {
@@ -22,8 +21,7 @@ pub(all) enum Decode {
   Data(BytesView)
   End
   Error(Lz4Error)
-}
-pub impl Show for Decode
+} derive(Show)
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
@@ -34,8 +32,7 @@ pub(all) enum Encode {
   Data(BytesView)
   End
   Error(Lz4Error)
-}
-pub impl Show for Encode
+} derive(Show)
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

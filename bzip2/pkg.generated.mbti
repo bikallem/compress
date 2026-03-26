@@ -12,8 +12,7 @@ pub(all) suberror Bzip2Error {
   CorruptData(String)
   ChecksumMismatch(expected~ : UInt, got~ : UInt)
   UnexpectedEOF
-}
-pub impl Show for Bzip2Error
+} derive(Show)
 
 // Types and methods
 pub(all) enum Decode {
@@ -21,8 +20,7 @@ pub(all) enum Decode {
   Data(BytesView)
   End
   Error(Bzip2Error)
-}
-pub impl Show for Decode
+} derive(Show)
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
@@ -33,8 +31,7 @@ pub(all) enum Encode {
   Data(BytesView)
   End
   Error(Bzip2Error)
-}
-pub impl Show for Encode
+} derive(Show)
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode
