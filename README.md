@@ -223,7 +223,7 @@ bzip2 uses its own level parameter (1-9), controlling block size (N x 100KB).
 
 Brotli uses `@brotli.CompressionLevel`: `Level(0)` through `Level(11)`, `Default` (level 6), or `Best` (level 11). Higher levels use longer hash chains for better compression ratios.
 
-Zstandard uses `@zstd.CompressionLevel`: `Fast`, `Default`, `Best`, or `Level(Int)`. The current encoder maps these to coarse search tiers: `Fast` uses greedy matching, `Default` enables a light lazy-match pass, and `Best` uses a deeper lazy lookahead.
+Zstandard uses `@zstd.CompressionLevel`: `Fast`, `Default`, `Best`, or `Level(Int)`. The encoder maps these to progressively deeper match-finding tiers: `Fast` scans only the newest hash hit, `Default` adds a light lazy-match pass plus a few recent hash candidates, and `Best` searches deeper candidate history with a longer lazy/nice-match budget. `Level(Int)` picks finer-grained settings across the same spectrum.
 
 **Zstandard status:** The current codec supports raw, RLE, Huffman-compressed, and treeless literals plus predefined, RLE, repeat, and custom FSE sequence tables on decode. Raw-content and formatted dictionaries are supported for decode, compression can emit dictionary IDs for formatted dictionaries, generate custom FSE sequence tables, and emit both direct-weight and FSE-compressed custom Huffman literal sections. The `Deflater`/`Inflater` wrappers process frames incrementally while skipping skippable frames. Compression is still a valid but subset-only encoder: it does not yet match upstream `zstd`'s full entropy tuning / strategy matrix, so feature coverage and ratios still trail the reference encoder.
 

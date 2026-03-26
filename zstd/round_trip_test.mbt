@@ -346,6 +346,25 @@ fn zstd_level_fixture() -> Bytes {
 }
 
 ///|
+fn zstd_search_depth_fixture() -> Bytes {
+  let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789"
+  let short = b"ABCDzzzz"
+  let buf = @blit.Buffer::new()
+  for i in 0..<96 {
+    buf.write_bytes(long)
+    buf.write_byte((i % 251).to_byte())
+    buf.write_bytes(b"--")
+    buf.write_bytes(short)
+    buf.write_byte((i * 17 % 251).to_byte())
+    buf.write_bytes(b"++")
+    buf.write_bytes(long)
+    buf.write_byte((i % 13).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  buf.to_bytes()
+}
+
+///|
 test "compression levels change zstd one-shot output" {
   let data = zstd_level_fixture()
   let fast = @zstd.compress(data, level=Fast)
@@ -395,4 +414,14 @@ test "signal protocol: zstd deflater honors compression level" {
   assert_eq(@zstd.decompress(fast_out), data)
   assert_eq(@zstd.decompress(best_out), data)
   assert_true(best_out.length() <= fast_out.length())
+}
+
+///|
+test "higher zstd levels search deeper hash history" {
+  let data = zstd_search_depth_fixture()
+  let fast = @zstd.compress(data, level=Fast)
+  let best = @zstd.compress(data, level=Best)
+  assert_eq(@zstd.decompress(fast), data)
+  assert_eq(@zstd.decompress(best), data)
+  assert_true(best.length() < fast.length())
 }

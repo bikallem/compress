@@ -235,26 +235,35 @@ const ZSTD_HASH_BITS : Int = 14
 const ZSTD_HASH_SIZE : Int = 16384
 
 ///|
+const ZSTD_MAX_HASH_CANDIDATES : Int = 8
+
+///|
 const ZSTD_MIN_MATCH : Int = 4
 
 ///|
 priv struct ZstdSearchConfig {
   lazy_steps : Int
+  max_hash_candidates : Int
+  nice_match : Int
 }
 
 ///|
 fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
   match level {
-    Fast => { lazy_steps: 0 }
-    Default => { lazy_steps: 1 }
-    Best => { lazy_steps: 2 }
+    Fast => { lazy_steps: 0, max_hash_candidates: 1, nice_match: 24 }
+    Default => { lazy_steps: 1, max_hash_candidates: 4, nice_match: 48 }
+    Best => { lazy_steps: 3, max_hash_candidates: 8, nice_match: 96 }
     Level(n) =>
       if n <= 1 {
-        { lazy_steps: 0 }
-      } else if n >= 8 {
-        { lazy_steps: 2 }
+        { lazy_steps: 0, max_hash_candidates: 1, nice_match: 24 }
+      } else if n <= 4 {
+        { lazy_steps: 0, max_hash_candidates: 2, nice_match: 32 }
+      } else if n <= 8 {
+        { lazy_steps: 1, max_hash_candidates: 4, nice_match: 48 }
+      } else if n <= 15 {
+        { lazy_steps: 2, max_hash_candidates: 6, nice_match: 72 }
       } else {
-        { lazy_steps: 1 }
+        { lazy_steps: 3, max_hash_candidates: 8, nice_match: 96 }
       }
   }
 }
@@ -267,6 +276,28 @@ fn zstd_hash(data : BytesView, pos : Int) -> Int {
     (data.unsafe_get(pos + 3).to_int() << 24)
   let h = u.reinterpret_as_uint() * 0x9E3779B1_U
   (h >> (32 - ZSTD_HASH_BITS)).reinterpret_as_int()
+}
+
+///|
+fn insert_hash_candidate(
+  hash_table : FixedArray[Int],
+  hash : Int,
+  pos : Int,
+) -> Unit {
+  let base = hash * ZSTD_MAX_HASH_CANDIDATES
+  for slot = ZSTD_MAX_HASH_CANDIDATES - 1; slot > 0; slot = slot - 1 {
+    hash_table.unsafe_set(base + slot, hash_table.unsafe_get(base + slot - 1))
+  }
+  hash_table.unsafe_set(base, pos)
+}
+
+///|
+fn get_hash_candidate(
+  hash_table : FixedArray[Int],
+  hash : Int,
+  slot : Int,
+) -> Int {
+  hash_table.unsafe_get(hash * ZSTD_MAX_HASH_CANDIDATES + slot)
 }
 
 ///|
@@ -323,44 +354,49 @@ fn find_sequences_combined(
     }
     return (sequences, literals, lit_pos)
   }
-  let hash_table = FixedArray::make(ZSTD_HASH_SIZE, -1)
+  let hash_table = FixedArray::make(
+    ZSTD_HASH_SIZE * ZSTD_MAX_HASH_CANDIDATES,
+    -1,
+  )
   let rep = copy_rep_offsets(rep_init)
   let mut ip = base
   let mut anchor = base
   let mf_limit = combined.length() - ZSTD_MIN_MATCH
   if base >= ZSTD_MIN_MATCH {
     for i in 0..<(base - ZSTD_MIN_MATCH + 1) {
-      hash_table.unsafe_set(zstd_hash(src, i), i)
+      insert_hash_candidate(hash_table, zstd_hash(src, i), i)
     }
   }
   while ip < mf_limit {
     let hash = zstd_hash(src, ip)
-    let ref_pos = hash_table.unsafe_get(hash)
-    hash_table.unsafe_set(hash, ip)
     let mut match_ip = ip
     let mut best = find_best_match(
       src,
       match_ip,
       combined.length(),
-      ref_pos,
+      hash_table,
+      hash,
       rep,
+      config,
     )
+    insert_hash_candidate(hash_table, hash, ip)
     let mut lazy_steps = config.lazy_steps
     while lazy_steps > 0 &&
           best.length >= ZSTD_MIN_MATCH &&
-          best.length < 32 &&
+          best.length < config.nice_match &&
           match_ip + 1 < mf_limit {
       let next_ip = match_ip + 1
       let next_hash = zstd_hash(src, next_ip)
-      let next_ref = hash_table.unsafe_get(next_hash)
-      hash_table.unsafe_set(next_hash, next_ip)
       let next_best = find_best_match(
         src,
         next_ip,
         combined.length(),
-        next_ref,
+        hash_table,
+        next_hash,
         rep,
+        config,
       )
+      insert_hash_candidate(hash_table, next_hash, next_ip)
       if next_best.length > best.length + 1 {
         match_ip = next_ip
         best = next_best
@@ -415,7 +451,7 @@ fn find_sequences_combined(
       }
       for j = match_ip + 1; j < hash_end; j = j + 1 {
         let h = zstd_hash(src, j)
-        hash_table.unsafe_set(h, j)
+        insert_hash_candidate(hash_table, h, j)
       }
       ip = match_ip + best.length
       anchor = ip
@@ -436,8 +472,10 @@ fn find_best_match(
   src : BytesView,
   ip : Int,
   src_end : Int,
-  ref_pos : Int,
+  hash_table : FixedArray[Int],
+  hash : Int,
   rep : Array[Int],
+  config : ZstdSearchConfig,
 ) -> MatchCandidate {
   let mut best = { length: 0, offset: 0, rep_idx: -1 }
   for r in 0..<3 {
@@ -455,23 +493,38 @@ fn find_best_match(
       }
       if mlen > best.length {
         best = { length: mlen, offset: rep_off, rep_idx: r }
+        if mlen >= config.nice_match {
+          return best
+        }
       }
     }
   }
-  if ref_pos >= 0 &&
-    src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
-    src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
-    src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
-    src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
-    let mut match_len = ZSTD_MIN_MATCH
-    while ip + match_len < src_end &&
-          src.unsafe_get(ref_pos + match_len) == src.unsafe_get(ip + match_len) {
-      match_len += 1
+  for slot in 0..<config.max_hash_candidates {
+    let ref_pos = get_hash_candidate(hash_table, hash, slot)
+    if ref_pos < 0 || ref_pos >= ip {
+      continue
     }
     let hash_offset = ip - ref_pos
-    if match_len > best.length + 1 || best.rep_idx < 0 {
-      if match_len > best.length || best.rep_idx < 0 {
-        best = { length: match_len, offset: hash_offset, rep_idx: -1 }
+    if hash_offset > MAX_WINDOW_SIZE {
+      continue
+    }
+    if src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
+      src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
+      src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
+      src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
+      let mut match_len = ZSTD_MIN_MATCH
+      while ip + match_len < src_end &&
+            src.unsafe_get(ref_pos + match_len) ==
+            src.unsafe_get(ip + match_len) {
+        match_len += 1
+      }
+      if match_len > best.length + 1 || best.rep_idx < 0 {
+        if match_len > best.length || best.rep_idx < 0 {
+          best = { length: match_len, offset: hash_offset, rep_idx: -1 }
+          if match_len >= config.nice_match {
+            break
+          }
+        }
       }
     }
   }
