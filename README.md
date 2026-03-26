@@ -179,6 +179,8 @@ let i = @lz4.Inflater::new()
 let leftover = inflater.remaining()
 ```
 
+For `gzip` and `bzip2` streaming inflaters, call `finish()` once the upstream source reaches EOF. That lets the wrapper distinguish a true end-of-input from an exact boundary between concatenated members/streams.
+
 ### Async Streaming
 
 The `flate/async` package provides async wrappers that work with MoonBit's `@io.Reader` and `@io.Writer` interfaces:

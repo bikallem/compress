@@ -7,6 +7,7 @@ priv struct Decoder {
   crc : @checksum.CRC32
   mut size : UInt
   mut phase : InflatePhase
+  mut input_finished : Bool
   // Header accumulator
   mut hdr_buf : @blit.Buffer
   mut header : Header
@@ -17,6 +18,7 @@ priv enum InflatePhase {
   ParseHeader
   Inflate
   VerifyTrailer(Bytes) // remaining bytes waiting for 8-byte trailer
+  AwaitNextMember
   Done
   Failed(GzipError)
 }
@@ -31,6 +33,7 @@ pub fn Inflater::new() -> Inflater {
     crc: @checksum.CRC32::new(),
     size: 0U,
     phase: ParseHeader,
+    input_finished: false,
     hdr_buf: @blit.Buffer::new(),
     header: Header::default(),
   })
@@ -45,6 +48,9 @@ pub fn Inflater::header(self : Inflater) -> Header {
 ///|
 pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   let s = self.0
+  if data.length() > 0 {
+    s.input_finished = false
+  }
   match s.phase {
     ParseHeader => {
       s.hdr_buf.write_bytesview(data)
@@ -55,8 +61,23 @@ pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
       let combined = prev + data.to_bytes()
       s.phase = VerifyTrailer(combined)
     }
+    AwaitNextMember =>
+      if data.length() > 0 {
+        reset_for_next_member(s, data)
+        pump_header(s)
+      }
     Done | Failed(_) => ()
   }
+}
+
+///|
+/// Marks the compressed input as complete.
+///
+/// Call this once the upstream source reaches EOF so the inflater can
+/// distinguish a true end-of-input from an exact boundary between
+/// concatenated gzip members.
+pub fn Inflater::finish(self : Inflater) -> Unit {
+  self.0.input_finished = true
 }
 
 ///|
@@ -67,14 +88,24 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
       ParseHeader => {
         pump_header(s)
         match s.phase {
-          ParseHeader => return Await
+          ParseHeader =>
+            return if s.input_finished {
+              fail_with(s, GzipError::UnexpectedEOF)
+            } else {
+              Await
+            }
           Failed(e) => return Error(e)
           _ => continue
         }
       }
       Inflate =>
         match s.inflater.decode() {
-          @flate.Await => return Await
+          @flate.Await =>
+            return if s.input_finished {
+              fail_with(s, GzipError::UnexpectedEOF)
+            } else {
+              Await
+            }
           @flate.Data(out) => {
             s.crc.update(out)
             s.size = (s.size + out.length().reinterpret_as_uint()) &
@@ -95,6 +126,13 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
         match verify_gzip_trailer(s, remaining) {
           Some(result) => return result
           None => continue
+        }
+      AwaitNextMember =>
+        return if s.input_finished {
+          s.phase = Done
+          End
+        } else {
+          Await
         }
       Done => return End
       Failed(e) => return Error(e)
@@ -209,6 +247,9 @@ fn try_parse_gzip_header(
 ///|
 fn verify_gzip_trailer(s : Decoder, remaining : Bytes) -> Decode? {
   if remaining.length() < 8 {
+    if s.input_finished {
+      return Some(fail_with(s, GzipError::UnexpectedEOF))
+    }
     s.phase = VerifyTrailer(remaining)
     return Some(Await)
   }
@@ -239,8 +280,12 @@ fn verify_gzip_trailer(s : Decoder, remaining : Bytes) -> Decode? {
     reset_for_next_member(s, trailing)
     return None
   }
-  s.phase = Done
-  Some(End)
+  if s.input_finished {
+    s.phase = Done
+    return Some(End)
+  }
+  s.phase = AwaitNextMember
+  Some(Await)
 }
 
 ///|

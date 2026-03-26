@@ -30,11 +30,9 @@ test "streaming gzip inflater round-trip" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   d.src(compressed[:])
+  d.finish()
   loop d.decode() {
-    Await => {
-      fail("unexpected Await with all data provided")
-      break
-    }
+    Await => fail("unexpected Await with finished input")
     Data(out) => {
       buf.write_bytesview(out)
       continue d.decode()
@@ -56,11 +54,17 @@ test "streaming gzip inflater with chunked input" {
   let buf = @blit.Buffer::new()
   let chunk_size = 64
   let mut offset = 0
+  let mut finished = false
   loop d.decode() {
     Await => {
       if offset >= compressed.length() {
-        fail("unexpected Await: all data consumed")
-        break
+        if finished {
+          fail("unexpected Await after finish")
+          break
+        }
+        finished = true
+        d.finish()
+        continue d.decode()
       }
       let end = if offset + chunk_size > compressed.length() {
         compressed.length()
@@ -111,11 +115,9 @@ test "streaming gzip deflater + inflater round-trip" {
   let inf = @gzip.Inflater::new()
   let dbuf = @blit.Buffer::new()
   inf.src(compressed[:])
+  inf.finish()
   loop inf.decode() {
-    Await => {
-      fail("unexpected Await")
-      break
-    }
+    Await => fail("unexpected Await with finished input")
     Data(out) => {
       dbuf.write_bytesview(out)
       continue inf.decode()
@@ -143,11 +145,9 @@ test "streaming gzip inflater exposes header" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   d.src(compressed[:])
+  d.finish()
   loop d.decode() {
-    Await => {
-      fail("unexpected Await")
-      break
-    }
+    Await => fail("unexpected Await with finished input")
     Data(out) => {
       buf.write_bytesview(out)
       continue d.decode()
@@ -203,14 +203,19 @@ test "streaming gzip inflater handles dynamic header split" {
   let buf = @blit.Buffer::new()
   d.src(compressed[:12])
   let mut fed_rest = false
+  let mut finished = false
   loop d.decode() {
     Await =>
-      if fed_rest {
-        fail("unexpected Await after full input")
-      } else {
+      if !fed_rest {
         fed_rest = true
         d.src(compressed[12:])
         continue d.decode()
+      } else if !finished {
+        finished = true
+        d.finish()
+        continue d.decode()
+      } else {
+        fail("unexpected Await after finish")
       }
     Data(out) => {
       buf.write_bytesview(out)
@@ -238,10 +243,17 @@ test "streaming gzip inflater preserves repeat state across byte chunks" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   let mut pos = 0
+  let mut finished = false
   loop d.decode() {
     Await =>
       if pos >= compressed.length() {
-        fail("unexpected Await after full input")
+        if finished {
+          fail("unexpected Await after finish")
+        } else {
+          finished = true
+          d.finish()
+          continue d.decode()
+        }
       } else {
         d.src(compressed[pos:pos + 1])
         pos += 1
@@ -263,10 +275,17 @@ test "streaming gzip inflater validates FHCRC across header chunks" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   let mut pos = 0
+  let mut finished = false
   loop d.decode() {
     Await =>
       if pos >= compressed.length() {
-        fail("unexpected Await after full input")
+        if finished {
+          fail("unexpected Await after finish")
+        } else {
+          finished = true
+          d.finish()
+          continue d.decode()
+        }
       } else {
         let end = if pos + 3 > compressed.length() {
           compressed.length()
@@ -299,8 +318,10 @@ test "streaming gzip inflater consumes buffered concatenated members" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   d.src((first + second)[:])
+  d.finish()
   loop d.decode() {
-    Await => fail("unexpected Await with buffered concatenated members")
+    Await =>
+      fail("unexpected Await with finished buffered concatenated members")
     Data(out) => {
       buf.write_bytesview(out)
       continue d.decode()
@@ -310,4 +331,36 @@ test "streaming gzip inflater consumes buffered concatenated members" {
   }
   assert_eq(buf.to_bytes(), b"first membersecond member")
   assert_eq(d.header().name, "second.txt")
+}
+
+///|
+test "streaming gzip inflater chains concatenated members across exact boundary" {
+  let first = @gzip.compress(b"first member")
+  let second = @gzip.compress(b"second member")
+  let d = @gzip.Inflater::new()
+  let buf = @blit.Buffer::new()
+  let mut fed_second = false
+  let mut finished = false
+  d.src(first[:])
+  loop d.decode() {
+    Await =>
+      if !fed_second {
+        fed_second = true
+        d.src(second[:])
+        continue d.decode()
+      } else if !finished {
+        finished = true
+        d.finish()
+        continue d.decode()
+      } else {
+        fail("unexpected Await after finish")
+      }
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"first membersecond member")
 }

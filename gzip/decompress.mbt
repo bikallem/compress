@@ -5,6 +5,7 @@ pub fn decompress(data : Bytes) -> (Bytes, Header) raise GzipError {
   let inf = Inflater::new()
   let sink = @blit.Buffer::new(size_hint=(data.length() * 2).max(32768))
   inf.src(data[:])
+  inf.finish()
   loop inf.decode() {
     Await => raise GzipError::UnexpectedEOF
     Data(chunk) => {

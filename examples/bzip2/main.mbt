@@ -28,6 +28,7 @@ fn run() -> Unit raise {
   let rt_compressed = cbuf.to_bytes()
   let inf = @bz2.Inflater::new()
   inf.src(rt_compressed[:])
+  inf.finish()
   let dbuf = @blit.Buffer::new()
   loop inf.decode() {
     Await => break

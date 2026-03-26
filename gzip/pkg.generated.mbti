@@ -54,6 +54,7 @@ pub impl Show for Header
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::finish(Self) -> Unit
 pub fn Inflater::header(Self) -> Header
 pub fn Inflater::new() -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit

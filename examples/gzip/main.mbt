@@ -68,6 +68,7 @@ fn run() -> Unit raise {
   let inflater = @gz.Inflater::new()
   let dbuf = @blit.Buffer::new()
   inflater.src(stream_compressed[:])
+  inflater.finish()
   loop inflater.decode() {
     Await => break
     Data(out) => {

@@ -38,6 +38,7 @@ pub impl Show for Encode
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode
+pub fn Inflater::finish(Self) -> Unit
 pub fn Inflater::new() -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit
 

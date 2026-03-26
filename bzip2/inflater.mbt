@@ -9,12 +9,13 @@
 ///   loop d.decode() {
 ///     Await => { d.src(chunk); continue d.decode() }
 ///     Data(out) => { write(out); continue d.decode() }
-///     End => break
+///     End => break // call finish() first once the source reaches EOF
 ///     Error(e) => ...
 ///   }
 priv struct Decoder {
   mut bb : BitBuf
   mut phase : InflatePhase
+  mut input_finished : Bool
   mut stream_crc : UInt
   // Stream params
   mut block_size_100k : Int
@@ -74,6 +75,7 @@ priv enum InflatePhase {
   DecodeRunSymbols
   EmitRun
   EndOfStream
+  AwaitNextStream
   Done
   Failed(Bzip2Error)
 }
@@ -94,6 +96,7 @@ pub fn Inflater::new() -> Inflater {
   Inflater({
     bb: BitBuf::new(),
     phase: StreamHeader,
+    input_finished: false,
     stream_crc: 0U,
     block_size_100k: 0,
     max_block_bytes: 0,
@@ -131,10 +134,24 @@ pub fn Inflater::new() -> Inflater {
 ///|
 pub fn Inflater::src(self : Inflater, data : BytesView) -> Unit {
   let s = self.0
+  if data.length() > 0 {
+    s.input_finished = false
+  }
   match s.phase {
     Done | Failed(_) => ()
+    AwaitNextStream => if data.length() > 0 { reset_stream(s, data.to_bytes()) }
     _ => s.bb.set_input(data)
   }
+}
+
+///|
+/// Marks the compressed input as complete.
+///
+/// Call this once the upstream source reaches EOF so the inflater can
+/// distinguish a true end-of-input from an exact boundary between
+/// concatenated bzip2 streams.
+pub fn Inflater::finish(self : Inflater) -> Unit {
+  self.0.input_finished = true
 }
 
 ///|
@@ -143,7 +160,23 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
   match s.phase {
     Done => End
     Failed(e) => Error(e)
-    _ => step(s)
+    AwaitNextStream =>
+      if s.input_finished {
+        s.phase = Done
+        End
+      } else {
+        Await
+      }
+    _ =>
+      match step(s) {
+        Await =>
+          if s.input_finished {
+            fail(s, Bzip2Error::UnexpectedEOF)
+          } else {
+            Await
+          }
+        other => other
+      }
   }
 }
 
@@ -170,6 +203,7 @@ fn step(s : Decoder) -> Decode {
     DecodeRunSymbols => step_decode_run_symbols(s)
     EmitRun => step_emit_run(s)
     EndOfStream => step_end_of_stream(s)
+    AwaitNextStream => Await
     Done => End
     Failed(e) => Error(e)
   }
@@ -571,8 +605,13 @@ fn step_end_of_stream(s : Decoder) -> Decode {
     reset_stream(s, remaining)
     return step(s)
   }
-  s.phase = Done
-  End
+  if s.input_finished {
+    s.phase = Done
+    return End
+  }
+  reset_stream(s, Bytes::default())
+  s.phase = AwaitNextStream
+  Await
 }
 
 ///|

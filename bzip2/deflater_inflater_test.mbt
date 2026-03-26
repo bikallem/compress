@@ -25,9 +25,10 @@ test "streaming bzip2 inflater" {
   let compressed = @bzip2.compress(original)
   let d = @bzip2.Inflater::new()
   d.src(compressed[:])
+  d.finish()
   let buf = @blit.Buffer::new()
   loop d.decode() {
-    Await => fail("unexpected Await: all data should be available")
+    Await => fail("unexpected Await with finished input")
     Data(out) => {
       buf.write_bytesview(out)
       continue d.decode()
@@ -46,11 +47,17 @@ test "streaming bzip2 inflater with chunked input" {
   let buf = @blit.Buffer::new()
   let chunk_size = 64
   let mut offset = 0
+  let mut finished = false
   loop d.decode() {
     Await => {
       if offset >= compressed.length() {
-        fail("unexpected Await: all data consumed")
-        break
+        if finished {
+          fail("unexpected Await after finish")
+          break
+        }
+        finished = true
+        d.finish()
+        continue d.decode()
       }
       let end = if offset + chunk_size > compressed.length() {
         compressed.length()
@@ -105,9 +112,10 @@ test "streaming bzip2 deflater + inflater round-trip" {
   let compressed = cbuf.to_bytes()
   let inf = @bzip2.Inflater::new()
   inf.src(compressed[:])
+  inf.finish()
   let dbuf = @blit.Buffer::new()
   loop inf.decode() {
-    Await => fail("unexpected Await")
+    Await => fail("unexpected Await with finished input")
     Data(out) => {
       dbuf.write_bytesview(out)
       continue inf.decode()
@@ -125,10 +133,17 @@ test "streaming bzip2 inflater byte-at-a-time" {
   let d = @bzip2.Inflater::new()
   let buf = @blit.Buffer::new()
   let mut offset = 0
+  let mut finished = false
   loop d.decode() {
     Await => {
       if offset >= compressed.length() {
-        fail("unexpected Await: all data consumed")
+        if finished {
+          fail("unexpected Await after finish")
+        } else {
+          finished = true
+          d.finish()
+          continue d.decode()
+        }
       }
       let chunk = Bytes::makei(1, fn(_i) { compressed[offset] })
       d.src(chunk[:])
@@ -193,8 +208,41 @@ test "streaming bzip2 inflater consumes buffered concatenated streams" {
   let d = @bzip2.Inflater::new()
   let buf = @blit.Buffer::new()
   d.src(compressed[:])
+  d.finish()
   loop d.decode() {
-    Await => fail("unexpected Await with full concatenated bzip2 input")
+    Await => fail("unexpected Await with finished concatenated bzip2 input")
+    Data(out) => {
+      buf.write_bytesview(out)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"first streamsecond stream")
+}
+
+///|
+test "streaming bzip2 inflater chains concatenated streams across exact boundary" {
+  let first = @bzip2.compress(b"first stream")
+  let second = @bzip2.compress(b"second stream")
+  let d = @bzip2.Inflater::new()
+  let buf = @blit.Buffer::new()
+  let mut fed_second = false
+  let mut finished = false
+  d.src(first[:])
+  loop d.decode() {
+    Await =>
+      if !fed_second {
+        fed_second = true
+        d.src(second[:])
+        continue d.decode()
+      } else if !finished {
+        finished = true
+        d.finish()
+        continue d.decode()
+      } else {
+        fail("unexpected Await after finish")
+      }
     Data(out) => {
       buf.write_bytesview(out)
       continue d.decode()

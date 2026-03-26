@@ -27,7 +27,7 @@ pub fn Header::default() -> Header {
 ///|
 /// Decoder signals — returned by Inflater::decode().
 pub(all) enum Decode {
-  /// Need input. Call src(bytes) then decode() again.
+  /// Need input. Call src(bytes), or finish() if the source reached EOF, then decode() again.
   Await
   /// Produced output. Consume it, then decode() again.
   Data(BytesView)

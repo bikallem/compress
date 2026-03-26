@@ -122,10 +122,17 @@ test "signal protocol: chunked input" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   let mut pos = 0
+  let mut finished = false
   loop d.decode() {
     Await =>
       if pos >= compressed.length() {
-        inspect(false, content="true")
+        if finished {
+          inspect(false, content="true")
+        } else {
+          finished = true
+          d.finish()
+          continue d.decode()
+        }
       } else {
         d.src([compressed[pos]])
         pos += 1
@@ -147,11 +154,18 @@ test "signal protocol: chunked input 1KB" {
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   let mut pos = 0
+  let mut finished = false
   // Feed in 16-byte chunks
   loop d.decode() {
     Await =>
       if pos >= compressed.length() {
-        inspect(false, content="true")
+        if finished {
+          inspect(false, content="true")
+        } else {
+          finished = true
+          d.finish()
+          continue d.decode()
+        }
       } else {
         let end = if pos + 16 > compressed.length() {
           compressed.length()
