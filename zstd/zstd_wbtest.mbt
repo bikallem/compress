@@ -172,6 +172,67 @@ test "custom FSE tables round-trip symbol streams" {
 }
 
 ///|
+test "custom literal tables can emit FSE-compressed Huffman descriptions" {
+  let literals = FixedArray::make(4096, b'\x00')
+  for i in 0..<literals.length() {
+    if i % 53 == 0 {
+      literals[i] = b'\xFF'
+    } else if i % 97 == 0 {
+      literals[i] = b'\x80'
+    } else if i % 29 == 0 {
+      literals[i] = b'\x01'
+    }
+  }
+  let original = Bytes::makei(literals.length(), fn(i) { literals[i] })
+  match build_huffman_literal_table_info(literals, 0, literals.length()) {
+    Some(info) => {
+      assert_eq(info.highest_symbol, 255)
+      match write_direct_huffman_table_description(info) {
+        Some(_) => fail("direct Huffman description should be unavailable")
+        None => ()
+      }
+      match write_fse_huffman_table_description(info) {
+        Some(desc) => {
+          assert_true(desc[0].to_int() < 128)
+          let (table, bytes_read) = ZstdHuffmanTable::from_description(desc[:])
+          assert_eq(bytes_read, desc.length())
+          assert_eq(table.max_bits, info.table.max_bits)
+          assert_eq(table.entries.length(), info.table.entries.length())
+          for i in 0..<table.entries.length() {
+            assert_eq(table.entries[i], info.table.entries[i])
+          }
+        }
+        None => fail("expected FSE-compressed Huffman description")
+      }
+      match try_build_custom_literal_candidate(literals, 0, literals.length()) {
+        Some(candidate) => {
+          let (decoded, pos, next_table) = decode_literals_section(
+            candidate.bytes[:],
+            0,
+            candidate.bytes.length(),
+            None,
+          )
+          assert_eq(pos, candidate.bytes.length())
+          assert_eq(decoded, original)
+          match next_table {
+            Some(table) => {
+              assert_eq(table.max_bits, info.table.max_bits)
+              assert_eq(table.entries.length(), info.table.entries.length())
+              for i in 0..<table.entries.length() {
+                assert_eq(table.entries[i], info.table.entries[i])
+              }
+            }
+            None => fail("expected literal section to carry a custom table")
+          }
+        }
+        None => fail("expected custom literal candidate")
+      }
+    }
+    None => fail("expected custom literal table info")
+  }
+}
+
+///|
 test "custom literal blocks round-trip through the decoder" {
   let pattern = b"aaaaabbbbcccddeeffgghhii jjkkllmmnnooppqqrrssttuu"
   let literals = FixedArray::makei(320, fn(i) { pattern[i % pattern.length()] })

@@ -767,6 +767,13 @@ priv struct LiteralSectionCandidate {
 }
 
 ///|
+priv struct HuffmanLiteralTableInfo {
+  table : ZstdHuffmanTable
+  partial_weights : Array[Int]
+  highest_symbol : Int
+}
+
+///|
 /// Encode a block from pre-computed sequences and literals.
 fn compress_block_from_sequences(
   sequences : Array[ZstdSequence],
@@ -1043,18 +1050,49 @@ fn try_build_custom_literal_candidate(
   lit_start : Int,
   lit_count : Int,
 ) -> LiteralSectionCandidate? {
-  match build_direct_huffman_literal_table(literals, lit_start, lit_count) {
-    Some((table, table_desc)) => {
-      let codebook = build_huffman_codebook(table)
-      build_huffman_literal_candidate(
-        codebook,
-        literals,
-        lit_start,
-        lit_count,
-        2,
-        table_desc,
-        Some(table),
-      )
+  match build_huffman_literal_table_info(literals, lit_start, lit_count) {
+    Some(info) => {
+      let codebook = build_huffman_codebook(info.table)
+      let mut best : LiteralSectionCandidate? = None
+      match write_direct_huffman_table_description(info) {
+        Some(table_desc) =>
+          match
+            build_huffman_literal_candidate(
+              codebook,
+              literals,
+              lit_start,
+              lit_count,
+              2,
+              table_desc,
+              Some(info.table),
+            ) {
+            Some(candidate) => best = Some(candidate)
+            None => ()
+          }
+        None => ()
+      }
+      match write_fse_huffman_table_description(info) {
+        Some(table_desc) =>
+          match
+            build_huffman_literal_candidate(
+              codebook,
+              literals,
+              lit_start,
+              lit_count,
+              2,
+              table_desc,
+              Some(info.table),
+            ) {
+            Some(candidate) =>
+              match best {
+                Some(current) if current.size <= candidate.size => ()
+                _ => best = Some(candidate)
+              }
+            None => ()
+          }
+        None => ()
+      }
+      best
     }
     None => None
   }
@@ -1268,11 +1306,11 @@ fn fixed_array_prefix_to_bytes(arr : FixedArray[Byte], size : Int) -> Bytes {
 }
 
 ///|
-fn build_direct_huffman_literal_table(
+fn build_huffman_literal_table_info(
   literals : FixedArray[Byte],
   lit_start : Int,
   lit_count : Int,
-) -> (ZstdHuffmanTable, Bytes)? {
+) -> HuffmanLiteralTableInfo? {
   if lit_count <= 1 {
     return None
   }
@@ -1289,7 +1327,7 @@ fn build_direct_huffman_literal_table(
     }
     counts.unsafe_set(sym, counts.unsafe_get(sym) + 1)
   }
-  if unique <= 1 || highest_symbol <= 0 || highest_symbol > 128 {
+  if unique <= 1 || highest_symbol <= 0 {
     return None
   }
   let max_nodes = unique * 2
@@ -1346,23 +1384,99 @@ fn build_direct_huffman_literal_table(
   }
   let table_result = try? ZstdHuffmanTable::from_weights(partial_weights)
   match table_result {
-    Ok(table) => {
-      let desc_len = 1 + ((highest_symbol + 1) >> 1)
-      let desc = FixedArray::make(desc_len, b'\x00')
-      desc.unsafe_set(0, (127 + highest_symbol).to_byte())
-      for sym in 0..<highest_symbol {
-        let weight = partial_weights.unsafe_get(sym)
-        let idx = 1 + (sym >> 1)
-        let existing = desc.unsafe_get(idx).to_int()
-        if (sym & 1) == 0 {
-          desc.unsafe_set(idx, ((weight << 4) | existing).to_byte())
-        } else {
-          desc.unsafe_set(idx, ((existing & 0xF0) | weight).to_byte())
-        }
-      }
-      Some((table, fixed_array_prefix_to_bytes(desc, desc_len)))
-    }
+    Ok(table) => Some({ table, partial_weights, highest_symbol })
     Err(_) => None
+  }
+}
+
+///|
+fn write_direct_huffman_table_description(
+  info : HuffmanLiteralTableInfo,
+) -> Bytes? {
+  if info.highest_symbol > 128 {
+    return None
+  }
+  let desc_len = 1 + ((info.highest_symbol + 1) >> 1)
+  let desc = FixedArray::make(desc_len, b'\x00')
+  desc.unsafe_set(0, (127 + info.highest_symbol).to_byte())
+  for sym in 0..<info.highest_symbol {
+    let weight = info.partial_weights.unsafe_get(sym)
+    let idx = 1 + (sym >> 1)
+    let existing = desc.unsafe_get(idx).to_int()
+    if (sym & 1) == 0 {
+      desc.unsafe_set(idx, ((weight << 4) | existing).to_byte())
+    } else {
+      desc.unsafe_set(idx, ((existing & 0xF0) | weight).to_byte())
+    }
+  }
+  Some(fixed_array_prefix_to_bytes(desc, desc_len))
+}
+
+///|
+fn write_fse_huffman_table_description(
+  info : HuffmanLiteralTableInfo,
+) -> Bytes? {
+  let num_weights = info.partial_weights.length()
+  if num_weights <= 2 {
+    return None
+  }
+  let weights = FixedArray::make(num_weights, 0)
+  let histogram = FixedArray::make(ZSTD_HUFFMAN_MAX_BITS + 1, 0)
+  let mut max_weight = 0
+  let mut max_count = 0
+  for i in 0..<num_weights {
+    let weight = info.partial_weights.unsafe_get(i)
+    weights.unsafe_set(i, weight)
+    let next = histogram.unsafe_get(weight) + 1
+    histogram.unsafe_set(weight, next)
+    if weight > max_weight {
+      max_weight = weight
+    }
+    if next > max_count {
+      max_count = next
+    }
+  }
+  if max_weight == 0 || max_count == num_weights || max_count == 1 {
+    return None
+  }
+  match
+    build_custom_fse_plan_with_low_prob(
+      weights, num_weights, max_weight, 6, false,
+    ) {
+    Some(plan) => {
+      let ctable = build_fse_ctable(
+        plan.norm_counts,
+        plan.actual_max_symbol,
+        plan.table_log,
+      )
+      match
+        write_fse_ncount(
+          plan.norm_counts,
+          plan.actual_max_symbol,
+          plan.table_log,
+        ) {
+        Some(header) => {
+          let payload = encode_fse_symbol_stream(weights, num_weights, ctable)
+          let payload_size = header.length() + payload.length()
+          if payload.length() == 0 || payload_size <= 1 || payload_size >= 128 {
+            return None
+          }
+          let out = FixedArray::make(1 + payload_size, b'\x00')
+          out.unsafe_set(0, payload_size.to_byte())
+          let mut pos = 1
+          for i in 0..<header.length() {
+            out.unsafe_set(pos + i, header[i])
+          }
+          pos += header.length()
+          for i in 0..<payload.length() {
+            out.unsafe_set(pos + i, payload[i])
+          }
+          Some(fixed_array_prefix_to_bytes(out, 1 + payload_size))
+        }
+        None => None
+      }
+    }
+    None => None
   }
 }
 
@@ -1618,6 +1732,23 @@ fn build_custom_fse_plan(
   max_symbol : Int,
   max_table_log : Int,
 ) -> FseNormPlan? {
+  build_custom_fse_plan_with_low_prob(
+    codes,
+    num_codes,
+    max_symbol,
+    max_table_log,
+    num_codes >= 2048,
+  )
+}
+
+///|
+fn build_custom_fse_plan_with_low_prob(
+  codes : FixedArray[Int],
+  num_codes : Int,
+  max_symbol : Int,
+  max_table_log : Int,
+  use_low_prob_count : Bool,
+) -> FseNormPlan? {
   if num_codes <= 1 {
     return None
   }
@@ -1637,7 +1768,6 @@ fn build_custom_fse_plan(
     return None
   }
   let norm_counts = FixedArray::make(max_symbol + 1, 0)
-  let use_low_prob_count = num_codes >= 2048
   if !normalize_fse_counts(
       norm_counts, table_log, counts, num_codes, actual_max_symbol, use_low_prob_count,
     ) {
@@ -1941,6 +2071,59 @@ fn estimate_fse_encode_bits(
     )
   }
   bits
+}
+
+///|
+fn encode_fse_symbol_stream(
+  codes : FixedArray[Int],
+  num_codes : Int,
+  ct : FseCTable,
+) -> Bytes {
+  if num_codes <= 2 {
+    return b""
+  }
+  let temp = FixedArray::make(num_codes * 2 + 32, b'\x00')
+  let bw = FseBitWriter::new(temp.length())
+  let mut ip = num_codes
+  let mut state1 = 0
+  let mut state2 = 0
+  if (num_codes & 1) == 1 {
+    ip -= 1
+    state1 = fse_init_state(ct, codes.unsafe_get(ip))
+    ip -= 1
+    state2 = fse_init_state(ct, codes.unsafe_get(ip))
+    ip -= 1
+    state1 = fse_encode_symbol(ct, bw, state1, codes.unsafe_get(ip))
+    bw.flush()
+  } else {
+    ip -= 1
+    state2 = fse_init_state(ct, codes.unsafe_get(ip))
+    ip -= 1
+    state1 = fse_init_state(ct, codes.unsafe_get(ip))
+  }
+  if ((num_codes - 2) & 2) != 0 {
+    ip -= 1
+    state2 = fse_encode_symbol(ct, bw, state2, codes.unsafe_get(ip))
+    ip -= 1
+    state1 = fse_encode_symbol(ct, bw, state1, codes.unsafe_get(ip))
+    bw.flush()
+  }
+  while ip > 0 {
+    ip -= 1
+    state2 = fse_encode_symbol(ct, bw, state2, codes.unsafe_get(ip))
+    ip -= 1
+    state1 = fse_encode_symbol(ct, bw, state1, codes.unsafe_get(ip))
+    ip -= 1
+    state2 = fse_encode_symbol(ct, bw, state2, codes.unsafe_get(ip))
+    ip -= 1
+    state1 = fse_encode_symbol(ct, bw, state1, codes.unsafe_get(ip))
+    bw.flush()
+  }
+  fse_flush_state(bw, state2, ct.table_log)
+  fse_flush_state(bw, state1, ct.table_log)
+  bw.close()
+  let size = bw.copy_to(temp, 0)
+  fixed_array_prefix_to_bytes(temp, size)
 }
 
 ///|
