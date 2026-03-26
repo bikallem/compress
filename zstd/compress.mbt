@@ -270,11 +270,11 @@ fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
 
 ///|
 fn zstd_hash(data : BytesView, pos : Int) -> Int {
-  let u = data.unsafe_get(pos).to_int() |
-    (data.unsafe_get(pos + 1).to_int() << 8) |
-    (data.unsafe_get(pos + 2).to_int() << 16) |
-    (data.unsafe_get(pos + 3).to_int() << 24)
-  let h = u.reinterpret_as_uint() * 0x9E3779B1_U
+  let u = data.unsafe_get(pos).to_uint() |
+    (data.unsafe_get(pos + 1).to_uint() << 8) |
+    (data.unsafe_get(pos + 2).to_uint() << 16) |
+    (data.unsafe_get(pos + 3).to_uint() << 24)
+  let h = u * 0x9E3779B1_U
   (h >> (32 - ZSTD_HASH_BITS)).reinterpret_as_int()
 }
 
