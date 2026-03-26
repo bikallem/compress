@@ -55,6 +55,23 @@ test "round-trip: large repetitive data" {
 }
 
 ///|
+test "round-trip: ascii-biased text" {
+  let buf = @blit.Buffer::new()
+  for i in 0..<256 {
+    buf.write_bytes(
+      @utf8.encode(
+        "log level=info service=api shard=\{i % 7} user=user\{i % 19} region=eu-west-1 action=read path=/v1/item/\{i % 23}\n"[:],
+      ),
+    )
+  }
+  let data = buf.to_bytes()
+  let compressed = @zstd.compress(data)
+  let decompressed = @zstd.decompress(compressed)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() < data.length())
+}
+
+///|
 test "round-trip: all zeros 1KB" {
   let data = Bytes::make(1024, b'\x00')
   let compressed = @zstd.compress(data)
