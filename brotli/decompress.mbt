@@ -45,6 +45,9 @@ fn brotli_decompress_into(
     }
     dist_rb_idx = dist_rb_ref.val
   }
+  guard br.is_at_logical_end() else {
+    raise BrotliError::CorruptData("trailing bytes after end of brotli stream")
+  }
 }
 
 ///|
@@ -75,7 +78,10 @@ fn decode_next_metablock(
   let mnibbles_minus_4 = br.read_bits(2)
   let mnibbles = mnibbles_minus_4 + 4
   if mnibbles == 7 {
-    br.read_bits(1) |> ignore // reserved bit (must be zero per RFC 7932)
+    let reserved = br.read_bits(1)
+    guard reserved == 0 else {
+      raise BrotliError::CorruptData("reserved metadata bit set")
+    }
     let mskip_bytes = br.read_bits(2)
     if mskip_bytes > 0 {
       let skip_len_bits = mskip_bytes * 8

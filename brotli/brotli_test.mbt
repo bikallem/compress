@@ -128,6 +128,30 @@ test "brotli rejects truncated stream that previously hung" {
 }
 
 ///|
+test "brotli rejects trailing bytes after valid stream" {
+  let compressed = hex_to_bytes("8b04804141414141424242424203") + b"\x01"
+  let result = try? @brotli.decompress(compressed)
+  match result {
+    Err(BrotliError::CorruptData(msg)) =>
+      assert_eq(msg, "trailing bytes after end of brotli stream")
+    Err(err) => fail("expected trailing-data error, got \{err}")
+    Ok(_) => fail("expected error for trailing bytes")
+  }
+}
+
+///|
+test "brotli rejects reserved metadata bit" {
+  // Bits (LSB-first): WBITS=16, metadata block, reserved=1, empty final block.
+  let result = try? @brotli.decompress(hex_to_bytes("9c01"))
+  match result {
+    Err(BrotliError::CorruptData(msg)) =>
+      assert_eq(msg, "reserved metadata bit set")
+    Err(err) => fail("expected reserved-bit error, got \{err}")
+    Ok(_) => fail("expected error for reserved metadata bit")
+  }
+}
+
+///|
 /// Test decoding Go-compressed brotli (level 1, simple LZ77).
 test "brotli decode Go-compressed level 1 simple" {
   let compressed = hex_to_bytes("8b04804141414141424242424203")

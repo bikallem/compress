@@ -173,3 +173,34 @@ test "signal protocol: deflater buffered mode is explicit" {
   let decompressed = @snappy.decompress(compressed)
   assert_eq(decompressed, data)
 }
+
+///|
+test "signal protocol: deflater new() defaults to buffered mode" {
+  let data = b"default constructor uses buffered snappy mode"
+  let d = @snappy.Deflater::new()
+  match d.encode(Some(data[:16])) {
+    Ok => ()
+    Data(_) => fail("default snappy constructor should buffer without length")
+    End => fail("snappy deflater should not end before finish")
+    Error(e) => raise e
+  }
+  match d.encode(Some(data[16:])) {
+    Ok => ()
+    Data(_) => fail("default snappy constructor should buffer without length")
+    End => fail("snappy deflater should not end before finish")
+    Error(e) => raise e
+  }
+  let out = @blit.Buffer::new()
+  loop d.encode(None) {
+    Data(chunk) => {
+      out.write_bytesview(chunk)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => fail("buffered snappy finalization should not return Ok")
+    Error(e) => raise e
+  }
+  let compressed = out.to_bytes()
+  let decompressed = @snappy.decompress(compressed)
+  assert_eq(decompressed, data)
+}

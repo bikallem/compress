@@ -35,8 +35,7 @@ fn write_frame_header(
     (if options.dict_id != 0U { 0x01 } else { 0 })
   dst.unsafe_set(pos, flg.to_byte())
   pos += 1
-  // BD byte: block_max_size=4 (64KB)
-  let bd = DEFAULT_BLOCK_MAX_SIZE_ID << 4
+  let bd = block_max_size_id(options.block_max_size) << 4
   dst.unsafe_set(pos, bd.to_byte())
   pos += 1
   // Optional content size (8 bytes, little-endian)
@@ -66,6 +65,16 @@ fn write_frame_header(
   dst.unsafe_set(pos, ((hc >> 8) & 0xFFU).to_byte())
   pos += 1
   pos - start
+}
+
+///|
+fn frame_header_length(content_size : Int?, options : FrameOptions) -> Int {
+  4 +
+  1 +
+  1 +
+  (if content_size is Some(_) { 8 } else { 0 }) +
+  (if options.dict_id != 0U { 4 } else { 0 }) +
+  1
 }
 
 ///|

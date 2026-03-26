@@ -10,6 +10,9 @@ priv struct EncoderState {
   mut finished : Bool
   options : FrameOptions
   checksum : @checksum.XXH32
+  content_size : Int?
+  mut seen_len : Int
+  history : @blit.Buffer
 }
 
 ///|
@@ -19,11 +22,25 @@ struct Deflater(EncoderState)
 pub fn Deflater::new(
   options? : FrameOptions = { ..FrameOptions::default() },
 ) -> Deflater {
+  Deflater::new_with_content_size(-1, options~)
+}
+
+///|
+/// Creates a streaming LZ4 deflater that writes the optional content-size
+/// field when the caller knows the final uncompressed size up front.
+pub fn Deflater::new_with_content_size(
+  content_size : Int,
+  options? : FrameOptions = { ..FrameOptions::default() },
+) -> Deflater {
+  let known_size = if content_size >= 0 { Some(content_size) } else { None }
   Deflater({
     header_written: false,
     finished: false,
     options,
     checksum: @checksum.XXH32::new(),
+    content_size: known_size,
+    seen_len: 0,
+    history: @blit.Buffer::new(size_hint=65535),
   })
 }
 
@@ -38,31 +55,43 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       if chunk.length() == 0 {
         return Ok
       }
+      match s.content_size {
+        Some(expected) =>
+          if s.seen_len + chunk.length() > expected {
+            return Error(CorruptData("lz4 input exceeds declared content size"))
+          }
+        None => ()
+      }
+      let block_max_size = block_max_size_bytes(s.options.block_max_size)
       let out = @blit.Buffer::new(
-        size_hint=23 +
+        size_hint=(if s.header_written {
+            0
+          } else {
+            frame_header_length(s.content_size, s.options)
+          }) +
           chunk.length() +
-          (chunk.length() / 65536 + 1) *
+          (chunk.length() / block_max_size + 1) *
           (if s.options.block_checksum { 16 } else { 12 }),
       )
       if !s.header_written {
-        write_frame_header_buffer(out, None, s.options)
+        write_frame_header_buffer(out, s.content_size, s.options)
         s.header_written = true
       }
       s.checksum.update(chunk)
-      let block_buf = FixedArray::make(
-        max_block_sizes[DEFAULT_BLOCK_MAX_SIZE_ID],
-        b'\x00',
-      )
+      let block_buf = FixedArray::make(block_max_size, b'\x00')
       let mut pos = 0
       while pos < chunk.length() {
-        let block_end = if pos + max_block_sizes[DEFAULT_BLOCK_MAX_SIZE_ID] <
-          chunk.length() {
-          pos + max_block_sizes[DEFAULT_BLOCK_MAX_SIZE_ID]
+        let block_end = if pos + block_max_size < chunk.length() {
+          pos + block_max_size
         } else {
           chunk.length()
         }
         let block = chunk[pos:block_end]
-        let compressed_size = block_compress(block, block_buf)
+        let compressed_size = if s.options.block_independence {
+          block_compress(block, block_buf)
+        } else {
+          block_compress_with_history(s.history.to_bytes()[:], block, block_buf)
+        }
         if compressed_size > 0 && compressed_size < block.length() {
           write_block_header_buffer(out, compressed_size, false)
           write_fixed_array_bytes(out, block_buf, compressed_size)
@@ -81,8 +110,12 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
             write_u32_le_buffer(out, @checksum.xxh32(block))
           }
         }
+        if !s.options.block_independence {
+          append_lz4_deflater_history(s.history, block)
+        }
         pos = block_end
       }
+      s.seen_len += chunk.length()
       let bytes = out.to_bytes()
       if bytes.length() > 0 {
         Data(bytes[:])
@@ -91,10 +124,21 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
       }
     }
     None => {
+      match s.content_size {
+        Some(expected) =>
+          if s.seen_len != expected {
+            return Error(
+              CorruptData(
+                "lz4 input length does not match declared content size",
+              ),
+            )
+          }
+        None => ()
+      }
       s.finished = true
       let out = @blit.Buffer::new(size_hint=32)
       if !s.header_written {
-        write_frame_header_buffer(out, None, s.options)
+        write_frame_header_buffer(out, s.content_size, s.options)
         s.header_written = true
       }
       let content_cs = if s.options.content_checksum {
@@ -174,4 +218,27 @@ fn write_u32_le_buffer(dst : @blit.Buffer, value : UInt) -> Unit {
   dst.write_byte(((value >> 8) & 0xFFU).to_byte())
   dst.write_byte(((value >> 16) & 0xFFU).to_byte())
   dst.write_byte(((value >> 24) & 0xFFU).to_byte())
+}
+
+///|
+fn append_lz4_deflater_history(
+  history : @blit.Buffer,
+  block : BytesView,
+) -> Unit {
+  let current = history.to_bytes()
+  let total = current.length() + block.length()
+  let keep = if total > 65535 { 65535 } else { total }
+  let skip = total - keep
+  let next = @blit.Buffer::new(size_hint=keep)
+  if skip < current.length() {
+    next.write_bytesview(current[skip:])
+    next.write_bytesview(block)
+  } else {
+    let block_skip = skip - current.length()
+    if block_skip < block.length() {
+      next.write_bytesview(block[block_skip:])
+    }
+  }
+  history.reset()
+  history.write_bytes(next.to_bytes())
 }

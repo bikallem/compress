@@ -97,6 +97,13 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
         return Error(e)
       }
       Ok(done) => {
+        if done && !trial_br.is_at_logical_end() {
+          let err = BrotliError::CorruptData(
+            "trailing bytes after end of brotli stream",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
         s.br = Some(trial_br)
         copy_distance_ring_buffer(s.dist_rb, trial_dist_rb)
         s.dist_rb_idx = dist_rb_ref.val

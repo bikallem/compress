@@ -35,12 +35,22 @@ pub(all) enum Decode {
 } derive(Show)
 
 ///|
+/// Maximum uncompressed block size for LZ4 frames.
+pub(all) enum BlockMaxSize {
+  Size64KB
+  Size256KB
+  Size1MB
+  Size4MB
+} derive(Show, Eq)
+
+///|
 /// Encoder options for LZ4 frames.
 pub(all) struct FrameOptions {
   block_independence : Bool
   block_checksum : Bool
   content_checksum : Bool
   dict_id : UInt
+  block_max_size : BlockMaxSize
 } derive(Show, Eq)
 
 ///|
@@ -50,6 +60,7 @@ pub fn FrameOptions::default() -> FrameOptions {
     block_checksum: false,
     content_checksum: true,
     dict_id: 0U,
+    block_max_size: Size64KB,
   }
 }
 
@@ -76,5 +87,16 @@ let max_block_sizes : FixedArray[Int] = [
 ]
 
 ///|
-/// Default max block size index (4 = 64KB).
-const DEFAULT_BLOCK_MAX_SIZE_ID : Int = 4
+fn block_max_size_id(size : BlockMaxSize) -> Int {
+  match size {
+    Size64KB => 4
+    Size256KB => 5
+    Size1MB => 6
+    Size4MB => 7
+  }
+}
+
+///|
+fn block_max_size_bytes(size : BlockMaxSize) -> Int {
+  max_block_sizes[block_max_size_id(size)]
+}

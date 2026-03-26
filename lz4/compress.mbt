@@ -6,19 +6,21 @@ pub fn compress(
 ) -> Bytes {
   let src = data[:]
   let src_len = data.length()
-  let block_max_size = max_block_sizes[DEFAULT_BLOCK_MAX_SIZE_ID]
-  let max_output = 23 +
+  let block_max_size = block_max_size_bytes(options.block_max_size)
+  let content_size = Some(src_len)
+  let max_output = frame_header_length(content_size, options) +
     src_len +
     (src_len / block_max_size + 1) *
     (if options.block_checksum { 20 } else { 16 }) +
     12
   let out = FixedArray::make(max_output, b'\x00')
   let mut pos = 0
-  pos += write_frame_header(out, pos, None, options)
+  pos += write_frame_header(out, pos, content_size, options)
   let xxh = @checksum.XXH32::new()
   xxh.update(src)
   let mut src_pos = 0
   let block_buf = FixedArray::make(block_max_size, b'\x00')
+  let history = @blit.Buffer::new(size_hint=65535)
   while src_pos < src_len {
     let block_end = if src_pos + block_max_size < src_len {
       src_pos + block_max_size
@@ -27,7 +29,11 @@ pub fn compress(
     }
     let block_len = block_end - src_pos
     let block_data = src[src_pos:block_end]
-    let compressed_size = block_compress(block_data, block_buf)
+    let compressed_size = if options.block_independence {
+      block_compress(block_data, block_buf)
+    } else {
+      block_compress_with_history(history.to_bytes()[:], block_data, block_buf)
+    }
     let payload_pos = pos + 4
     if compressed_size > 0 && compressed_size < block_len {
       out.unsafe_set(pos, (compressed_size & 0xFF).to_byte())
@@ -69,6 +75,9 @@ pub fn compress(
         pos += 4
       }
     }
+    if !options.block_independence {
+      append_lz4_encode_history(history, block_data)
+    }
     src_pos = block_end
   }
   let content_cs = if options.content_checksum {
@@ -80,4 +89,24 @@ pub fn compress(
   let result = @blit.make_uninit(pos)
   @blit.blit_fixed_array(result, 0, out, 0, pos)
   result.unsafe_reinterpret_as_bytes()
+}
+
+///|
+fn append_lz4_encode_history(history : @blit.Buffer, block : BytesView) -> Unit {
+  let current = history.to_bytes()
+  let total = current.length() + block.length()
+  let keep = if total > 65535 { 65535 } else { total }
+  let skip = total - keep
+  let next = @blit.Buffer::new(size_hint=keep)
+  if skip < current.length() {
+    next.write_bytesview(current[skip:])
+    next.write_bytesview(block)
+  } else {
+    let block_skip = skip - current.length()
+    if block_skip < block.length() {
+      next.write_bytesview(block[block_skip:])
+    }
+  }
+  history.reset()
+  history.write_bytes(next.to_bytes())
 }

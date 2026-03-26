@@ -128,6 +128,21 @@ fn BitReader::read_bytes_to_sink(
 }
 
 ///|
+fn BitReader::is_at_logical_end(self : BitReader) -> Bool {
+  if self.byte_pos < self.data.length() {
+    return false
+  }
+  if self.n_bits >= 8 {
+    return false
+  }
+  if self.n_bits == 0 {
+    return true
+  }
+  let mask = (1UL << self.n_bits) - 1UL
+  (self.bits & mask) == 0UL
+}
+
+///|
 /// LSB-first bit writer for Brotli compression.
 priv struct BitWriter {
   buf : @blit.Buffer

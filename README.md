@@ -44,7 +44,8 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, B
 | `bikallem/compress/brotli` | Brotli compression/decompression (RFC 7932) |
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
 | `bikallem/compress/zstd` | Experimental Zstandard frame compression/decompression with dictionary support |
-| `bikallem/compress/lz4` | LZ4 frame compression/decompression for independent-block frames |
+| `bikallem/compress/lz4` | LZ4 frame compression/decompression |
+| `bikallem/compress/snappy` | Snappy raw block compression/decompression |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
 
 ## Installation
@@ -94,9 +95,13 @@ let compressed = @zstd.compress(data, dict=my_zstd_dict)
 let decompressed = @zstd.decompress(compressed)
 let decompressed = @zstd.decompress(compressed, dict=my_zstd_dict)
 
-// LZ4 (independent-block frames)
+// LZ4
 let compressed = @lz4.compress(data)
 let decompressed = @lz4.decompress(compressed)
+
+// Snappy
+let compressed = @snappy.compress(data)
+let decompressed = @snappy.decompress(compressed)
 
 // Checksums
 let crc = @checksum.crc32(data[:])
@@ -105,7 +110,7 @@ let adler = @checksum.adler32(data[:])
 
 ## Streaming API
 
-All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types with a signal-protocol interface. `flate`, `gzip`, `zlib`, `lzw`, `bzip2`, `brotli`, `lz4`, and `zstd` stream incrementally. Raw `snappy` decompression is incremental too; for truly incremental raw Snappy compression, construct `@snappy.Deflater::new_known_length(data.length())`, since the format writes the uncompressed-size varint at the start of the stream. Use `@snappy.Deflater::new_buffered()` when that size is not known up front.
+All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types with a signal-protocol interface. `flate`, `gzip`, `zlib`, `lzw`, `bzip2`, `brotli`, `lz4`, and `zstd` stream incrementally. Raw `snappy` decompression is incremental too, but raw Snappy compression can only stream incrementally when the caller knows the final uncompressed size up front because the format starts with that length varint. Use `@snappy.Deflater::new_known_length(data.length())` for incremental output; `@snappy.Deflater::new()` and `@snappy.Deflater::new_buffered()` intentionally keep the buffered compatibility mode for unknown-length inputs.
 
 ### Compression
 
@@ -179,7 +184,12 @@ let i = @snappy.Inflater::new()
 let d = @lz4.Deflater::new(options={
   block_independence: false,
   block_checksum: true,
+  block_max_size: Size256KB,
   dict_id: 0x12345678U,
+  ..FrameOptions::default()
+})
+let d_with_size = @lz4.Deflater::new_with_content_size(data.length(), options={
+  block_max_size: Size256KB,
   ..FrameOptions::default()
 })
 let i = @lz4.Inflater::new()

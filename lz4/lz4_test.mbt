@@ -102,6 +102,55 @@ fn lz4_write_u32_le(buf : @blit.Buffer, value : UInt) -> Unit {
 }
 
 ///|
+fn lz4_read_u32_le(data : Bytes, pos : Int) -> UInt {
+  data[pos].to_uint() |
+  (data[pos + 1].to_uint() << 8) |
+  (data[pos + 2].to_uint() << 16) |
+  (data[pos + 3].to_uint() << 24)
+}
+
+///|
+fn lz4_header_data_offset(data : Bytes) -> Int {
+  let flg = data[4].to_int()
+  let mut pos = 6
+  if (flg & 0x08) != 0 {
+    pos += 8
+  }
+  if (flg & 0x01) != 0 {
+    pos += 4
+  }
+  pos + 1
+}
+
+///|
+fn lz4_header_dict_id(data : Bytes) -> UInt {
+  let flg = data[4].to_int()
+  guard (flg & 0x01) != 0 else { return 0U }
+  let mut pos = 6
+  if (flg & 0x08) != 0 {
+    pos += 8
+  }
+  lz4_read_u32_le(data, pos)
+}
+
+///|
+fn lz4_header_content_size(data : Bytes) -> Int? {
+  let flg = data[4].to_int()
+  guard (flg & 0x08) != 0 else { return None }
+  let mut size = 0
+  for i in 0..<8 {
+    size = size | (data[6 + i].to_int() << (i * 8))
+  }
+  Some(size)
+}
+
+///|
+fn lz4_block_header(data : Bytes, pos : Int) -> (Bool, Int) {
+  let raw = lz4_read_u32_le(data, pos)
+  ((raw & 0x80000000U) != 0U, (raw & 0x7FFFFFFFU).reinterpret_as_int())
+}
+
+///|
 fn lz4_custom_frame(
   block_independence : Bool,
   block_checksum : Bool,
@@ -210,20 +259,25 @@ test "lz4 compress emits configured frame flags" {
     block_checksum: true,
     content_checksum: false,
     dict_id: 0x12345678U,
+    block_max_size: Size256KB,
   }
-  let compressed = @lz4.compress(b"configured frame", options~)
+  let original = b"configured frame"
+  let compressed = @lz4.compress(original, options~)
   let flg = compressed[4].to_int()
   assert_true((flg & 0x20) == 0)
   assert_true((flg & 0x10) != 0)
+  assert_true((flg & 0x08) != 0)
   assert_true((flg & 0x04) == 0)
   assert_true((flg & 0x01) != 0)
-  let dict_id = compressed[6].to_uint() |
-    (compressed[7].to_uint() << 8) |
-    (compressed[8].to_uint() << 16) |
-    (compressed[9].to_uint() << 24)
-  assert_eq(dict_id, 0x12345678U)
+  let bd = (compressed[5].to_int() >> 4) & 0x07
+  assert_eq(bd, 5)
+  match lz4_header_content_size(compressed) {
+    Some(size) => assert_eq(size, original.length())
+    None => fail("expected one-shot lz4 frame to carry content size")
+  }
+  assert_eq(lz4_header_dict_id(compressed), 0x12345678U)
   let decompressed = @lz4.decompress(compressed, dict=b"external dictionary")
-  assert_eq(decompressed, b"configured frame")
+  assert_eq(decompressed, original)
 }
 
 ///|
@@ -233,10 +287,12 @@ test "lz4 deflater accepts frame options" {
     block_checksum: true,
     content_checksum: true,
     dict_id: 0x01020304U,
+    block_max_size: Size256KB,
   }
-  let d = @lz4.Deflater::new(options~)
+  let original = b"streamed frame payload"
+  let d = @lz4.Deflater::new_with_content_size(original.length(), options~)
   let out = @blit.Buffer::new()
-  match d.encode(Some(b"streamed frame payload"[:])) {
+  match d.encode(Some(original[:])) {
     Data(chunk) => out.write_bytesview(chunk)
     Ok => fail("expected streaming lz4 output")
     End => fail("lz4 deflater should not end before finish")
@@ -252,13 +308,88 @@ test "lz4 deflater accepts frame options" {
   let flg = compressed[4].to_int()
   assert_true((flg & 0x20) == 0)
   assert_true((flg & 0x10) != 0)
+  assert_true((flg & 0x08) != 0)
   assert_true((flg & 0x04) != 0)
   assert_true((flg & 0x01) != 0)
-  let dict_id = compressed[6].to_uint() |
-    (compressed[7].to_uint() << 8) |
-    (compressed[8].to_uint() << 16) |
-    (compressed[9].to_uint() << 24)
-  assert_eq(dict_id, 0x01020304U)
+  let bd = (compressed[5].to_int() >> 4) & 0x07
+  assert_eq(bd, 5)
+  match lz4_header_content_size(compressed) {
+    Some(size) => assert_eq(size, original.length())
+    None => fail("expected lz4 deflater to write declared content size")
+  }
+  assert_eq(lz4_header_dict_id(compressed), 0x01020304U)
   let decompressed = @lz4.decompress(compressed, dict=b"stream dictionary")
-  assert_eq(decompressed, b"streamed frame payload")
+  assert_eq(decompressed, original)
+}
+
+///|
+fn lz4_randomish_bytes(len : Int) -> Bytes {
+  let out = @blit.Buffer::new(size_hint=len)
+  let mut state = 0x12345678U
+  for _ in 0..<len {
+    state = state * 1664525U + 1013904223U
+    out.write_byte(((state >> 24) & 0xFFU).to_byte())
+  }
+  out.to_bytes()
+}
+
+///|
+test "lz4 dependent block encoding uses cross-block history" {
+  let first = lz4_randomish_bytes(65536)
+  let second_buf = @blit.Buffer::new(size_hint=65536)
+  second_buf.write_bytesview(first[1:])
+  second_buf.write_byte(first[65535])
+  let data = first + second_buf.to_bytes()
+  let independent = @lz4.compress(data)
+  let dependent = @lz4.compress(data, options={
+    block_independence: false,
+    block_checksum: false,
+    content_checksum: true,
+    dict_id: 0U,
+    block_max_size: Size64KB,
+  })
+  let independent_first_header = lz4_header_data_offset(independent)
+  let (_, independent_first_size) = lz4_block_header(
+    independent, independent_first_header,
+  )
+  let independent_second_header = independent_first_header +
+    4 +
+    independent_first_size
+  let (independent_second_uncompressed, _) = lz4_block_header(
+    independent, independent_second_header,
+  )
+  let first_header = lz4_header_data_offset(dependent)
+  let (_, first_size) = lz4_block_header(dependent, first_header)
+  let second_header = first_header + 4 + first_size
+  let (second_uncompressed, second_size) = lz4_block_header(
+    dependent, second_header,
+  )
+  assert_true(independent_second_uncompressed)
+  assert_false(second_uncompressed)
+  assert_true(second_size < 1024)
+  let decompressed = @lz4.decompress(dependent)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "lz4 deflater rejects declared content-size mismatch" {
+  let d = @lz4.Deflater::new_with_content_size(3)
+  match d.encode(Some(b"four"[:])) {
+    Error(Lz4Error::CorruptData(msg)) =>
+      assert_eq(msg, "lz4 input exceeds declared content size")
+    other => fail("expected content-size mismatch error, got \{other}")
+  }
+}
+
+///|
+test "lz4 compress emits configured block max size" {
+  let compressed = @lz4.compress(Bytes::make(70000, b'A'), options={
+    block_independence: true,
+    block_checksum: false,
+    content_checksum: true,
+    dict_id: 0U,
+    block_max_size: Size256KB,
+  })
+  let bd = (compressed[5].to_int() >> 4) & 0x07
+  assert_eq(bd, 5)
 }
