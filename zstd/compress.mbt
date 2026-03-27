@@ -408,6 +408,17 @@ fn get_hash_archive_candidate(
 }
 
 ///|
+fn zstd_archive_search_slot(slot : Int) -> Int {
+  if slot < 2 {
+    slot
+  } else if slot % 2 == 0 {
+    ZSTD_MAX_HASH_ARCHIVE_CANDIDATES - 1 - (slot - 2) / 2
+  } else {
+    2 + (slot - 3) / 2
+  }
+}
+
+///|
 priv struct ZstdSequence {
   lit_len : Int
   offset : Int // offset_value for encoding (1/2/3 for repeat, actual+3 for new)
@@ -643,7 +654,11 @@ fn find_best_match(
     }
   }
   for slot in 0..<config.archive_candidates {
-    let ref_pos = get_hash_archive_candidate(hash_archive, hash, slot)
+    let ref_pos = get_hash_archive_candidate(
+      hash_archive,
+      hash,
+      zstd_archive_search_slot(slot),
+    )
     if ref_pos < 0 || ref_pos >= ip {
       continue
     }

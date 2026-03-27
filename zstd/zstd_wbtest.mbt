@@ -258,7 +258,7 @@ fn zstd_archive_fixture() -> Bytes {
 }
 
 ///|
-test "zstd deepest archive tier can recover candidates after many evictions" {
+test "zstd interleaved archive search surfaces older candidates before deepest tier" {
   let data = zstd_archive_fixture()
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let src = data[:]
@@ -286,6 +286,21 @@ test "zstd deepest archive tier can recover candidates after many evictions" {
     )
   }
   let hash = zstd_hash(src, ip)
+  let shallow_archive = find_best_match(
+    src,
+    ip,
+    data.length(),
+    hash_table,
+    hash_archive,
+    hash,
+    [1, 4, 8],
+    {
+      lazy_steps: 4,
+      max_hash_candidates: 12,
+      nice_match: 160,
+      archive_candidates: 2,
+    },
+  )
   let medium_archive = find_best_match(
     src,
     ip,
@@ -316,7 +331,9 @@ test "zstd deepest archive tier can recover candidates after many evictions" {
       archive_candidates: 8,
     },
   )
-  assert_true(deep_archive.length > medium_archive.length)
+  assert_true(medium_archive.length > shallow_archive.length)
+  assert_true(deep_archive.length >= medium_archive.length)
+  assert_eq(medium_archive.length, long.length())
 }
 
 ///|

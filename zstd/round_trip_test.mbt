@@ -451,11 +451,14 @@ test "higher explicit zstd levels use broader search tiers" {
 }
 
 ///|
-test "deepest zstd levels retain a larger archived candidate set" {
+test "mid-deep zstd levels can surface older archived candidates" {
   let data = zstd_archive_depth_fixture()
-  let shallower = @zstd.compress(data, level=Level(26))
-  let deeper = @zstd.compress(data, level=Level(30))
-  assert_eq(@zstd.decompress(shallower), data)
-  assert_eq(@zstd.decompress(deeper), data)
-  assert_true(deeper.length() <= shallower.length())
+  let shallow = @zstd.compress(data, level=Level(22))
+  let medium = @zstd.compress(data, level=Level(24))
+  let deep = @zstd.compress(data, level=Level(30))
+  assert_eq(@zstd.decompress(shallow), data)
+  assert_eq(@zstd.decompress(medium), data)
+  assert_eq(@zstd.decompress(deep), data)
+  assert_true(medium.length() <= shallow.length())
+  assert_true(deep.length() <= medium.length())
 }
