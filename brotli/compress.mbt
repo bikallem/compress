@@ -223,7 +223,8 @@ fn push_brotli_split_candidate(
 ///|
 fn brotli_split_candidates(src_len : Int) -> Array[Int] {
   let candidates : Array[Int] = [16384]
-  if src_len >= 65536 && src_len < 131072 {
+  if src_len >= 65536 {
+    push_brotli_split_candidate(candidates, 98304, src_len)
     push_brotli_split_candidate(
       candidates,
       brotli_round_split_size(src_len / 2),
@@ -239,8 +240,19 @@ fn brotli_split_candidates(src_len : Int) -> Array[Int] {
       brotli_round_split_size(src_len * 2 / 3),
       src_len,
     )
-  } else if src_len >= 131072 {
+  }
+  if src_len >= 131072 {
     candidates.push(65536)
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len / 4),
+      src_len,
+    )
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len * 3 / 4),
+      src_len,
+    )
   }
   candidates
 }
@@ -356,27 +368,21 @@ fn brotli_choose_split_end(
     src_len
   }
   let mut best = target_end
+  let mut best_score = 0
   let mut best_distance = 1 << 30
   for i in window_start..<window_end {
     if i <= min_end || i >= src_len {
       continue
     }
-    let c = src.unsafe_get(i).to_int()
-    if c == 0x0A ||
-      c == 0x0D ||
-      c == 0x20 ||
-      c == 0x09 ||
-      c == 0x2E ||
-      c == 0x2C {
-      let distance = if i > target_end {
-        i - target_end
-      } else {
-        target_end - i
-      }
-      if distance < best_distance {
-        best = i
-        best_distance = distance
-      }
+    let score = brotli_split_boundary_score(src.unsafe_get(i).to_int())
+    if score == 0 {
+      continue
+    }
+    let distance = if i > target_end { i - target_end } else { target_end - i }
+    if score > best_score || (score == best_score && distance < best_distance) {
+      best = i
+      best_score = score
+      best_distance = distance
     }
   }
   if best <= start {
@@ -384,6 +390,32 @@ fn brotli_choose_split_end(
   } else {
     best
   }
+}
+
+///|
+fn brotli_split_boundary_score(c : Int) -> Int {
+  if c == 0x0A || c == 0x0D {
+    return 6
+  }
+  if c == 0x7D || c == 0x7B || c == 0x5D || c == 0x5B || c == 0x3E || c == 0x3C {
+    return 5
+  }
+  if c == 0x20 ||
+    c == 0x09 ||
+    c == 0x2E ||
+    c == 0x2C ||
+    c == 0x3A ||
+    c == 0x3B ||
+    c == 0x22 {
+    return 4
+  }
+  if c == 0x2F || c == 0x5C || c == 0x7C || c == 0x3D {
+    return 3
+  }
+  if c == 0x2D || c == 0x5F {
+    return 2
+  }
+  0
 }
 
 ///|

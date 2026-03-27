@@ -175,6 +175,35 @@ test "signal protocol: deflater buffered mode is explicit" {
 }
 
 ///|
+test "signal protocol: deflater new defaults to buffered mode" {
+  let data = b"default constructor stays buffered for raw snappy"
+  let d = @snappy.Deflater::new()
+  match d.encode(Some(data[:16])) {
+    Ok => ()
+    Data(_) => fail("raw snappy default constructor should buffer until finish")
+    End => fail("raw snappy default constructor should not end before finish")
+    Error(e) => raise e
+  }
+  let out = @blit.Buffer::new()
+  match d.encode(Some(data[16:])) {
+    Ok => ()
+    Data(_) => fail("raw snappy default constructor should buffer until finish")
+    End => fail("raw snappy default constructor should not end before finish")
+    Error(e) => raise e
+  }
+  loop d.encode(None) {
+    Data(chunk) => {
+      out.write_bytesview(chunk)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => fail("buffered snappy finalization should not return Ok")
+    Error(e) => raise e
+  }
+  assert_eq(@snappy.decompress(out.to_bytes()), data)
+}
+
+///|
 test "signal protocol: deflater new() defaults to buffered mode" {
   let data = b"default constructor uses buffered snappy mode"
   let d = @snappy.Deflater::new()

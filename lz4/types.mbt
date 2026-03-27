@@ -220,3 +220,43 @@ fn normalize_lz4_frame_options(
     block_max_size: options.block_max_size,
   }
 }
+
+///|
+fn normalize_lz4_decode_dictionaries(
+  dicts : Array[Dictionary],
+) -> Array[Dictionary] raise Lz4Error {
+  let normalized : Array[Dictionary] = []
+  for dict in dicts {
+    if dict.data.length() == 0 {
+      continue
+    }
+    for existing in normalized {
+      if existing.dict_id == dict.dict_id {
+        raise Lz4Error::InvalidHeader("duplicate dictionary id")
+      }
+    }
+    normalized.push(dict)
+  }
+  normalized
+}
+
+///|
+fn resolve_lz4_frame_dictionary(
+  header : Lz4FrameHeader,
+  dicts : Array[Dictionary],
+) -> Bytes raise Lz4Error {
+  if header.dict_id == 0U {
+    return b""
+  }
+  if dicts.length() == 0 {
+    raise Lz4Error::InvalidHeader(
+      "dictionary id requires external dictionary bytes",
+    )
+  }
+  for dict in dicts {
+    if dict.dict_id == header.dict_id {
+      return lz4_dictionary_prefix(dict.data)
+    }
+  }
+  raise Lz4Error::InvalidHeader("dictionary id mismatch")
+}

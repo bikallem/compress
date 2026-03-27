@@ -220,3 +220,51 @@ test "brotli adaptive split candidates improve mid-sized heterogeneous input" {
   assert_true(split48.length() < split16.length())
   assert_true(compressed.length() <= split48.length())
 }
+
+///|
+fn brotli_large_split_fixture() -> Bytes {
+  let buf = @blit.Buffer::new()
+  for i in 0..<4096 {
+    buf.write_bytes(
+      b"{\"service\":\"api\",\"route\":\"/v1/items\",\"status\":200,\"cluster\":",
+    )
+    buf.write_byte((b'0'.to_int() + i % 10).to_byte())
+    buf.write_bytes(b",\"region\":\"eu-west-1\"}\n")
+  }
+  for i in 0..<65536 {
+    let alpha = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    buf.write_byte(alpha[(i * 19 + i / 11) % alpha.length()])
+  }
+  for i in 0..<4096 {
+    buf.write_bytes(
+      b".layout-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:1rem;padding:1.5rem;background:#eee}\n",
+    )
+    buf.write_byte((i % 251).to_byte())
+  }
+  buf.to_bytes()
+}
+
+///|
+test "brotli large split candidates include 96KiB for large inputs" {
+  let data = brotli_large_split_fixture()
+  let compressed = compress(data, level=Best)
+  let candidates = brotli_split_candidates(data.length())
+  let split96 = compress_lz77_split(data[:], data.length(), 11, 98304)
+  assert_eq(decompress(compressed), data)
+  let mut has_96k = false
+  for candidate in candidates {
+    if candidate == 98304 {
+      has_96k = true
+    }
+  }
+  assert_true(has_96k)
+  assert_eq(decompress(split96), data)
+}
+
+///|
+test "brotli split chooser recognizes structured punctuation boundaries" {
+  let data = b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA{\"status\":\"ok\",\"message\":\"boundary\"}\nBBBBBBBBBBBBBBBB"
+  let target = 36
+  let chosen = brotli_choose_split_end(data[:], data.length(), 0, target)
+  assert_eq(chosen, 68)
+}

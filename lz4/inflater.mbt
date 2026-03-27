@@ -25,7 +25,7 @@ priv enum InflatePhase {
 priv struct InflaterState {
   mut input_buf : @blit.Buffer
   mut input_pos : Int
-  dict : Dictionary
+  dicts : Array[Dictionary]
   mut header : Lz4FrameHeader?
   mut initial_prefix : Bytes
   mut history : @blit.Buffer
@@ -42,15 +42,27 @@ struct Inflater(InflaterState)
 
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
-  Inflater::new_with_dictionary(Dictionary::new(dict))
+  inflate_with_dictionaries([Dictionary::new(dict)])
 }
 
 ///|
 pub fn Inflater::new_with_dictionary(dict : Dictionary) -> Inflater {
+  inflate_with_dictionaries([dict])
+}
+
+///|
+pub fn Inflater::new_with_dictionaries(
+  dicts : Array[Dictionary],
+) -> Inflater raise Lz4Error {
+  inflate_with_dictionaries(normalize_lz4_decode_dictionaries(dicts))
+}
+
+///|
+fn inflate_with_dictionaries(dicts : Array[Dictionary]) -> Inflater {
   Inflater({
     input_buf: @blit.Buffer::new(),
     input_pos: 0,
-    dict,
+    dicts,
     header: None,
     initial_prefix: b"",
     history: @blit.Buffer::new(),
@@ -163,7 +175,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
             }
           Err(e) => return fail_lz4(s, e)
         }
-        let initial_prefix = initial_lz4_prefix(header, s.dict) catch {
+        let initial_prefix = resolve_lz4_frame_dictionary(header, s.dicts) catch {
           e => return fail_lz4(s, e)
         }
         s.header = Some(header)

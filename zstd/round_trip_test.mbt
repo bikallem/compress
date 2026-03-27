@@ -177,6 +177,23 @@ fn raw_dict_fixture() -> Bytes {
 }
 
 ///|
+fn formatted_dict_with_id(dict : Bytes, dict_id : UInt) -> Bytes {
+  Bytes::makei(dict.length(), fn(i) {
+    if i == 4 {
+      (dict_id & 0xFFU).to_byte()
+    } else if i == 5 {
+      ((dict_id >> 8) & 0xFFU).to_byte()
+    } else if i == 6 {
+      ((dict_id >> 16) & 0xFFU).to_byte()
+    } else if i == 7 {
+      ((dict_id >> 24) & 0xFFU).to_byte()
+    } else {
+      dict[i]
+    }
+  })
+}
+
+///|
 test "round-trip: with raw dictionary" {
   let dict = raw_dict_fixture()
   let data = dict + b" tail bytes that do not appear in the dictionary."
@@ -224,6 +241,16 @@ test "round-trip: with short raw dictionary using zstd magic prefix" {
 }
 
 ///|
+test "round-trip: repeated data stays compact with raw dictionary" {
+  let dict = raw_dict_fixture()
+  let data = Bytes::make(200000, b'Z')
+  let compressed = @zstd.compress(data, dict~)
+  let decompressed = @zstd.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() < 64)
+}
+
+///|
 test "round-trip: malformed formatted dictionary is rejected on encode" {
   let valid = formatted_dict_fixture()
   let dict = Bytes::makei(32, fn(i) { valid[i] })
@@ -256,6 +283,77 @@ test "zstd formatted frame rejects malformed fallback dictionary" {
       "expected formatted dictionary frame to reject malformed fallback dictionary",
     )
   }
+}
+
+///|
+test "plain zstd frame ignores unrelated formatted dictionary" {
+  let data = Bytes::makei(8192, fn(i) {
+    if i % 29 < 7 {
+      b'A'
+    } else if i % 13 < 5 {
+      b'B'
+    } else {
+      (i * 17 % 251).to_byte()
+    }
+  })
+  let compressed = @zstd.compress(data, level=Best)
+  let decoded = @zstd.decompress(compressed, dict=formatted_dict_fixture())
+  assert_eq(decoded, data)
+}
+
+///|
+test "zstd can select dictionaries per concatenated frame" {
+  let dict1 = formatted_dict_fixture()
+  let dict2 = formatted_dict_with_id(dict1, 0x21436587U)
+  let plain = b"plain zstd frame"
+  let data1 = formatted_dict_fixture_input()
+  let data2 = data1 + b"\nextra shard=2 cluster=9"
+  let combined = @zstd.compress(plain) +
+    @zstd.compress(data1, dict=dict1) +
+    @zstd.compress(data2, dict=dict2)
+  let decoded = @zstd.decompress_with_dictionaries(combined, [dict1, dict2])
+  assert_eq(decoded, plain + data1 + data2)
+}
+
+///|
+test "zstd concatenated decode fails when a later frame dictionary is missing" {
+  let dict1 = formatted_dict_fixture()
+  let dict2 = formatted_dict_with_id(dict1, 0x78563412U)
+  let combined = @zstd.compress(formatted_dict_fixture_input(), dict=dict1) +
+    @zstd.compress(
+      formatted_dict_fixture_input() + b"\nservice=search cluster=4",
+      dict=dict2,
+    )
+  let result = try? @zstd.decompress_with_dictionaries(combined, [dict1])
+  match result {
+    Err(ZstdError::InvalidHeader(_)) => ()
+    _ => fail("expected missing later dictionary to fail")
+  }
+}
+
+///|
+test "streaming zstd inflater can select dictionaries per concatenated frame" {
+  let dict1 = formatted_dict_fixture()
+  let dict2 = formatted_dict_with_id(dict1, 0x78563412U)
+  let data1 = formatted_dict_fixture_input()
+  let data2 = b"plain frame before second dict"
+  let data3 = data1 + b"\nservice=search cluster=4"
+  let combined = @zstd.compress(data1, dict=dict1) +
+    @zstd.compress(data2) +
+    @zstd.compress(data3, dict=dict2)
+  let d = @zstd.Inflater::new_with_dictionaries([dict1, dict2])
+  let buf = @blit.Buffer::new()
+  d.src(combined[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with full input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), data1 + data2 + data3)
 }
 
 ///|

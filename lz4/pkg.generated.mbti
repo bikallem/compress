@@ -6,6 +6,8 @@ pub fn compress(Bytes, dict? : Bytes, options? : FrameOptions) -> Bytes
 
 pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise Lz4Error
 
+pub fn decompress_with_dictionaries(Bytes, Array[Dictionary]) -> Bytes raise Lz4Error
+
 pub fn decompress_with_dictionary(Bytes, Dictionary) -> Bytes raise Lz4Error
 
 // Errors
@@ -64,6 +66,7 @@ pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::enable_direct_output(Self, Int) -> Unit
 pub fn Inflater::finish(Self) -> Unit
 pub fn Inflater::new(dict? : Bytes) -> Self
+pub fn Inflater::new_with_dictionaries(Array[Dictionary]) -> Self raise Lz4Error
 pub fn Inflater::new_with_dictionary(Dictionary) -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit
 pub fn Inflater::take_output(Self) -> Bytes

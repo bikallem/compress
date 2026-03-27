@@ -29,6 +29,25 @@ pub fn decompress(
 }
 
 ///|
+/// Decompresses concatenated Zstandard frames using a registry of candidate
+/// dictionaries. At most one raw dictionary may be supplied; formatted
+/// dictionaries are selected per frame by dictionary id.
+pub fn decompress_with_dictionaries(
+  data : Bytes,
+  dicts : Array[Bytes],
+) -> Bytes raise ZstdError {
+  let inf = Inflater::new_with_dictionaries(dicts)
+  inf.enable_direct_output((data.length() * 4).max(65536))
+  inf.src(data[:])
+  loop inf.decode() {
+    Await => raise ZstdError::UnexpectedEOF
+    Data(_) => continue inf.decode()
+    End => inf.take_output()
+    Error(e) => raise e
+  }
+}
+
+///|
 fn decompress_block(
   src : BytesView,
   block_start : Int,

@@ -6,6 +6,8 @@ pub fn compress(Bytes, level? : CompressionLevel, dict? : Bytes) -> Bytes raise 
 
 pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise ZstdError
 
+pub fn decompress_with_dictionaries(Bytes, Array[Bytes]) -> Bytes raise ZstdError
+
 // Errors
 pub(all) suberror ZstdError {
   InvalidHeader(String)
@@ -45,6 +47,7 @@ type Inflater
 pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::enable_direct_output(Self, Int) -> Unit
 pub fn Inflater::new(dict? : Bytes) -> Self
+pub fn Inflater::new_with_dictionaries(Array[Bytes]) -> Self raise ZstdError
 pub fn Inflater::src(Self, BytesView) -> Unit
 pub fn Inflater::take_output(Self) -> Bytes
 

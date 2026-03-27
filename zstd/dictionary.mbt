@@ -8,6 +8,12 @@ priv struct ZstdDictionary {
 }
 
 ///|
+priv struct ZstdDictionarySet {
+  raw : ZstdDictionary
+  formatted : Array[ZstdDictionary]
+}
+
+///|
 fn default_rep_offsets() -> Array[Int] {
   [1, 4, 8]
 }
@@ -123,4 +129,83 @@ fn parse_dictionary_for_encoder(dict : Bytes) -> ZstdDictionary raise ZstdError 
     return raw_dictionary(dict)
   }
   parse_formatted_dictionary_bytes(dict)
+}
+
+///|
+fn single_dictionary_set(dict : Bytes) -> ZstdDictionarySet {
+  if dict.length() == 0 {
+    return { raw: empty_dictionary(), formatted: [] }
+  }
+  let parsed = parse_dictionary_bytes(dict)
+  if parsed.dict_id == 0U {
+    { raw: parsed, formatted: [] }
+  } else {
+    { raw: empty_dictionary(), formatted: [parsed] }
+  }
+}
+
+///|
+fn parse_dictionary_for_registry(
+  dict : Bytes,
+) -> ZstdDictionary raise ZstdError {
+  if dict.length() == 0 {
+    return empty_dictionary()
+  }
+  if dict.length() < 8 {
+    return raw_dictionary(dict)
+  }
+  let src = dict[:]
+  let magic = read_u32_le(src, 0)
+  if magic != 0xEC30A437_U {
+    return raw_dictionary(dict)
+  }
+  parse_formatted_dictionary_bytes(dict)
+}
+
+///|
+fn build_dictionary_set(
+  dicts : Array[Bytes],
+) -> ZstdDictionarySet raise ZstdError {
+  let mut raw = empty_dictionary()
+  let formatted : Array[ZstdDictionary] = []
+  for dict in dicts {
+    if dict.length() == 0 {
+      continue
+    }
+    let parsed = parse_dictionary_for_registry(dict)
+    if parsed.dict_id == 0U {
+      if raw.content.length() > 0 {
+        raise ZstdError::InvalidHeader(
+          "multiple raw dictionaries are not supported",
+        )
+      }
+      raw = parsed
+      continue
+    }
+    for existing in formatted {
+      if existing.dict_id == parsed.dict_id {
+        raise ZstdError::InvalidHeader("duplicate formatted dictionary id")
+      }
+    }
+    formatted.push(parsed)
+  }
+  { raw, formatted }
+}
+
+///|
+fn select_frame_dictionary(
+  dicts : ZstdDictionarySet,
+  dict_id : UInt,
+) -> ZstdDictionary raise ZstdError {
+  if dict_id == 0U {
+    return dicts.raw
+  }
+  for dict in dicts.formatted {
+    if dict.dict_id == dict_id {
+      return dict
+    }
+  }
+  raise ZstdError::InvalidHeader(
+    "dictionary id \{dict_id} requires matching formatted dictionary",
+  )
 }

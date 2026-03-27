@@ -7,10 +7,9 @@
 ///   match d.encode(None) { Data(out) => ...; End => ... }
 /// Raw Snappy writes the full uncompressed-size varint at the start of the
 /// stream, so truly incremental output requires the caller to know that final
-/// size up front. `Deflater::new()` falls back to buffered compatibility mode
-/// when the size is omitted or negative; use `Deflater::new_known_length()` for
-/// incremental output and `Deflater::new_buffered()` when the final size is not
-/// known ahead of time.
+/// size up front. `Deflater::new()` and `Deflater::new_buffered()` keep the
+/// historical buffered compatibility mode; use `Deflater::new_known_length()`
+/// for true raw incremental output when the final size is known ahead of time.
 priv struct DeflaterState {
   state : Encoder
   total_len : Int
@@ -25,10 +24,13 @@ priv struct DeflaterState {
 struct Deflater(DeflaterState)
 
 ///|
-/// Creates a raw Snappy deflater. Omitting `total_len` keeps the historical
-/// buffered mode; pass a non-negative total length or prefer
-/// `Deflater::new_known_length()` for true incremental output.
-pub fn Deflater::new(total_len? : Int = -1) -> Deflater {
+/// Creates a raw Snappy deflater in buffered compatibility mode.
+pub fn Deflater::new() -> Deflater {
+  make_snappy_deflater(-1)
+}
+
+///|
+fn make_snappy_deflater(total_len : Int) -> Deflater {
   Deflater({
     state: Encoder::new(),
     total_len,
@@ -44,13 +46,13 @@ pub fn Deflater::new(total_len? : Int = -1) -> Deflater {
 /// Creates a raw Snappy deflater that can emit output incrementally because the
 /// final uncompressed length is known up front.
 pub fn Deflater::new_known_length(total_len : Int) -> Deflater {
-  Deflater::new(total_len~)
+  make_snappy_deflater(total_len)
 }
 
 ///|
 /// Creates a raw Snappy deflater in explicit buffered compatibility mode.
 pub fn Deflater::new_buffered() -> Deflater {
-  Deflater::new()
+  make_snappy_deflater(-1)
 }
 
 ///|

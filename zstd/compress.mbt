@@ -23,7 +23,7 @@ pub fn compress(
   xxh.update(src)
   if src_len == 0 {
     pos = write_block_header_fixed(out, pos, true, BLOCK_TYPE_RAW, 0)
-  } else if parsed_dict.content.length() == 0 && is_all_same(src) {
+  } else if parsed_dict.dict_id == 0U && is_all_same(src) {
     let block_header = 1 | (BLOCK_TYPE_RLE << 1) | (src_len << 3)
     out.unsafe_set(pos, (block_header & 0xFF).to_byte())
     out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
@@ -49,6 +49,19 @@ pub fn compress(
         let block_len = block_end - src_pos
         let is_last = block_end == src_len
         let block_bytes = src[src_pos:block_end]
+        if is_all_same(block_bytes) {
+          pos = write_block_header_fixed(
+            out,
+            pos,
+            is_last,
+            BLOCK_TYPE_RLE,
+            block_len,
+          )
+          out.unsafe_set(pos, block_bytes.unsafe_get(0))
+          pos += 1
+          src_pos = block_end
+          continue
+        }
         let block_literals = fixed_array_from_bytesview(block_bytes)
         let comp_buf = FixedArray::make(block_len * 2 + 64, b'\x00')
         let (comp_size, next_lit, next_seq) = compress_literal_only_block(

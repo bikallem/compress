@@ -261,3 +261,67 @@ test "signal protocol: deflater supports external dictionaries" {
   }
   assert_eq(decoded.to_bytes(), data)
 }
+
+///|
+test "lz4 can select dictionaries per concatenated frame" {
+  let dict1 = b"first shared dictionary block first shared dictionary block"
+  let dict2 = b"second shared dictionary block second shared dictionary block"
+  let plain = b"plain lz4 frame"
+  let data1 = b"first shared dictionary block payload one"
+  let data2 = b"second shared dictionary block payload two"
+  let combined = @lz4.compress(plain) +
+    @lz4.compress(data1, dict=dict1) +
+    @lz4.compress(data2, dict=dict2)
+  let decoded = @lz4.decompress_with_dictionaries(combined, [
+    @lz4.Dictionary::new(dict1),
+    @lz4.Dictionary::new(dict2),
+  ])
+  assert_eq(decoded, plain + data1 + data2)
+}
+
+///|
+test "lz4 concatenated decode fails when a later frame dictionary is missing" {
+  let dict1 = b"first shared dictionary block first shared dictionary block"
+  let dict2 = b"second shared dictionary block second shared dictionary block"
+  let combined = @lz4.compress(
+      b"first shared dictionary block payload one",
+      dict=dict1,
+    ) +
+    @lz4.compress(b"second shared dictionary block payload two", dict=dict2)
+  let result = try? @lz4.decompress_with_dictionaries(combined, [
+    @lz4.Dictionary::new(dict1),
+  ])
+  match result {
+    Err(Lz4Error::InvalidHeader(_)) => ()
+    _ => fail("expected missing later dictionary to fail")
+  }
+}
+
+///|
+test "streaming lz4 inflater can select dictionaries per concatenated frame" {
+  let dict1 = b"stream dictionary one stream dictionary one"
+  let dict2 = b"stream dictionary two stream dictionary two"
+  let data1 = b"stream dictionary one payload"
+  let data2 = b"plain middle frame"
+  let data3 = b"stream dictionary two payload"
+  let combined = @lz4.compress(data1, dict=dict1) +
+    @lz4.compress(data2) +
+    @lz4.compress(data3, dict=dict2)
+  let i = @lz4.Inflater::new_with_dictionaries([
+    @lz4.Dictionary::new(dict1),
+    @lz4.Dictionary::new(dict2),
+  ])
+  let buf = @blit.Buffer::new()
+  i.src(combined[:])
+  i.finish()
+  loop i.decode() {
+    Await => fail("unexpected Await with finished LZ4 input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue i.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), data1 + data2 + data3)
+}

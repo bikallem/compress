@@ -26,7 +26,7 @@ pub(all) enum Decode {
 
 type Deflater
 pub fn Deflater::encode(Self, BytesView?) -> Encode
-pub fn Deflater::new(total_len? : Int) -> Self
+pub fn Deflater::new() -> Self
 pub fn Deflater::new_buffered() -> Self
 pub fn Deflater::new_known_length(Int) -> Self
 

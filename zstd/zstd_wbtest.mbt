@@ -244,6 +244,22 @@ test "zstd hash uses unsigned little-endian words" {
 }
 
 ///|
+test "zstd one-shot encoder emits RLE blocks for repeated data with raw dictionaries" {
+  let data = Bytes::make(200000, b'Q')
+  let compressed = compress(data, dict=b"raw dictionary prefix")
+  let parsed = try_parse_frame_header(compressed[:])
+  let header_len = match parsed {
+    Parsed(_, consumed) => consumed
+    _ => fail("expected a parsed zstd frame header")
+  }
+  let block_header = compressed[header_len].to_int() |
+    (compressed[header_len + 1].to_int() << 8) |
+    (compressed[header_len + 2].to_int() << 16)
+  let block_type = (block_header >> 1) & 0x03
+  assert_eq(block_type, BLOCK_TYPE_RLE)
+}
+
+///|
 fn zstd_archive_fixture() -> Bytes {
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let buf = @blit.Buffer::new()

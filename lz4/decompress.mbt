@@ -4,7 +4,7 @@ pub fn decompress(
   data : Bytes,
   dict? : Bytes = Bytes::default(),
 ) -> Bytes raise Lz4Error {
-  decompress_with_dictionary(data, Dictionary::new(dict))
+  decompress_with_dictionaries(data, [Dictionary::new(dict)])
 }
 
 ///|
@@ -13,11 +13,22 @@ pub fn decompress_with_dictionary(
   data : Bytes,
   dict : Dictionary,
 ) -> Bytes raise Lz4Error {
+  decompress_with_dictionaries(data, [dict])
+}
+
+///|
+/// Decompresses concatenated LZ4 frames using a registry of external
+/// dictionaries. Frame dictionary ids are resolved per frame.
+pub fn decompress_with_dictionaries(
+  data : Bytes,
+  dicts : Array[Dictionary],
+) -> Bytes raise Lz4Error {
   let src = data[:]
   let sink = @blit.Buffer::new(size_hint=(data.length() * 2).max(65536))
+  let dicts = normalize_lz4_decode_dictionaries(dicts)
   let mut pos = 0
   while pos < data.length() {
-    pos = decompress_lz4_section(src, data, pos, sink, dict)
+    pos = decompress_lz4_section(src, data, pos, sink, dicts)
   }
   sink.to_bytes()
 }
@@ -28,14 +39,14 @@ fn decompress_lz4_section(
   data : Bytes,
   start : Int,
   sink : @blit.Buffer,
-  dict : Dictionary,
+  dicts : Array[Dictionary],
 ) -> Int raise Lz4Error {
   guard start + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
   let magic = lz4_read_u32_le(src, start)
   if lz4_is_skippable_magic(magic) {
     return start + lz4_skippable_frame_length(src, start)
   }
-  decompress_frame(src, data, start, sink, dict)
+  decompress_frame(src, data, start, sink, dicts)
 }
 
 ///|
@@ -44,10 +55,10 @@ fn decompress_frame(
   data : Bytes,
   start : Int,
   sink : @blit.Buffer,
-  dict : Dictionary,
+  dicts : Array[Dictionary],
 ) -> Int raise Lz4Error {
   let header = parse_frame_header(src[start:])
-  let initial_prefix = initial_lz4_prefix(header, dict)
+  let initial_prefix = resolve_lz4_frame_dictionary(header, dicts)
   let block_buf = FixedArray::make(header.block_max_size, b'\x00')
   let history = @blit.Buffer::new(size_hint=65536)
   if !header.block_independence && initial_prefix.length() > 0 {
@@ -127,25 +138,6 @@ fn decompress_frame(
     None => ()
   }
   pos
-}
-
-///|
-fn initial_lz4_prefix(
-  header : Lz4FrameHeader,
-  dict : Dictionary,
-) -> Bytes raise Lz4Error {
-  if dict.data.length() == 0 {
-    guard header.dict_id == 0U else {
-      raise Lz4Error::InvalidHeader(
-        "dictionary id requires external dictionary bytes",
-      )
-    }
-    return b""
-  }
-  if header.dict_id != 0U && dict.dict_id != header.dict_id {
-    raise Lz4Error::InvalidHeader("dictionary id mismatch")
-  }
-  lz4_dictionary_prefix(dict.data)
 }
 
 ///|

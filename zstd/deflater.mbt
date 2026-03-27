@@ -249,7 +249,7 @@ fn write_encoded_block(
     write_block_header_buffer(dst, is_last, BLOCK_TYPE_RAW, 0)
     return (prev_lit_table, prev_seq_tables)
   }
-  if prefix.length() == 0 && is_all_same(chunk_view) {
+  if is_all_same(chunk_view) {
     write_block_header_buffer(dst, is_last, BLOCK_TYPE_RLE, chunk.length())
     dst.write_byte(chunk[0])
     return (prev_lit_table, prev_seq_tables)

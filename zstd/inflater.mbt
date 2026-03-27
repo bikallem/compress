@@ -16,7 +16,8 @@ priv struct InflaterState {
   mut failed : ZstdError?
   mut sink : @blit.Buffer?
   mut pending_output : Bytes?
-  dict : ZstdDictionary
+  dicts : ZstdDictionarySet
+  mut frame_dict : ZstdDictionary
   mut header : ZstdFrameHeader?
   mut prev_lit_table : ZstdHuffmanTable?
   mut prev_seq_tables : SeqTables?
@@ -31,7 +32,18 @@ struct Inflater(InflaterState)
 
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
-  let parsed = parse_dictionary_bytes(dict)
+  inflate_with_dictionary_set(single_dictionary_set(dict))
+}
+
+///|
+pub fn Inflater::new_with_dictionaries(
+  dicts : Array[Bytes],
+) -> Inflater raise ZstdError {
+  inflate_with_dictionary_set(build_dictionary_set(dicts))
+}
+
+///|
+fn inflate_with_dictionary_set(dicts : ZstdDictionarySet) -> Inflater {
   Inflater({
     input_buf: @blit.Buffer::new(),
     input_pos: 0,
@@ -39,7 +51,8 @@ pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
     failed: None,
     sink: None,
     pending_output: None,
-    dict: parsed,
+    frame_dict: empty_dictionary(),
+    dicts,
     header: None,
     prev_lit_table: None,
     prev_seq_tables: None,
@@ -107,27 +120,15 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
           Error(e) => return fail_inflater(s, e)
           Parsed(header, consumed) => {
             s.xxh.reset()
-            if header.dict_id != 0U {
-              if s.dict.dict_id == 0U {
-                return fail_inflater(
-                  s,
-                  ZstdError::InvalidHeader(
-                    "dictionary id \{header.dict_id} requires matching formatted dictionary",
-                  ),
-                )
-              }
-              if s.dict.dict_id != header.dict_id {
-                return fail_inflater(
-                  s,
-                  ZstdError::InvalidHeader("dictionary id mismatch"),
-                )
-              }
+            let frame_dict = select_frame_dictionary(s.dicts, header.dict_id) catch {
+              e => return fail_inflater(s, e)
             }
             s.input_pos += consumed
+            s.frame_dict = frame_dict
             s.header = Some(header)
-            s.prev_lit_table = s.dict.lit_table
-            s.prev_seq_tables = s.dict.seq_tables
-            s.rep = copy_rep_offsets(s.dict.rep)
+            s.prev_lit_table = frame_dict.lit_table
+            s.prev_seq_tables = frame_dict.seq_tables
+            s.rep = copy_rep_offsets(frame_dict.rep)
             let cap = match header.content_size {
               Some(cs) => cs
               None => (input.length() * 4).max(65536)
@@ -282,7 +283,7 @@ fn decode_compressed_block(
     block_size,
     header.window_size,
     s.history,
-    s.dict.content[:],
+    s.frame_dict.content[:],
     s.rep,
     s.prev_lit_table,
     s.prev_seq_tables,
