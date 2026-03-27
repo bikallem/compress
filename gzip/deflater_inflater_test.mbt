@@ -271,7 +271,8 @@ test "streaming gzip inflater preserves repeat state across byte chunks" {
 ///|
 test "streaming gzip inflater validates FHCRC across header chunks" {
   let original = b"header crc fixture"
-  let compressed = gzip_with_fhcrc(@gzip.compress(original))
+  // Encoder now always writes FHCRC — use directly.
+  let compressed = @gzip.compress(original)
   let d = @gzip.Inflater::new()
   let buf = @blit.Buffer::new()
   let mut pos = 0

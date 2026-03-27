@@ -193,3 +193,23 @@ pub fn XXH64::checksum64(self : XXH64) -> UInt64 {
   }
   xxh64_avalanche(h)
 }
+
+///|
+pub impl Hasher for XXH64 with size(self) -> Int {
+  self.size()
+}
+
+///|
+pub impl Hasher for XXH64 with reset(self) -> Unit {
+  self.reset()
+}
+
+///|
+pub impl Hasher for XXH64 with update(self, data) -> Unit {
+  self.update(data)
+}
+
+///|
+pub impl Hasher for XXH64 with checksum(self) -> UInt {
+  self.checksum64().to_uint()
+}

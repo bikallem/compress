@@ -1,0 +1,4 @@
+import {
+  "bikallem/compress/snappy",
+  "moonbitlang/async/io",
+}

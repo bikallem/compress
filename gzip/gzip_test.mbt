@@ -126,35 +126,6 @@ fn gzip_named_header(name : String) -> @gzip.Header {
   { name, comment: "", extra: Bytes::default(), mod_time: 0U, os: b'\xFF' }
 }
 
-///|
-fn gzip_with_fhcrc(data : Bytes) -> Bytes {
-  let header = Bytes::makei(10, fn(i) {
-    if i == 3 {
-      (data[i].to_int() | 0x02).to_byte()
-    } else {
-      data[i]
-    }
-  })
-  let hcrc = @checksum.crc32(header[:]) & 0xFFFFU
-  let out = @blit.Buffer::new(size_hint=data.length() + 2)
-  out.write_bytes(header)
-  out.write_byte((hcrc & 0xFFU).to_byte())
-  out.write_byte(((hcrc >> 8) & 0xFFU).to_byte())
-  out.write_bytesview(data[10:])
-  out.to_bytes()
-}
-
-///|
-fn gzip_with_bad_fhcrc(data : Bytes) -> Bytes {
-  let with_crc = gzip_with_fhcrc(data)
-  Bytes::makei(with_crc.length(), fn(i) {
-    if i == 10 {
-      (with_crc[i].to_int() ^ 0xFF).to_byte()
-    } else {
-      with_crc[i]
-    }
-  })
-}
 
 ///|
 fn gzip_hex_digit(c : UInt16) -> Int {
@@ -217,7 +188,8 @@ test "gzip checksum mismatch" {
 ///|
 test "gzip accepts valid FHCRC" {
   let data = b"header crc fixture"
-  let compressed = gzip_with_fhcrc(@gzip.compress(data))
+  // Encoder now always writes FHCRC — just round-trip directly.
+  let compressed = @gzip.compress(data)
   let (decompressed, _header) = @gzip.decompress(compressed)
   assert_eq(decompressed, data)
 }
@@ -225,8 +197,17 @@ test "gzip accepts valid FHCRC" {
 ///|
 test "gzip rejects invalid FHCRC" {
   let data = b"header crc fixture"
-  let compressed = gzip_with_bad_fhcrc(@gzip.compress(data))
-  let result = try? @gzip.decompress(compressed)
+  // Encoder writes FHCRC as last 2 bytes of header (bytes 10-11 for a default header).
+  // Corrupt byte 10 to invalidate the header CRC.
+  let compressed = @gzip.compress(data)
+  let corrupted = Bytes::makei(compressed.length(), fn(i) {
+    if i == 10 {
+      (compressed[i].to_int() ^ 0xFF).to_byte()
+    } else {
+      compressed[i]
+    }
+  })
+  let result = try? @gzip.decompress(corrupted)
   guard result is Err(_) else { fail("expected error for bad header checksum") }
 }
 

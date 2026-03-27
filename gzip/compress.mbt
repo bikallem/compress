@@ -30,7 +30,7 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
   // Compression method: deflate
   buf.write_byte(GZIP_DEFLATE)
   // Build FLG byte
-  let mut flg = 0
+  let mut flg = GZIP_FHCRC
   if header.name.length() > 0 {
     flg = flg | GZIP_FNAME
   }
@@ -72,6 +72,26 @@ fn build_gzip_header(header : Header, level : @flate.CompressionLevel) -> Bytes 
       buf.write_byte((c.to_int() & 0xFF).to_byte())
     }
     buf.write_byte(b'\x00')
+  }
+  // FHCRC: CRC-32 of header so far, truncated to 16 bits (LE)
+  let header_bytes = buf.to_bytes()
+  let hcrc = @checksum.crc32(header_bytes[:])
+  buf.write_byte((hcrc & 0xFFU).to_byte())
+  buf.write_byte(((hcrc >> 8) & 0xFFU).to_byte())
+  buf.to_bytes()
+}
+
+///|
+/// Compresses multiple data segments as a multi-member gzip archive (RFC 1952).
+/// Each entry produces a separate gzip member; concatenated members form a valid archive.
+pub fn compress_members(
+  members : Array[(Bytes, Header)],
+  level? : @flate.CompressionLevel = DefaultCompression,
+) -> Bytes raise GzipError {
+  let buf = @blit.Buffer::new()
+  for entry in members {
+    let (data, header) = entry
+    buf.write_bytes(compress(data, level~, header~))
   }
   buf.to_bytes()
 }

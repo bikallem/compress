@@ -45,6 +45,20 @@ pub fn compress(
 }
 
 ///|
+/// Compress data using DEFLATE with a preset dictionary.
+pub fn compress_with_dict(
+  data : Bytes,
+  dict : Bytes,
+  level? : CompressionLevel = DefaultCompression,
+) -> Bytes raise CompressError {
+  let e = Deflater::new(level~, dict~)
+  let buf = @blit.Buffer::new()
+  drain(e, buf, Some(data[:]))
+  drain(e, buf, None)
+  buf.to_bytes()
+}
+
+///|
 fn drain(
   e : Deflater,
   buf : @blit.Buffer,

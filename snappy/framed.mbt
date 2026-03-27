@@ -172,6 +172,207 @@ pub fn FramedDeflater::encode(
 }
 
 ///|
+priv struct FramedInflaterState {
+  mut buf : @blit.Buffer
+  mut pos : Int
+  mut saw_identifier : Bool
+  mut finished : Bool
+  mut failed : SnappyError?
+}
+
+///|
+struct FramedInflater(FramedInflaterState)
+
+///|
+pub fn FramedInflater::new() -> FramedInflater {
+  FramedInflater({
+    buf: @blit.Buffer::new(),
+    pos: 0,
+    saw_identifier: false,
+    finished: false,
+    failed: None,
+  })
+}
+
+///|
+pub fn FramedInflater::src(self : FramedInflater, data : BytesView) -> Unit {
+  let s = self.0
+  if s.failed is Some(_) {
+    return
+  }
+  s.buf.write_bytesview(data)
+}
+
+///|
+pub fn FramedInflater::finish(self : FramedInflater) -> Unit {
+  self.0.finished = true
+}
+
+///|
+pub fn FramedInflater::decode(self : FramedInflater) -> Decode {
+  let s = self.0
+  match s.failed {
+    Some(e) => return Error(e)
+    None => ()
+  }
+  while true {
+    let input = s.buf.to_bytes()
+    let len = input.length()
+    if s.pos + 4 > len {
+      if s.finished {
+        if s.pos >= len {
+          if !s.saw_identifier {
+            let err = SnappyError::CorruptInput(
+              "missing Snappy stream identifier",
+            )
+            s.failed = Some(err)
+            return Error(err)
+          }
+          return End
+        }
+        let err = SnappyError::CorruptInput(
+          "truncated framed Snappy chunk header",
+        )
+        s.failed = Some(err)
+        return Error(err)
+      }
+      return Await
+    }
+    let chunk_type = input[s.pos].to_int()
+    let chunk_len = input[s.pos + 1].to_int() |
+      (input[s.pos + 2].to_int() << 8) |
+      (input[s.pos + 3].to_int() << 16)
+    if s.pos + 4 + chunk_len > len {
+      if s.finished {
+        let err = SnappyError::CorruptInput("truncated framed Snappy chunk")
+        s.failed = Some(err)
+        return Error(err)
+      }
+      return Await
+    }
+    let payload_start = s.pos + 4
+    s.pos = payload_start + chunk_len
+    if s.pos > 65536 {
+      let remaining = input.length() - s.pos
+      let next = @blit.Buffer::new(size_hint=remaining)
+      if remaining > 0 {
+        next.write_bytesview(input[s.pos:])
+      }
+      s.buf = next
+      s.pos = 0
+    }
+    match chunk_type {
+      SNAPPY_FRAME_STREAM_IDENTIFIER => {
+        if chunk_len != 6 ||
+          input[payload_start:payload_start + chunk_len].to_bytes() !=
+            b"sNaPpY" {
+          let err = SnappyError::CorruptInput(
+            "invalid Snappy stream identifier",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        s.saw_identifier = true
+        continue
+      }
+      SNAPPY_FRAME_COMPRESSED => {
+        if !s.saw_identifier {
+          let err = SnappyError::CorruptInput(
+            "missing Snappy stream identifier",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        if chunk_len < 4 {
+          let err = SnappyError::CorruptInput("compressed chunk too short")
+          s.failed = Some(err)
+          return Error(err)
+        }
+        let expected = snappy_read_u32_le(
+            input,
+            payload_start,
+          ).reinterpret_as_uint()
+        let compressed_data = input[payload_start + 4:payload_start +
+            chunk_len].to_bytes()
+        let decoded = try {
+          decompress(compressed_data)
+        } catch {
+          e => {
+            let err = SnappyError::CorruptInput(e.to_string())
+            s.failed = Some(err)
+            return Error(err)
+          }
+        }
+        if decoded.length() > SNAPPY_FRAMED_MAX_CHUNK {
+          let err = SnappyError::CorruptInput(
+            "framed Snappy chunk exceeds 65536 bytes",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        let actual = snappy_mask_checksum(snappy_crc32c(decoded[:]))
+        if expected != actual {
+          let err = SnappyError::CorruptInput(
+            "framed Snappy chunk checksum mismatch",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        return Data(decoded[:])
+      }
+      SNAPPY_FRAME_UNCOMPRESSED => {
+        if !s.saw_identifier {
+          let err = SnappyError::CorruptInput(
+            "missing Snappy stream identifier",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        if chunk_len < 4 {
+          let err = SnappyError::CorruptInput("uncompressed chunk too short")
+          s.failed = Some(err)
+          return Error(err)
+        }
+        let raw_len = chunk_len - 4
+        if raw_len > SNAPPY_FRAMED_MAX_CHUNK {
+          let err = SnappyError::CorruptInput(
+            "framed Snappy chunk exceeds 65536 bytes",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        let expected = snappy_read_u32_le(
+            input,
+            payload_start,
+          ).reinterpret_as_uint()
+        let raw = input[payload_start + 4:payload_start + chunk_len].to_bytes()
+        let actual = snappy_mask_checksum(snappy_crc32c(raw[:]))
+        if expected != actual {
+          let err = SnappyError::CorruptInput(
+            "framed Snappy chunk checksum mismatch",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+        return Data(raw[:])
+      }
+      SNAPPY_FRAME_PADDING => continue
+      _ =>
+        if chunk_type >= 0x80 && chunk_type <= 0xFD {
+          continue
+        } else {
+          let err = SnappyError::CorruptInput(
+            "unsupported Snappy framed chunk type",
+          )
+          s.failed = Some(err)
+          return Error(err)
+        }
+    }
+  }
+  End // unreachable
+}
+
+///|
 const SNAPPY_FRAME_COMPRESSED : Int = 0x00
 
 ///|

@@ -11,11 +11,13 @@ pub fn compress(
   let buf = @blit.Buffer::new(size_hint=256)
   match def.encode(Some(data[:])) {
     Data(chunk) => buf.write_bytesview(chunk)
-    Ok | End | Error(_) => ()
+    Ok | End => ()
+    Error(e) => raise e
   }
   match def.encode(None) {
     Data(chunk) => buf.write_bytesview(chunk)
-    Ok | End | Error(_) => ()
+    Ok | End => ()
+    Error(e) => raise e
   }
   buf.to_bytes()
 }
