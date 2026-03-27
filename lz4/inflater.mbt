@@ -25,7 +25,7 @@ priv enum InflatePhase {
 priv struct InflaterState {
   mut input_buf : @blit.Buffer
   mut input_pos : Int
-  dict : Bytes
+  dict : Dictionary
   mut header : Lz4FrameHeader?
   mut initial_prefix : Bytes
   mut history : @blit.Buffer
@@ -42,6 +42,11 @@ struct Inflater(InflaterState)
 
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
+  Inflater::new_with_dictionary(Dictionary::new(dict))
+}
+
+///|
+pub fn Inflater::new_with_dictionary(dict : Dictionary) -> Inflater {
   Inflater({
     input_buf: @blit.Buffer::new(),
     input_pos: 0,

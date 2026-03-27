@@ -44,6 +44,30 @@ pub(all) enum BlockMaxSize {
 } derive(Show, Eq)
 
 ///|
+/// External dictionary metadata for LZ4 frame decode.
+///
+/// When `dict_id` is omitted or zero, the library derives a deterministic
+/// nonzero identifier from the 64KB dictionary prefix so raw-byte callers can
+/// still validate frames that advertise a dictionary id.
+pub(all) struct Dictionary {
+  data : Bytes
+  dict_id : UInt
+} derive(Show, Eq)
+
+///|
+pub fn Dictionary::new(data : Bytes, dict_id? : UInt = 0U) -> Dictionary {
+  let prefix = if data.length() > 0 { lz4_dictionary_prefix(data) } else { b"" }
+  let normalized_id = if prefix.length() == 0 {
+    0U
+  } else if dict_id != 0U {
+    dict_id
+  } else {
+    lz4_derived_dictionary_id(prefix)
+  }
+  { data, dict_id: normalized_id }
+}
+
+///|
 /// Encoder options for LZ4 frames.
 pub(all) struct FrameOptions {
   block_independence : Bool
@@ -138,6 +162,16 @@ fn lz4_dictionary_prefix(dict : Bytes) -> Bytes {
 }
 
 ///|
+fn lz4_derived_dictionary_id(dict_prefix : Bytes) -> UInt {
+  let derived = @checksum.xxh32(dict_prefix[:])
+  if derived == 0U {
+    1U
+  } else {
+    derived
+  }
+}
+
+///|
 fn normalize_lz4_frame_options(
   dict_prefix : Bytes,
   options : FrameOptions,
@@ -147,12 +181,7 @@ fn normalize_lz4_frame_options(
   } else if options.dict_id != 0U {
     options.dict_id
   } else {
-    let derived = @checksum.xxh32(dict_prefix[:])
-    if derived == 0U {
-      1U
-    } else {
-      derived
-    }
+    lz4_derived_dictionary_id(dict_prefix)
   }
   {
     block_independence: options.block_independence,

@@ -98,6 +98,8 @@ let decompressed = @zstd.decompress(compressed, dict=my_zstd_dict)
 // LZ4
 let compressed = @lz4.compress(data)
 let decompressed = @lz4.decompress(compressed)
+let custom_lz4_dict = @lz4.Dictionary::new(my_lz4_dict, dict_id=0x12345678U)
+let decompressed = @lz4.decompress_with_dictionary(compressed, custom_lz4_dict)
 
 // Snappy
 let compressed = @snappy.compress(data)
@@ -193,6 +195,9 @@ let d_with_size = @lz4.Deflater::new_with_content_size(data.length(), dict=my_lz
   ..FrameOptions::default()
 })
 let i = @lz4.Inflater::new(dict=my_lz4_dict)
+let i_with_id = @lz4.Inflater::new_with_dictionary(
+  @lz4.Dictionary::new(my_lz4_dict, dict_id=0x12345678U),
+)
 
 // Get remaining unprocessed input after decompression
 let leftover = inflater.remaining()
@@ -200,7 +205,7 @@ let leftover = inflater.remaining()
 
 For `gzip`, `bzip2`, and `lz4` streaming inflaters, call `finish()` once the upstream source reaches EOF. That lets the wrapper distinguish a true end-of-input from an exact boundary between concatenated members/streams.
 
-For LZ4, dictionary bytes and `dict_id` metadata move together: if you pass dictionary bytes and leave `dict_id = 0`, the encoder derives a deterministic nonzero id from the dictionary prefix; if you do not pass dictionary bytes, any configured `dict_id` is suppressed.
+For LZ4, dictionary bytes and `dict_id` metadata move together: if you pass dictionary bytes and leave `dict_id = 0`, the encoder derives a deterministic nonzero id from the dictionary prefix; if you do not pass dictionary bytes, any configured `dict_id` is suppressed. The raw-byte decode helpers derive and validate that same id automatically; if you need to decode frames that use an explicit custom `dict_id`, use `@lz4.Dictionary::new(...)` together with `@lz4.decompress_with_dictionary(...)` or `@lz4.Inflater::new_with_dictionary(...)`.
 
 ### Async Streaming
 

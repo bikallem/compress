@@ -145,6 +145,9 @@ fn parse_frame_header(data : BytesView) -> Lz4FrameHeader raise Lz4Error {
     raise Lz4Error::InvalidHeader("reserved FLG bit set")
   }
   let bd = data.unsafe_get(5).to_int()
+  guard (bd & 0x8F) == 0 else {
+    raise Lz4Error::InvalidHeader("reserved BD bits set")
+  }
   let block_max_size_id = (bd >> 4) & 0x07
   guard block_max_size_id >= 4 && block_max_size_id <= 7 else {
     raise Lz4Error::InvalidHeader("invalid block max size id")

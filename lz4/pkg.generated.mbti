@@ -6,6 +6,8 @@ pub fn compress(Bytes, dict? : Bytes, options? : FrameOptions) -> Bytes
 
 pub fn decompress(Bytes, dict? : Bytes) -> Bytes raise Lz4Error
 
+pub fn decompress_with_dictionary(Bytes, Dictionary) -> Bytes raise Lz4Error
+
 // Errors
 pub(all) suberror Lz4Error {
   InvalidHeader(String)
@@ -35,6 +37,12 @@ pub fn Deflater::encode(Self, BytesView?) -> Encode
 pub fn Deflater::new(dict? : Bytes, options? : FrameOptions) -> Self
 pub fn Deflater::new_with_content_size(Int, dict? : Bytes, options? : FrameOptions) -> Self
 
+pub(all) struct Dictionary {
+  data : Bytes
+  dict_id : UInt
+} derive(Eq, Show)
+pub fn Dictionary::new(Bytes, dict_id? : UInt) -> Self
+
 pub(all) enum Encode {
   Ok
   Data(BytesView)
@@ -56,6 +64,7 @@ pub fn Inflater::decode(Self) -> Decode
 pub fn Inflater::enable_direct_output(Self, Int) -> Unit
 pub fn Inflater::finish(Self) -> Unit
 pub fn Inflater::new(dict? : Bytes) -> Self
+pub fn Inflater::new_with_dictionary(Dictionary) -> Self
 pub fn Inflater::src(Self, BytesView) -> Unit
 pub fn Inflater::take_output(Self) -> Bytes
 

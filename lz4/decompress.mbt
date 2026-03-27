@@ -4,6 +4,15 @@ pub fn decompress(
   data : Bytes,
   dict? : Bytes = Bytes::default(),
 ) -> Bytes raise Lz4Error {
+  decompress_with_dictionary(data, Dictionary::new(dict))
+}
+
+///|
+/// Decompresses LZ4 frame format data using explicit dictionary metadata.
+pub fn decompress_with_dictionary(
+  data : Bytes,
+  dict : Dictionary,
+) -> Bytes raise Lz4Error {
   let src = data[:]
   let sink = @blit.Buffer::new(size_hint=(data.length() * 2).max(65536))
   let mut pos = 0
@@ -19,7 +28,7 @@ fn decompress_frame(
   data : Bytes,
   start : Int,
   sink : @blit.Buffer,
-  dict : Bytes,
+  dict : Dictionary,
 ) -> Int raise Lz4Error {
   let header = parse_frame_header(src[start:])
   let initial_prefix = initial_lz4_prefix(header, dict)
@@ -107,9 +116,9 @@ fn decompress_frame(
 ///|
 fn initial_lz4_prefix(
   header : Lz4FrameHeader,
-  dict : Bytes,
+  dict : Dictionary,
 ) -> Bytes raise Lz4Error {
-  if dict.length() == 0 {
+  if dict.data.length() == 0 {
     guard header.dict_id == 0U else {
       raise Lz4Error::InvalidHeader(
         "dictionary id requires external dictionary bytes",
@@ -117,7 +126,10 @@ fn initial_lz4_prefix(
     }
     return b""
   }
-  lz4_dictionary_prefix(dict)
+  if header.dict_id != 0U && dict.dict_id != header.dict_id {
+    raise Lz4Error::InvalidHeader("dictionary id mismatch")
+  }
+  lz4_dictionary_prefix(dict.data)
 }
 
 ///|

@@ -176,6 +176,19 @@ fn lz4_custom_frame(
 }
 
 ///|
+fn lz4_header_only_frame(flg : Int, bd : Int) -> Bytes {
+  let out = @blit.Buffer::new()
+  lz4_write_u32_le(out, 0x184D2204U)
+  out.write_byte(flg.to_byte())
+  out.write_byte(bd.to_byte())
+  let header_bytes = out.to_bytes()
+  let hc = (@checksum.xxh32(header_bytes[4:]) >> 8) & 0xFFU
+  out.write_byte(hc.to_byte())
+  lz4_write_u32_le(out, 0U)
+  out.to_bytes()
+}
+
+///|
 test "lz4 decompresses dependent blocks" {
   let frame = lz4_custom_frame(false, false, 0U, [b"ABCD", b"\x00\x04\x00"], [
     true, false,
@@ -192,7 +205,8 @@ test "lz4 accepts frames with block checksums" {
 }
 
 ///|
-test "lz4 accepts dict-id frames when a dictionary is provided" {
+test "lz4 explicit dictionary metadata decodes dict-id frames" {
+  let dict = b"external dictionary"
   let frame = lz4_custom_frame(
     false,
     false,
@@ -200,11 +214,17 @@ test "lz4 accepts dict-id frames when a dictionary is provided" {
     [b"dict-id payload"],
     [true],
   )
-  let result = try? @lz4.decompress(frame)
-  guard result is Err(_) else {
-    fail("expected dict-id frame to require a dictionary")
+  let raw_result = try? @lz4.decompress(frame, dict~)
+  match raw_result {
+    Err(Lz4Error::InvalidHeader(msg)) =>
+      assert_eq(msg, "dictionary id mismatch")
+    Err(err) => fail("expected dictionary-id mismatch error, got \{err}")
+    Ok(_) => fail("expected raw dictionary API to reject mismatched dict-id")
   }
-  let decompressed = @lz4.decompress(frame, dict=b"external dictionary")
+  let decompressed = @lz4.decompress_with_dictionary(
+    frame,
+    @lz4.Dictionary::new(dict, dict_id=0x12345678U),
+  )
   assert_eq(decompressed, b"dict-id payload")
 }
 
@@ -214,6 +234,66 @@ test "lz4 truncated dict id header" {
   let result = try? @lz4.decompress(data)
   guard result is Err(_) else {
     fail("expected error for truncated dict-id header")
+  }
+}
+
+///|
+test "lz4 rejects reserved BD bits" {
+  let frame = lz4_header_only_frame(0x60, 0x41)
+  let result = try? @lz4.decompress(frame)
+  match result {
+    Err(Lz4Error::InvalidHeader(msg)) => assert_eq(msg, "reserved BD bits set")
+    Err(err) => fail("expected reserved-BD error, got \{err}")
+    Ok(_) => fail("expected error for reserved BD bits")
+  }
+}
+
+///|
+test "lz4 inflater validates explicit dictionary metadata" {
+  let dict = b"external dictionary"
+  let frame = lz4_custom_frame(
+    false,
+    false,
+    0x12345678U,
+    [b"dict-id payload"],
+    [true],
+  )
+  let wrong = @lz4.Inflater::new(dict~)
+  wrong.src(frame[:])
+  wrong.finish()
+  match wrong.decode() {
+    Error(Lz4Error::InvalidHeader(msg)) =>
+      assert_eq(msg, "dictionary id mismatch")
+    other => fail("expected dictionary-id mismatch error, got \{other}")
+  }
+  let correct = @lz4.Inflater::new_with_dictionary(
+    @lz4.Dictionary::new(dict, dict_id=0x12345678U),
+  )
+  let buf = @blit.Buffer::new()
+  correct.src(frame[:])
+  correct.finish()
+  loop correct.decode() {
+    Await => fail("expected full frame to decode without awaiting more input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue correct.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"dict-id payload")
+}
+
+///|
+test "lz4 inflater rejects reserved BD bits" {
+  let frame = lz4_header_only_frame(0x60, 0x41)
+  let d = @lz4.Inflater::new()
+  d.src(frame[:])
+  d.finish()
+  match d.decode() {
+    Error(Lz4Error::InvalidHeader(msg)) =>
+      assert_eq(msg, "reserved BD bits set")
+    other => fail("expected reserved-BD error, got \{other}")
   }
 }
 
@@ -285,7 +365,10 @@ test "lz4 compress emits configured frame flags" {
   let bd = (compressed[5].to_int() >> 4) & 0x07
   assert_eq(bd, 5)
   assert_eq(lz4_header_dict_id(compressed), 0x12345678U)
-  let decompressed = @lz4.decompress(compressed, dict~)
+  let decompressed = @lz4.decompress_with_dictionary(
+    compressed,
+    @lz4.Dictionary::new(dict, dict_id=0x12345678U),
+  )
   assert_eq(decompressed, original)
 }
 
@@ -328,7 +411,10 @@ test "lz4 deflater accepts frame options" {
   let bd = (compressed[5].to_int() >> 4) & 0x07
   assert_eq(bd, 5)
   assert_eq(lz4_header_dict_id(compressed), 0x01020304U)
-  let decompressed = @lz4.decompress(compressed, dict~)
+  let decompressed = @lz4.decompress_with_dictionary(
+    compressed,
+    @lz4.Dictionary::new(dict, dict_id=0x01020304U),
+  )
   assert_eq(decompressed, original)
 }
 

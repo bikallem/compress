@@ -205,6 +205,20 @@ test "signal protocol: deflater supports external dictionaries" {
   guard result is Err(_) else {
     fail("expected dictionary-backed frame to require a dictionary")
   }
-  let decompressed = @lz4.decompress(compressed, dict~)
-  assert_eq(decompressed, data)
+  let i = @lz4.Inflater::new_with_dictionary(
+    @lz4.Dictionary::new(dict, dict_id=0x0BADF00DU),
+  )
+  let decoded = @blit.Buffer::new()
+  i.src(compressed[:])
+  i.finish()
+  loop i.decode() {
+    Await => fail("expected full compressed frame to decode without awaiting")
+    Data(chunk) => {
+      decoded.write_bytesview(chunk)
+      continue i.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(decoded.to_bytes(), data)
 }
