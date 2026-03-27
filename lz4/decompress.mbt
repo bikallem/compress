@@ -17,9 +17,25 @@ pub fn decompress_with_dictionary(
   let sink = @blit.Buffer::new(size_hint=(data.length() * 2).max(65536))
   let mut pos = 0
   while pos < data.length() {
-    pos = decompress_frame(src, data, pos, sink, dict)
+    pos = decompress_lz4_section(src, data, pos, sink, dict)
   }
   sink.to_bytes()
+}
+
+///|
+fn decompress_lz4_section(
+  src : BytesView,
+  data : Bytes,
+  start : Int,
+  sink : @blit.Buffer,
+  dict : Dictionary,
+) -> Int raise Lz4Error {
+  guard start + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
+  let magic = lz4_read_u32_le(src, start)
+  if lz4_is_skippable_magic(magic) {
+    return start + lz4_skippable_frame_length(src, start)
+  }
+  decompress_frame(src, data, start, sink, dict)
 }
 
 ///|

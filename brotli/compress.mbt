@@ -1,8 +1,8 @@
 ///|
 /// Compresses data using the Brotli format.
 /// Uses uncompressed meta-blocks at level 0, LZ77+Huffman at higher levels.
-/// The encoder does not yet implement block splitting or static-dictionary
-/// compression, and levels 10-11 currently reuse the level-9 hash-chain path.
+/// The encoder uses metablock splitting heuristics at higher levels but still
+/// does not yet implement full static-dictionary compression.
 pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   let lvl = compression_level_to_int(level)
   let src = data[:]
@@ -220,6 +220,22 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   } else {
     compressed
   }
+  let compressed = if level >= 6 && src_len >= 32768 {
+    let mut best = compressed
+    let split_small = compress_lz77_split(src, src_len, level, 16384)
+    if split_small.length() < best.length() {
+      best = split_small
+    }
+    if src_len >= 131072 {
+      let split_large = compress_lz77_split(src, src_len, level, 65536)
+      if split_large.length() < best.length() {
+        best = split_large
+      }
+    }
+    best
+  } else {
+    compressed
+  }
   // If compressed is not smaller than uncompressed encoding, fall back.
   // Compute actual uncompressed encoding size:
   //   WBITS (4 bits) + per-chunk overhead + data + trailing empty block (2 bits)
@@ -228,6 +244,97 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
     return uncompressed
   }
   compressed
+}
+
+///|
+fn compress_lz77_split(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+  split_size : Int,
+) -> Bytes {
+  let wbits = optimal_wbits(src_len)
+  let bw = BitWriter::new(src_len + 4096)
+  encode_wbits(bw, wbits)
+  let mut offset = 0
+  let mut prev_byte = 0
+  let mut history = @blit.Buffer::new()
+  while offset < src_len {
+    let target_end = if offset + split_size < src_len {
+      offset + split_size
+    } else {
+      src_len
+    }
+    let chunk_end = brotli_choose_split_end(src, src_len, offset, target_end)
+    let is_last = chunk_end >= src_len
+    let chunk = src[offset:chunk_end]
+    let prefix = history.to_bytes()
+    encode_stream_chunk_into(
+      bw,
+      chunk,
+      chunk.length(),
+      level,
+      is_last,
+      prefix[:],
+      prev_byte,
+    )
+    history = append_brotli_history(history, chunk)
+    prev_byte = chunk.unsafe_get(chunk.length() - 1).to_int()
+    offset = chunk_end
+  }
+  bw.to_bytes()
+}
+
+///|
+fn brotli_choose_split_end(
+  src : BytesView,
+  src_len : Int,
+  start : Int,
+  target_end : Int,
+) -> Int {
+  if target_end >= src_len {
+    return src_len
+  }
+  let min_end = if start + 4096 < target_end {
+    start + 4096
+  } else {
+    target_end
+  }
+  let window_start = if target_end > 512 { target_end - 512 } else { min_end }
+  let window_end = if target_end + 512 < src_len {
+    target_end + 512
+  } else {
+    src_len
+  }
+  let mut best = target_end
+  let mut best_distance = 1 << 30
+  for i in window_start..<window_end {
+    if i <= min_end || i >= src_len {
+      continue
+    }
+    let c = src.unsafe_get(i).to_int()
+    if c == 0x0A ||
+      c == 0x0D ||
+      c == 0x20 ||
+      c == 0x09 ||
+      c == 0x2E ||
+      c == 0x2C {
+      let distance = if i > target_end {
+        i - target_end
+      } else {
+        target_end - i
+      }
+      if distance < best_distance {
+        best = i
+        best_distance = distance
+      }
+    }
+  }
+  if best <= start {
+    target_end
+  } else {
+    best
+  }
 }
 
 ///|
@@ -280,6 +387,8 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
     let h = brotli_hash4(src, pos)
     let match_pos = hash_table.unsafe_get(h)
     hash_table.unsafe_set(h, pos)
+    let mut best_len = 0
+    let mut best_dist = 0
     if match_pos >= 0 && pos - match_pos <= max_distance && pos - match_pos > 0 {
       let max_len = if src_len - pos < MAX_MATCH_LENGTH {
         src_len - pos
@@ -288,33 +397,43 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
       }
       let mlen = count_match(src, pos, match_pos, max_len)
       if mlen >= MIN_MATCH_LENGTH {
-        let insert_len = pos - insert_start
-        let dist = pos - match_pos
-        cmds.push({
-          insert_pos: insert_start,
-          insert_len,
-          copy_len: mlen,
-          distance: dist,
-        })
-        let match_end = if pos + mlen < src_len - 3 {
-          pos + mlen
-        } else {
-          src_len - 4
-        }
-        // Cap rehash: for long matches, only hash a few positions near boundaries
-        let rehash_limit = if mlen > 32 { 4 } else { mlen }
-        let rehash_end = if pos + rehash_limit < match_end {
-          pos + rehash_limit
-        } else {
-          match_end
-        }
-        for i = pos + 1; i <= rehash_end; i = i + 1 {
-          hash_table.unsafe_set(brotli_hash4(src, i), i)
-        }
-        pos += mlen
-        insert_start = pos
-        continue
+        best_len = mlen
+        best_dist = pos - match_pos
       }
+    }
+    let (dict_len, dict_dist) = find_identity_dictionary_match(
+      src, pos, src_len, pos,
+    )
+    if dict_len > best_len {
+      best_len = dict_len
+      best_dist = dict_dist
+    }
+    if best_len >= MIN_MATCH_LENGTH {
+      let insert_len = pos - insert_start
+      cmds.push({
+        insert_pos: insert_start,
+        insert_len,
+        copy_len: best_len,
+        distance: best_dist,
+      })
+      let match_end = if pos + best_len < src_len - 3 {
+        pos + best_len
+      } else {
+        src_len - 4
+      }
+      // Cap rehash: for long matches, only hash a few positions near boundaries
+      let rehash_limit = if best_len > 32 { 4 } else { best_len }
+      let rehash_end = if pos + rehash_limit < match_end {
+        pos + rehash_limit
+      } else {
+        match_end
+      }
+      for i = pos + 1; i <= rehash_end; i = i + 1 {
+        hash_table.unsafe_set(brotli_hash4(src, i), i)
+      }
+      pos += best_len
+      insert_start = pos
+      continue
     }
     pos += 1
   }
@@ -368,6 +487,8 @@ fn lz77_find_matches_with_prefix(
     let h = brotli_hash4(combined_view, pos)
     let match_pos = hash_table.unsafe_get(h)
     hash_table.unsafe_set(h, pos)
+    let mut best_len = 0
+    let mut best_dist = 0
     if match_pos >= 0 &&
       pos - match_pos <= MAX_BACKWARD_DISTANCE &&
       pos - match_pos > 0 {
@@ -378,32 +499,42 @@ fn lz77_find_matches_with_prefix(
       }
       let mlen = count_match(combined_view, pos, match_pos, max_len)
       if mlen >= MIN_MATCH_LENGTH {
-        let insert_len = pos - insert_start
-        let dist = pos - match_pos
-        cmds.push({
-          insert_pos: insert_start - base,
-          insert_len,
-          copy_len: mlen,
-          distance: dist,
-        })
-        let match_end = if pos + mlen < total_len - 3 {
-          pos + mlen
-        } else {
-          total_len - 4
-        }
-        let rehash_limit = if mlen > 32 { 4 } else { mlen }
-        let rehash_end = if pos + rehash_limit < match_end {
-          pos + rehash_limit
-        } else {
-          match_end
-        }
-        for i = pos + 1; i <= rehash_end; i = i + 1 {
-          hash_table.unsafe_set(brotli_hash4(combined_view, i), i)
-        }
-        pos += mlen
-        insert_start = pos
-        continue
+        best_len = mlen
+        best_dist = pos - match_pos
       }
+    }
+    let (dict_len, dict_dist) = find_identity_dictionary_match(
+      combined_view, pos, total_len, pos,
+    )
+    if dict_len > best_len {
+      best_len = dict_len
+      best_dist = dict_dist
+    }
+    if best_len >= MIN_MATCH_LENGTH {
+      let insert_len = pos - insert_start
+      cmds.push({
+        insert_pos: insert_start - base,
+        insert_len,
+        copy_len: best_len,
+        distance: best_dist,
+      })
+      let match_end = if pos + best_len < total_len - 3 {
+        pos + best_len
+      } else {
+        total_len - 4
+      }
+      let rehash_limit = if best_len > 32 { 4 } else { best_len }
+      let rehash_end = if pos + rehash_limit < match_end {
+        pos + rehash_limit
+      } else {
+        match_end
+      }
+      for i = pos + 1; i <= rehash_end; i = i + 1 {
+        hash_table.unsafe_set(brotli_hash4(combined_view, i), i)
+      }
+      pos += best_len
+      insert_start = pos
+      continue
     }
     pos += 1
   }
@@ -433,6 +564,105 @@ fn count_match(src : BytesView, a : Int, b : Int, max_len : Int) -> Int {
   @blit.match_length_bv(src, a, b, max_len)
 }
 
+///|
+priv struct BrotliDictionaryIndex {
+  heads : FixedArray[Int]
+  next : FixedArray[Int]
+  lengths : FixedArray[Int]
+  word_idxs : FixedArray[Int]
+  offsets : FixedArray[Int]
+}
+
+///|
+fn brotli_hash4_dict(src : FixedArray[Byte], pos : Int) -> Int {
+  let v = src.unsafe_get(pos).to_uint() |
+    (src.unsafe_get(pos + 1).to_uint() << 8) |
+    (src.unsafe_get(pos + 2).to_uint() << 16) |
+    (src.unsafe_get(pos + 3).to_uint() << 24)
+  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
+  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
+}
+
+///|
+fn build_brotli_identity_dict_index() -> BrotliDictionaryIndex {
+  let mut total_entries = 0
+  for length in dict_min_word_length..<=dict_max_word_length {
+    let shift = dict_size_bits_by_length.unsafe_get(length)
+    if shift > 0 {
+      total_entries += 1 << shift
+    }
+  }
+  let heads = FixedArray::make(BROTLI_HASH_SIZE, -1)
+  let next = FixedArray::make(total_entries, -1)
+  let lengths = FixedArray::make(total_entries, 0)
+  let word_idxs = FixedArray::make(total_entries, 0)
+  let offsets = FixedArray::make(total_entries, 0)
+  let mut entry = 0
+  for length in dict_min_word_length..<=dict_max_word_length {
+    let shift = dict_size_bits_by_length.unsafe_get(length)
+    if shift <= 0 {
+      continue
+    }
+    let count = 1 << shift
+    for word_idx in 0..<count {
+      let offset = dict_word_offset(length, word_idx)
+      let hash = brotli_hash4_dict(brotli_dictionary_data, offset)
+      next.unsafe_set(entry, heads.unsafe_get(hash))
+      heads.unsafe_set(hash, entry)
+      lengths.unsafe_set(entry, length)
+      word_idxs.unsafe_set(entry, word_idx)
+      offsets.unsafe_set(entry, offset)
+      entry += 1
+    }
+  }
+  { heads, next, lengths, word_idxs, offsets }
+}
+
+///|
+let brotli_identity_dict_index : BrotliDictionaryIndex = build_brotli_identity_dict_index()
+
+///|
+fn find_identity_dictionary_match(
+  src : BytesView,
+  pos : Int,
+  src_len : Int,
+  absolute_pos : Int,
+) -> (Int, Int) {
+  if pos + 3 >= src_len {
+    return (0, 0)
+  }
+  let hash = brotli_hash4(src, pos)
+  let index = brotli_identity_dict_index
+  let max_dist = if absolute_pos < MAX_BACKWARD_DISTANCE {
+    absolute_pos
+  } else {
+    MAX_BACKWARD_DISTANCE
+  }
+  let mut best_len = 0
+  let mut best_dist = 0
+  let mut entry = index.heads.unsafe_get(hash)
+  while entry >= 0 {
+    let length = index.lengths.unsafe_get(entry)
+    if length > best_len && pos + length <= src_len {
+      let dict_offset = index.offsets.unsafe_get(entry)
+      let mut matches = true
+      for i in 0..<length {
+        if src.unsafe_get(pos + i) !=
+          brotli_dictionary_data.unsafe_get(dict_offset + i) {
+          matches = false
+          break
+        }
+      }
+      if matches {
+        best_len = length
+        best_dist = max_dist + 1 + index.word_idxs.unsafe_get(entry)
+      }
+    }
+    entry = index.next.unsafe_get(entry)
+  }
+  (best_len, best_dist)
+}
+
 // ─── LZ77 hash-chain match finder (levels 2-9) ─────────────────────
 
 ///|
@@ -441,7 +671,9 @@ fn chain_depth(level : Int) -> Int {
     0 | 1 | 2 | 3 => 8
     4 | 5 => 16
     6 | 7 => 32
-    8 | 9 | 10 | 11 => 64
+    8 | 9 => 64
+    10 => 128
+    11 => 256
     _ => 64 // unreachable: level is clamped to 0-11
   }
 }
@@ -523,6 +755,13 @@ fn lz77_find_matches_chain(
       }
       candidate = prev.unsafe_get(candidate & win_mask)
       chains += 1
+    }
+    let (dict_len, dict_dist) = find_identity_dictionary_match(
+      src, p, src_len, p,
+    )
+    if dict_len > best_len {
+      best_len = dict_len
+      best_dist = dict_dist
     }
     if best_dist > 0 {
       (best_len, best_dist)
@@ -729,6 +968,13 @@ fn lz77_find_matches_chain_with_prefix(
       }
       candidate = prev.unsafe_get(candidate & win_mask)
       chains += 1
+    }
+    let (dict_len, dict_dist) = find_identity_dictionary_match(
+      combined_view, p, total_len, p,
+    )
+    if dict_len > best_len {
+      best_len = dict_len
+      best_dist = dict_dist
     }
     if best_dist > 0 {
       (best_len, best_dist)

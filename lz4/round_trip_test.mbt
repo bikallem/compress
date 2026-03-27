@@ -167,6 +167,45 @@ test "signal protocol: inflater consumes concatenated frames" {
 }
 
 ///|
+test "signal protocol: inflater skips skippable frames" {
+  let compressed = lz4_skippable_frame(0, b"meta") +
+    @lz4.compress(b"first frame") +
+    lz4_skippable_frame(2, b"sidecar") +
+    @lz4.compress(b"second frame")
+  let d = @lz4.Inflater::new()
+  let buf = @blit.Buffer::new()
+  let mut pos = 0
+  let mut finished = false
+  loop d.decode() {
+    Await =>
+      if pos >= compressed.length() {
+        if finished {
+          fail("unexpected Await after lz4 finish")
+        }
+        d.finish()
+        finished = true
+        continue d.decode()
+      } else {
+        let end = if pos + 5 > compressed.length() {
+          compressed.length()
+        } else {
+          pos + 5
+        }
+        d.src(compressed[pos:end])
+        pos = end
+        continue d.decode()
+      }
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), b"first framesecond frame")
+}
+
+///|
 test "signal protocol: deflater supports external dictionaries" {
   let dict = b"shared dictionary block shared dictionary block shared dictionary block"
   let data = b"shared dictionary block shared dictionary block frame payload"

@@ -204,3 +204,43 @@ test "signal protocol: deflater new() defaults to buffered mode" {
   let decompressed = @snappy.decompress(compressed)
   assert_eq(decompressed, data)
 }
+
+///|
+test "framed round-trip: small data" {
+  let data = b"framed snappy payload"
+  let compressed = @snappy.compress_framed(data)
+  let decompressed = @snappy.decompress_framed(compressed)
+  assert_eq(decompressed, data)
+}
+
+///|
+test "signal protocol: framed deflater streams unknown-length input" {
+  let data = b"framed snappy can emit without knowing the final length up front"
+  let d = @snappy.FramedDeflater::new()
+  let out = @blit.Buffer::new()
+  match d.encode(Some(data[:24])) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok => fail("framed snappy should emit after first chunk")
+    End => fail("framed snappy should not end before finish")
+    Error(e) => raise e
+  }
+  match d.encode(Some(data[24:])) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok => fail("framed snappy should emit after second chunk")
+    End => fail("framed snappy should not end before finish")
+    Error(e) => raise e
+  }
+  loop d.encode(None) {
+    Data(chunk) => {
+      out.write_bytesview(chunk)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => break
+    Error(e) => raise e
+  }
+  let compressed = out.to_bytes()
+  assert_eq(compressed[0].to_int(), 0xFF)
+  let decompressed = @snappy.decompress_framed(compressed)
+  assert_eq(decompressed, data)
+}

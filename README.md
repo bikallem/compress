@@ -45,7 +45,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, B
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
 | `bikallem/compress/zstd` | Zstandard frame compression/decompression with dictionary support (subset encoder) |
 | `bikallem/compress/lz4` | LZ4 frame compression/decompression |
-| `bikallem/compress/snappy` | Snappy raw block compression/decompression |
+| `bikallem/compress/snappy` | Snappy raw and framed compression/decompression |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
 
 ## Installation
@@ -112,7 +112,7 @@ let adler = @checksum.adler32(data[:])
 
 ## Streaming API
 
-All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types with a signal-protocol interface. `flate`, `gzip`, `zlib`, `lzw`, `bzip2`, `brotli`, `lz4`, and `zstd` stream incrementally. Raw `snappy` decompression is incremental too, but raw Snappy compression can only stream incrementally when the caller knows the final uncompressed size up front because the format starts with that length varint. Use `@snappy.Deflater::new_known_length(data.length())` for incremental output; `@snappy.Deflater::new()` and `@snappy.Deflater::new_buffered()` intentionally keep the buffered compatibility mode for unknown-length inputs.
+All packages provide `Deflater` (compressor) and `Inflater` (decompressor) types with a signal-protocol interface. `flate`, `gzip`, `zlib`, `lzw`, `bzip2`, `brotli`, `lz4`, and `zstd` stream incrementally. Raw `snappy` decompression is incremental too, but raw Snappy compression can only stream incrementally when the caller knows the final uncompressed size up front because the format starts with that length varint. Use `@snappy.Deflater::new_known_length(data.length())` for raw incremental output, `@snappy.Deflater::new()` / `@snappy.Deflater::new_buffered()` for buffered raw compatibility mode, or `@snappy.FramedDeflater::new()` / `@snappy.compress_framed(...)` when you need unknown-length streaming output.
 
 ### Compression
 
@@ -181,6 +181,9 @@ let i = @zstd.Inflater::new(dict=my_zstd_dict)
 // Snappy raw stream
 let d = @snappy.Deflater::new_known_length(data.length())
 let i = @snappy.Inflater::new()
+let framed = @snappy.FramedDeflater::new()
+let framed_bytes = @snappy.compress_framed(data)
+let framed_plain = @snappy.decompress_framed(framed_bytes)
 
 // LZ4 with configurable frame flags
 let d = @lz4.Deflater::new(dict=my_lz4_dict, options={
@@ -240,11 +243,11 @@ bzip2 uses its own level parameter (1-9), controlling block size (N x 100KB).
 
 Brotli uses `@brotli.CompressionLevel`: `Level(0)` through `Level(11)`, `Default` (level 6), or `Best` (level 11). Higher levels use longer hash chains for better compression ratios.
 
-Zstandard uses `@zstd.CompressionLevel`: `Fast`, `Default`, `Best`, or `Level(Int)`. The encoder maps these to progressively deeper match-finding tiers: `Fast` scans only the newest hash hit, `Default` adds a light lazy-match pass plus a few recent hash candidates, and `Best` searches deeper candidate history with a longer lazy/nice-match budget. `Level(Int)` picks finer-grained settings across the same spectrum.
+Zstandard uses `@zstd.CompressionLevel`: `Fast`, `Default`, `Best`, or `Level(Int)`. The encoder maps these to progressively deeper match-finding tiers: `Fast` scans only the newest hash hit, `Default` adds a light lazy-match pass plus more recent hash candidates, and `Best` searches deeper candidate history with a longer lazy/nice-match budget. `Level(Int)` picks finer-grained settings across the same spectrum up to deeper high-level search tiers.
 
-**Zstandard status:** The current codec supports raw, RLE, Huffman-compressed, and treeless literals plus predefined, RLE, repeat, and custom FSE sequence tables on decode. Raw-content and formatted dictionaries are supported for decode, compression can emit dictionary IDs for formatted dictionaries, generate custom FSE sequence tables, and emit both direct-weight and FSE-compressed custom Huffman literal sections. The `Deflater`/`Inflater` wrappers process frames incrementally while skipping skippable frames. Compression is still a valid but subset-only encoder: it does not yet match upstream `zstd`'s full entropy tuning / strategy matrix, so feature coverage and ratios still trail the reference encoder.
+**Zstandard status:** The current codec supports raw, RLE, Huffman-compressed, and treeless literals plus predefined, RLE, repeat, and custom FSE sequence tables on decode. Raw-content and formatted dictionaries are supported for decode, compression can emit dictionary IDs for formatted dictionaries, generate custom FSE sequence tables, and emit both direct-weight and FSE-compressed custom Huffman literal sections. The `Deflater`/`Inflater` wrappers process frames incrementally while skipping skippable frames. Compression now exposes a broader search matrix than the original fast/default/best split, but it is still a valid subset encoder rather than full parity with upstream `zstd`'s full entropy tuning / strategy matrix.
 
-**Brotli features:** The decoder is fully RFC 7932 compliant, including the 122KB static dictionary with 121 word transforms. The encoder supports context modeling (level 5+), which uses the previous byte to select among multiple literal Huffman trees for better compression of structured text. Block splitting and static dictionary compression by the encoder are not yet implemented. Quality levels 10-11 use the same hash-chain algorithm as level 9. The `Deflater`/`Inflater` wrappers stream incrementally over a single Brotli bitstream and carry rolling history/context across chunk boundaries, though chunking can still affect metablock boundaries and final compression ratio versus one-shot `compress()`. Output is verified against Go's `andybalholm/brotli` reference decoder.
+**Brotli features:** The decoder is fully RFC 7932 compliant, including the 122KB static dictionary with 121 word transforms. The encoder supports context modeling (level 5+), heuristic metablock splitting for larger inputs, deeper level-10/11 hash-chain search, and basic identity static-dictionary matches for exact dictionary words. Full transform-based dictionary search is still not implemented. The `Deflater`/`Inflater` wrappers stream incrementally over a single Brotli bitstream and carry rolling history/context across chunk boundaries, though chunking can still affect metablock boundaries and final compression ratio versus one-shot `compress()`. Output is verified against Go's `andybalholm/brotli` reference decoder.
 
 ## Checksums
 

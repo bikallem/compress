@@ -168,6 +168,12 @@ fn verify_trailer(s : Decoder, remaining : Bytes) -> Decode {
     s.phase = VerifyTrailer(remaining)
     return Await
   }
+  if remaining.length() > 4 {
+    return fail_with(
+      s,
+      ZlibError::InvalidHeader("trailing bytes after end of stream"),
+    )
+  }
   let expected = (remaining[0].to_uint() << 24) |
     (remaining[1].to_uint() << 16) |
     (remaining[2].to_uint() << 8) |

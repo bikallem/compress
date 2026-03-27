@@ -197,3 +197,30 @@ test "signal protocol: chunked input 1KB" {
     Error(e) => raise e
   }
 }
+
+///|
+test "signal protocol: rejects trailing bytes after trailer" {
+  let compressed = @zlib.compress(b"Hello, World!") + b"\x00"
+  let d = @zlib.Inflater::new()
+  d.src(compressed[:])
+  match d.decode() {
+    Error(ZlibError::InvalidHeader(msg)) =>
+      assert_eq(msg, "trailing bytes after end of stream")
+    Data(_) =>
+      loop d.decode() {
+        Data(_) => continue d.decode()
+        Error(ZlibError::InvalidHeader(msg)) => {
+          assert_eq(msg, "trailing bytes after end of stream")
+          break
+        }
+        other =>
+          fail(
+            "expected trailing-bytes error after streaming zlib decode, got \{other}",
+          )
+      }
+    other =>
+      fail(
+        "expected trailing-bytes error after streaming zlib decode, got \{other}",
+      )
+  }
+}

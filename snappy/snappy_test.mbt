@@ -91,3 +91,21 @@ test "snappy single byte" {
   let decompressed = @snappy.decompress(compressed)
   assert_eq(decompressed, original)
 }
+
+///|
+test "framed snappy rejects missing stream identifier" {
+  let result = try? @snappy.decompress_framed(b"\x01\x04\x00\x00")
+  guard result is Err(_) else {
+    fail("expected framed snappy to reject missing stream identifier")
+  }
+}
+
+///|
+test "framed snappy skips padding and skippable chunks" {
+  let compressed = @snappy.compress_framed(b"first") +
+    b"\xfe\x02\x00\x00\x00\x00" +
+    b"\x80\x03\x00\x00abc" +
+    @snappy.compress_framed(b"second")
+  let decompressed = @snappy.decompress_framed(compressed)
+  assert_eq(decompressed, b"firstsecond")
+}

@@ -69,6 +69,44 @@ test "round-trip: all byte values" {
 }
 
 ///|
+test "round-trip: dictionary words compress well" {
+  let data = b"function return value"
+  let compressed = @brotli.compress(data, level=Best)
+  let decompressed = @brotli.decompress(compressed)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() <= 18)
+}
+
+///|
+fn brotli_search_depth_fixture() -> Bytes {
+  let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789"
+  let short = b"ABCDzzzz"
+  let buf = @blit.Buffer::new()
+  for i in 0..<96 {
+    buf.write_bytes(long)
+    buf.write_byte((i % 251).to_byte())
+    buf.write_bytes(b"--")
+    buf.write_bytes(short)
+    buf.write_byte((i * 17 % 251).to_byte())
+    buf.write_bytes(b"++")
+    buf.write_bytes(long)
+    buf.write_byte((i % 13).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  buf.to_bytes()
+}
+
+///|
+test "higher Brotli levels search deeper hash history" {
+  let data = brotli_search_depth_fixture()
+  let lvl9 = @brotli.compress(data, level=Level(9))
+  let lvl11 = @brotli.compress(data, level=Level(11))
+  assert_eq(@brotli.decompress(lvl9), data)
+  assert_eq(@brotli.decompress(lvl11), data)
+  assert_true(lvl11.length() <= lvl9.length())
+}
+
+///|
 test "signal protocol: inflater accepts chunked input" {
   let data = Bytes::makei(1024, fn(i) { (i % 256).to_byte() })
   let compressed = @brotli.compress(data)

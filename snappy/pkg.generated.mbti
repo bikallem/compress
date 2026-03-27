@@ -4,7 +4,11 @@ package "bikallem/compress/snappy"
 // Values
 pub fn compress(Bytes) -> Bytes
 
+pub fn compress_framed(Bytes) -> Bytes
+
 pub fn decompress(Bytes) -> Bytes raise SnappyError
+
+pub fn decompress_framed(Bytes) -> Bytes raise SnappyError
 
 // Errors
 pub(all) suberror SnappyError {
@@ -32,6 +36,10 @@ pub(all) enum Encode {
   End
   Error(SnappyError)
 } derive(Show)
+
+type FramedDeflater
+pub fn FramedDeflater::encode(Self, BytesView?) -> Encode
+pub fn FramedDeflater::new() -> Self
 
 type Inflater
 pub fn Inflater::decode(Self) -> Decode

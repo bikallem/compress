@@ -189,6 +189,15 @@ fn lz4_header_only_frame(flg : Int, bd : Int) -> Bytes {
 }
 
 ///|
+fn lz4_skippable_frame(tag : Int, payload : Bytes) -> Bytes {
+  let out = @blit.Buffer::new()
+  lz4_write_u32_le(out, 0x184D2A50U + tag.reinterpret_as_uint())
+  lz4_write_u32_le(out, payload.length().reinterpret_as_uint())
+  out.write_bytes(payload)
+  out.to_bytes()
+}
+
+///|
 test "lz4 decompresses dependent blocks" {
   let frame = lz4_custom_frame(false, false, 0U, [b"ABCD", b"\x00\x04\x00"], [
     true, false,
@@ -318,6 +327,26 @@ test "lz4 rejects trailing bytes after last frame" {
   let result = try? @lz4.decompress(compressed)
   guard result is Err(_) else {
     fail("expected error for trailing bytes after last LZ4 frame")
+  }
+}
+
+///|
+test "lz4 decompress skips skippable frames" {
+  let combined = lz4_skippable_frame(0, b"meta") +
+    @lz4.compress(b"first") +
+    lz4_skippable_frame(3, b"sidecar") +
+    @lz4.compress(b"second")
+  let decompressed = @lz4.decompress(combined)
+  assert_eq(decompressed, b"firstsecond")
+}
+
+///|
+test "lz4 rejects truncated skippable frames" {
+  let frame = lz4_skippable_frame(1, b"metadata")
+  let truncated = Bytes::makei(frame.length() - 2, fn(i) { frame[i] })
+  let result = try? @lz4.decompress(truncated)
+  guard result is Err(_) else {
+    fail("expected error for truncated skippable frame")
   }
 }
 

@@ -117,6 +117,41 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
             Await
           }
         }
+        if s.input_pos + 4 > input.length() {
+          return if s.input_finished {
+            fail_lz4(s, UnexpectedEOF)
+          } else {
+            Await
+          }
+        }
+        let magic = lz4_read_u32_le(input[:], s.input_pos)
+        if lz4_is_skippable_magic(magic) {
+          let skipped = try? lz4_skippable_frame_length(input[:], s.input_pos)
+          match skipped {
+            Ok(skip_len) => {
+              s.input_pos += skip_len
+              compact_lz4_input(s)
+              if s.input_pos >= s.input_buf.to_bytes().length() {
+                s.phase = AwaitNextFrame
+              }
+              continue
+            }
+            Err(UnexpectedEOF) =>
+              return if s.input_finished {
+                fail_lz4(s, UnexpectedEOF)
+              } else {
+                Await
+              }
+            Err(e) => return fail_lz4(s, e)
+          }
+        }
+        if s.input_pos + 7 > input.length() {
+          return if s.input_finished {
+            fail_lz4(s, UnexpectedEOF)
+          } else {
+            Await
+          }
+        }
         let parsed = try? parse_frame_header(input[s.input_pos:])
         let header = match parsed {
           Ok(header) => header

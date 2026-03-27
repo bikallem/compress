@@ -425,3 +425,13 @@ test "higher zstd levels search deeper hash history" {
   assert_eq(@zstd.decompress(best), data)
   assert_true(best.length() < fast.length())
 }
+
+///|
+test "higher explicit zstd levels use broader search tiers" {
+  let data = zstd_search_depth_fixture()
+  let best = @zstd.compress(data, level=Best)
+  let deeper = @zstd.compress(data, level=Level(22))
+  assert_eq(@zstd.decompress(best), data)
+  assert_eq(@zstd.decompress(deeper), data)
+  assert_true(deeper.length() <= best.length())
+}

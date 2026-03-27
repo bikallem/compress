@@ -93,6 +93,10 @@ pub fn FrameOptions::default() -> FrameOptions {
 const LZ4_FRAME_MAGIC : UInt = 0x184D2204_U
 
 ///|
+/// Base magic for skippable LZ4 frames.
+const LZ4_SKIPPABLE_MAGIC_BASE : UInt = 0x184D2A50_U
+
+///|
 /// Minimum match length in LZ4.
 const MIN_MATCH : Int = 4
 
@@ -153,6 +157,31 @@ fn lz4_read_content_size(data : BytesView, pos : Int) -> Int raise Lz4Error {
     raise Lz4Error::InvalidHeader("content size exceeds supported range")
   }
   size
+}
+
+///|
+fn lz4_is_skippable_magic(magic : UInt) -> Bool {
+  magic >= LZ4_SKIPPABLE_MAGIC_BASE && magic <= LZ4_SKIPPABLE_MAGIC_BASE + 0x0FU
+}
+
+///|
+fn lz4_skippable_frame_length(
+  data : BytesView,
+  pos : Int,
+) -> Int raise Lz4Error {
+  guard pos + 8 <= data.length() else { raise Lz4Error::UnexpectedEOF }
+  let magic = lz4_read_u32_le(data, pos)
+  guard lz4_is_skippable_magic(magic) else {
+    raise Lz4Error::InvalidHeader("invalid skippable frame magic")
+  }
+  let size = lz4_read_u32_le(data, pos + 4).to_uint64()
+  let total = size + 8UL
+  let total_len = total.to_int()
+  guard total_len >= 8 && total_len.reinterpret_as_uint().to_uint64() == total else {
+    raise Lz4Error::InvalidHeader("skippable frame exceeds supported range")
+  }
+  guard total_len <= data.length() - pos else { raise Lz4Error::UnexpectedEOF }
+  total_len
 }
 
 ///|

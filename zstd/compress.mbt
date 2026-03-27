@@ -1,8 +1,9 @@
 ///|
 /// Compresses data using the Zstandard format.
 /// Uses LZ77 match finding and zstd compressed blocks.
-/// The current encoder is interoperable but still a subset implementation of
-/// upstream zstd's broader strategy and entropy-tuning matrix.
+/// The current encoder is interoperable and supports multiple search tiers, but
+/// still remains a subset implementation of upstream zstd's broader strategy
+/// and entropy-tuning matrix.
 pub fn compress(
   data : Bytes,
   level? : CompressionLevel = Default,
@@ -237,7 +238,7 @@ const ZSTD_HASH_BITS : Int = 14
 const ZSTD_HASH_SIZE : Int = 16384
 
 ///|
-const ZSTD_MAX_HASH_CANDIDATES : Int = 8
+const ZSTD_MAX_HASH_CANDIDATES : Int = 16
 
 ///|
 const ZSTD_MIN_MATCH : Int = 4
@@ -253,19 +254,25 @@ priv struct ZstdSearchConfig {
 fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
   match level {
     Fast => { lazy_steps: 0, max_hash_candidates: 1, nice_match: 24 }
-    Default => { lazy_steps: 1, max_hash_candidates: 4, nice_match: 48 }
-    Best => { lazy_steps: 3, max_hash_candidates: 8, nice_match: 96 }
+    Default => { lazy_steps: 1, max_hash_candidates: 6, nice_match: 64 }
+    Best => { lazy_steps: 4, max_hash_candidates: 12, nice_match: 160 }
     Level(n) =>
       if n <= 1 {
         { lazy_steps: 0, max_hash_candidates: 1, nice_match: 24 }
-      } else if n <= 4 {
+      } else if n <= 3 {
         { lazy_steps: 0, max_hash_candidates: 2, nice_match: 32 }
-      } else if n <= 8 {
+      } else if n <= 5 {
         { lazy_steps: 1, max_hash_candidates: 4, nice_match: 48 }
+      } else if n <= 8 {
+        { lazy_steps: 1, max_hash_candidates: 6, nice_match: 64 }
+      } else if n <= 11 {
+        { lazy_steps: 2, max_hash_candidates: 8, nice_match: 96 }
       } else if n <= 15 {
-        { lazy_steps: 2, max_hash_candidates: 6, nice_match: 72 }
+        { lazy_steps: 3, max_hash_candidates: 10, nice_match: 128 }
+      } else if n <= 19 {
+        { lazy_steps: 4, max_hash_candidates: 12, nice_match: 160 }
       } else {
-        { lazy_steps: 3, max_hash_candidates: 8, nice_match: 96 }
+        { lazy_steps: 5, max_hash_candidates: 16, nice_match: 192 }
       }
   }
 }
