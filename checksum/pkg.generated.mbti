@@ -6,10 +6,6 @@ pub fn adler32(BytesView) -> UInt
 
 pub fn crc32(BytesView) -> UInt
 
-pub fn has_hw_adler32() -> Bool
-
-pub fn has_hw_crc32() -> Bool
-
 pub fn xxh32(BytesView, seed? : UInt) -> UInt
 
 pub fn xxh64(BytesView, seed? : UInt64) -> UInt64

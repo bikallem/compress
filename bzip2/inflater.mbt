@@ -234,9 +234,7 @@ fn step_stream_header(s : Decoder) -> Decode? {
   }
   let version = s.bb.read_unchecked(8)
   if version != b'h'.to_uint() {
-    return Some(
-      fail(s, Bzip2Error::InvalidHeader("unsupported bzip2 version")),
-    )
+    return Some(fail(s, Bzip2Error::InvalidHeader("unsupported bzip2 version")))
   }
   let level_char = s.bb.read_unchecked(8)
   if level_char < b'1'.to_uint() || level_char > b'9'.to_uint() {
@@ -336,9 +334,7 @@ fn step_read_tree_params(s : Decoder) -> Decode? {
   }
   s.num_selectors = s.bb.read_unchecked(15).reinterpret_as_int()
   if s.num_selectors < 1 {
-    return Some(
-      fail(s, Bzip2Error::CorruptData("invalid number of selectors")),
-    )
+    return Some(fail(s, Bzip2Error::CorruptData("invalid number of selectors")))
   }
   s.selectors = Array::make(s.num_selectors, 0)
   s.selector_idx = 0

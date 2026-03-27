@@ -271,19 +271,17 @@ fn sais(text : FixedArray[Int], n : Int, k : Int) -> FixedArray[Int] {
       break
     } else {
       // Names are not unique — save frame and iterate with reduced problem.
-      frames.push(
-        {
-          text: cur_text,
-          n: cur_n,
-          k: cur_k,
-          t,
-          bkt,
-          bkt_buf,
-          sa,
-          n1,
-          lms_map,
-        },
-      )
+      frames.push({
+        text: cur_text,
+        n: cur_n,
+        k: cur_k,
+        t,
+        bkt,
+        bkt_buf,
+        sa,
+        n1,
+        lms_map,
+      })
       cur_text = s1
       cur_n = n1
       cur_k = name
