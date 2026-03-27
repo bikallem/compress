@@ -37,6 +37,31 @@ test "brotli transformed dictionary matches affixed and uppercased words" {
 }
 
 ///|
+test "brotli transformed dictionary matches omitted prefixes and suffixes" {
+  let (omit_last_len, omit_last_copy_len, omit_last_distance) = find_transformed_dictionary_match(
+    b"functio"[:],
+    0,
+    7,
+    0,
+    0,
+  )
+  assert_eq(omit_last_len, 7)
+  assert_eq(omit_last_copy_len, 8)
+  assert_true(omit_last_distance > 0)
+
+  let (omit_first_len, omit_first_copy_len, omit_first_distance) = find_transformed_dictionary_match(
+    b"unction"[:],
+    0,
+    7,
+    0,
+    0,
+  )
+  assert_eq(omit_first_len, 7)
+  assert_eq(omit_first_copy_len, 8)
+  assert_true(omit_first_distance > 0)
+}
+
+///|
 fn brotli_split_fixture() -> Bytes {
   let buf = @blit.Buffer::new()
   for i in 0..<128 {

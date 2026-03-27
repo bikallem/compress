@@ -365,6 +365,20 @@ fn zstd_search_depth_fixture() -> Bytes {
 }
 
 ///|
+fn zstd_archive_depth_fixture() -> Bytes {
+  let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
+  let buf = @blit.Buffer::new()
+  buf.write_bytes(long)
+  for i in 0..<19 {
+    buf.write_bytes(b"ABCDzzzz")
+    buf.write_byte((i * 29 % 251).to_byte())
+    buf.write_bytes(b"|")
+  }
+  buf.write_bytes(long)
+  buf.to_bytes()
+}
+
+///|
 test "compression levels change zstd one-shot output" {
   let data = zstd_level_fixture()
   let fast = @zstd.compress(data, level=Fast)
@@ -434,4 +448,14 @@ test "higher explicit zstd levels use broader search tiers" {
   assert_eq(@zstd.decompress(best), data)
   assert_eq(@zstd.decompress(deeper), data)
   assert_true(deeper.length() <= best.length())
+}
+
+///|
+test "very high zstd levels retain deeper archived candidates" {
+  let data = zstd_archive_depth_fixture()
+  let shallower = @zstd.compress(data, level=Level(22))
+  let deeper = @zstd.compress(data, level=Level(26))
+  assert_eq(@zstd.decompress(shallower), data)
+  assert_eq(@zstd.decompress(deeper), data)
+  assert_true(deeper.length() <= shallower.length())
 }

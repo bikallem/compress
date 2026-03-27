@@ -2,7 +2,7 @@
 /// Compresses data using the Zstandard format.
 /// Uses LZ77 match finding and zstd compressed blocks.
 /// The current encoder is interoperable and supports multiple search tiers,
-/// including an archived older-candidate lookup at the highest levels, but it
+/// including a bounded archived-candidate queue at the highest levels, but it
 /// still remains a subset implementation of upstream zstd's broader strategy
 /// and entropy-tuning matrix.
 pub fn compress(
@@ -242,6 +242,9 @@ const ZSTD_HASH_SIZE : Int = 16384
 const ZSTD_MAX_HASH_CANDIDATES : Int = 16
 
 ///|
+const ZSTD_MAX_HASH_ARCHIVE_CANDIDATES : Int = 4
+
+///|
 const ZSTD_MIN_MATCH : Int = 4
 
 ///|
@@ -249,7 +252,7 @@ priv struct ZstdSearchConfig {
   lazy_steps : Int
   max_hash_candidates : Int
   nice_match : Int
-  use_hash_archive : Bool
+  archive_candidates : Int
 }
 
 ///|
@@ -260,21 +263,21 @@ fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
         lazy_steps: 0,
         max_hash_candidates: 1,
         nice_match: 24,
-        use_hash_archive: false,
+        archive_candidates: 0,
       }
     Default =>
       {
         lazy_steps: 1,
         max_hash_candidates: 6,
         nice_match: 64,
-        use_hash_archive: false,
+        archive_candidates: 0,
       }
     Best =>
       {
         lazy_steps: 4,
         max_hash_candidates: 12,
         nice_match: 160,
-        use_hash_archive: false,
+        archive_candidates: 0,
       }
     Level(n) =>
       if n <= 1 {
@@ -282,56 +285,63 @@ fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
           lazy_steps: 0,
           max_hash_candidates: 1,
           nice_match: 24,
-          use_hash_archive: false,
+          archive_candidates: 0,
         }
       } else if n <= 3 {
         {
           lazy_steps: 0,
           max_hash_candidates: 2,
           nice_match: 32,
-          use_hash_archive: false,
+          archive_candidates: 0,
         }
       } else if n <= 5 {
         {
           lazy_steps: 1,
           max_hash_candidates: 4,
           nice_match: 48,
-          use_hash_archive: false,
+          archive_candidates: 0,
         }
       } else if n <= 8 {
         {
           lazy_steps: 1,
           max_hash_candidates: 6,
           nice_match: 64,
-          use_hash_archive: false,
+          archive_candidates: 0,
         }
       } else if n <= 11 {
         {
           lazy_steps: 2,
           max_hash_candidates: 8,
           nice_match: 96,
-          use_hash_archive: false,
+          archive_candidates: 0,
         }
       } else if n <= 15 {
         {
           lazy_steps: 3,
           max_hash_candidates: 10,
           nice_match: 128,
-          use_hash_archive: false,
+          archive_candidates: 0,
         }
       } else if n <= 19 {
         {
           lazy_steps: 4,
           max_hash_candidates: 12,
           nice_match: 160,
-          use_hash_archive: false,
+          archive_candidates: 0,
+        }
+      } else if n <= 23 {
+        {
+          lazy_steps: 5,
+          max_hash_candidates: 16,
+          nice_match: 192,
+          archive_candidates: 2,
         }
       } else {
         {
           lazy_steps: 5,
           max_hash_candidates: 16,
           nice_match: 192,
-          use_hash_archive: true,
+          archive_candidates: ZSTD_MAX_HASH_ARCHIVE_CANDIDATES,
         }
       }
   }
@@ -357,7 +367,14 @@ fn insert_hash_candidate(
   let base = hash * ZSTD_MAX_HASH_CANDIDATES
   let evicted = hash_table.unsafe_get(base + ZSTD_MAX_HASH_CANDIDATES - 1)
   if evicted >= 0 {
-    hash_archive.unsafe_set(hash, evicted)
+    let archive_base = hash * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES
+    for slot = ZSTD_MAX_HASH_ARCHIVE_CANDIDATES - 1; slot > 0; slot = slot - 1 {
+      hash_archive.unsafe_set(
+        archive_base + slot,
+        hash_archive.unsafe_get(archive_base + slot - 1),
+      )
+    }
+    hash_archive.unsafe_set(archive_base, evicted)
   }
   for slot = ZSTD_MAX_HASH_CANDIDATES - 1; slot > 0; slot = slot - 1 {
     hash_table.unsafe_set(base + slot, hash_table.unsafe_get(base + slot - 1))
@@ -378,8 +395,9 @@ fn get_hash_candidate(
 fn get_hash_archive_candidate(
   hash_archive : FixedArray[Int],
   hash : Int,
+  slot : Int,
 ) -> Int {
-  hash_archive.unsafe_get(hash)
+  hash_archive.unsafe_get(hash * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES + slot)
 }
 
 ///|
@@ -440,7 +458,10 @@ fn find_sequences_combined(
     ZSTD_HASH_SIZE * ZSTD_MAX_HASH_CANDIDATES,
     -1,
   )
-  let hash_archive = FixedArray::make(ZSTD_HASH_SIZE, -1)
+  let hash_archive = FixedArray::make(
+    ZSTD_HASH_SIZE * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES,
+    -1,
+  )
   let rep = copy_rep_offsets(rep_init)
   let mut ip = base
   let mut anchor = base
@@ -614,24 +635,27 @@ fn find_best_match(
       }
     }
   }
-  if config.use_hash_archive {
-    let ref_pos = get_hash_archive_candidate(hash_archive, hash)
-    if ref_pos >= 0 && ref_pos < ip {
-      let hash_offset = ip - ref_pos
-      if hash_offset <= MAX_WINDOW_SIZE &&
-        src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
-        src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
-        src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
-        src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
-        let mut match_len = ZSTD_MIN_MATCH
-        while ip + match_len < src_end &&
-              src.unsafe_get(ref_pos + match_len) ==
-              src.unsafe_get(ip + match_len) {
-          match_len += 1
-        }
-        if match_len > best.length {
-          best = { length: match_len, offset: hash_offset, rep_idx: -1 }
-        }
+  for slot in 0..<config.archive_candidates {
+    let ref_pos = get_hash_archive_candidate(hash_archive, hash, slot)
+    if ref_pos < 0 || ref_pos >= ip {
+      continue
+    }
+    let hash_offset = ip - ref_pos
+    if hash_offset > MAX_WINDOW_SIZE {
+      continue
+    }
+    if src.unsafe_get(ref_pos) == src.unsafe_get(ip) &&
+      src.unsafe_get(ref_pos + 1) == src.unsafe_get(ip + 1) &&
+      src.unsafe_get(ref_pos + 2) == src.unsafe_get(ip + 2) &&
+      src.unsafe_get(ref_pos + 3) == src.unsafe_get(ip + 3) {
+      let mut match_len = ZSTD_MIN_MATCH
+      while ip + match_len < src_end &&
+            src.unsafe_get(ref_pos + match_len) ==
+            src.unsafe_get(ip + match_len) {
+        match_len += 1
+      }
+      if match_len > best.length {
+        best = { length: match_len, offset: hash_offset, rep_idx: -1 }
       }
     }
   }

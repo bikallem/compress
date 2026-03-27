@@ -248,7 +248,7 @@ fn zstd_archive_fixture() -> Bytes {
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let buf = @blit.Buffer::new()
   buf.write_bytes(long)
-  for i in 0..<16 {
+  for i in 0..<19 {
     buf.write_bytes(b"ABCDzzzz")
     buf.write_byte((i % 251).to_byte())
     buf.write_bytes(b"|")
@@ -258,7 +258,7 @@ fn zstd_archive_fixture() -> Bytes {
 }
 
 ///|
-test "zstd archive search can recover older hash candidates" {
+test "zstd deeper archive search can recover candidates after multiple evictions" {
   let data = zstd_archive_fixture()
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let src = data[:]
@@ -266,13 +266,27 @@ test "zstd archive search can recover older hash candidates" {
     ZSTD_HASH_SIZE * ZSTD_MAX_HASH_CANDIDATES,
     -1,
   )
-  let hash_archive = FixedArray::make(ZSTD_HASH_SIZE, -1)
+  let hash_archive = FixedArray::make(
+    ZSTD_HASH_SIZE * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES,
+    -1,
+  )
+  let starts : Array[Int] = [0]
+  let mut pos = long.length()
+  for _ in 0..<19 {
+    starts.push(pos)
+    pos += 10
+  }
   let ip = data.length() - long.length()
-  for i in 0..<ip {
-    insert_hash_candidate(hash_table, hash_archive, zstd_hash(src, i), i)
+  for start in starts {
+    insert_hash_candidate(
+      hash_table,
+      hash_archive,
+      zstd_hash(src, start),
+      start,
+    )
   }
   let hash = zstd_hash(src, ip)
-  let no_archive = find_best_match(
+  let shallow_archive = find_best_match(
     src,
     ip,
     data.length(),
@@ -284,10 +298,10 @@ test "zstd archive search can recover older hash candidates" {
       lazy_steps: 4,
       max_hash_candidates: 12,
       nice_match: 160,
-      use_hash_archive: false,
+      archive_candidates: 1,
     },
   )
-  let with_archive = find_best_match(
+  let deep_archive = find_best_match(
     src,
     ip,
     data.length(),
@@ -299,10 +313,10 @@ test "zstd archive search can recover older hash candidates" {
       lazy_steps: 5,
       max_hash_candidates: 16,
       nice_match: 192,
-      use_hash_archive: true,
+      archive_candidates: 4,
     },
   )
-  assert_true(with_archive.length > no_archive.length)
+  assert_true(deep_archive.length > shallow_archive.length)
 }
 
 ///|

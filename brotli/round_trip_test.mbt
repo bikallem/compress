@@ -87,6 +87,15 @@ test "round-trip: transformed dictionary words compress well" {
 }
 
 ///|
+test "round-trip: omitted dictionary variants compress well" {
+  let data = b"functio unction retur eturn valu alue statu tatus"
+  let compressed = @brotli.compress(data, level=Best)
+  let decompressed = @brotli.decompress(compressed)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() < data.length())
+}
+
+///|
 fn brotli_search_depth_fixture() -> Bytes {
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789"
   let short = b"ABCDzzzz"

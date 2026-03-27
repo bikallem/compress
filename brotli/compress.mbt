@@ -594,6 +594,7 @@ priv struct BrotliDictionaryIndex {
   lengths : FixedArray[Int]
   word_idxs : FixedArray[Int]
   offsets : FixedArray[Int]
+  skip_fronts : FixedArray[Int]
 }
 
 ///|
@@ -601,7 +602,9 @@ priv struct BrotliTransformSearch {
   transform_idx : Int
   prefix_len : Int
   suffix_len : Int
-  ttype : Int
+  omit_first : Int
+  omit_last : Int
+  fold_ascii : Bool
 }
 
 ///|
@@ -658,6 +661,7 @@ fn build_brotli_dict_index(ascii_fold : Bool) -> BrotliDictionaryIndex {
   let lengths = FixedArray::make(total_entries, 0)
   let word_idxs = FixedArray::make(total_entries, 0)
   let offsets = FixedArray::make(total_entries, 0)
+  let skip_fronts = FixedArray::make(total_entries, 0)
   let mut entry = 0
   for length in dict_min_word_length..<=dict_max_word_length {
     let shift = dict_size_bits_by_length.unsafe_get(length)
@@ -677,10 +681,65 @@ fn build_brotli_dict_index(ascii_fold : Bool) -> BrotliDictionaryIndex {
       lengths.unsafe_set(entry, length)
       word_idxs.unsafe_set(entry, word_idx)
       offsets.unsafe_set(entry, offset)
+      skip_fronts.unsafe_set(entry, 0)
       entry += 1
     }
   }
-  { heads, next, lengths, word_idxs, offsets }
+  { heads, next, lengths, word_idxs, offsets, skip_fronts }
+}
+
+///|
+fn build_brotli_omit_first_dict_index(
+  ascii_fold : Bool,
+) -> BrotliDictionaryIndex {
+  let mut total_entries = 0
+  for length in dict_min_word_length..<=dict_max_word_length {
+    let shift = dict_size_bits_by_length.unsafe_get(length)
+    if shift <= 0 {
+      continue
+    }
+    let count = 1 << shift
+    for skip in 1..<=9 {
+      if length - skip >= 4 {
+        total_entries += count
+      }
+    }
+  }
+  let heads = FixedArray::make(BROTLI_HASH_SIZE, -1)
+  let next = FixedArray::make(total_entries, -1)
+  let lengths = FixedArray::make(total_entries, 0)
+  let word_idxs = FixedArray::make(total_entries, 0)
+  let offsets = FixedArray::make(total_entries, 0)
+  let skip_fronts = FixedArray::make(total_entries, 0)
+  let mut entry = 0
+  for length in dict_min_word_length..<=dict_max_word_length {
+    let shift = dict_size_bits_by_length.unsafe_get(length)
+    if shift <= 0 {
+      continue
+    }
+    let count = 1 << shift
+    for word_idx in 0..<count {
+      let offset = dict_word_offset(length, word_idx)
+      for skip in 1..<=9 {
+        if length - skip < 4 {
+          continue
+        }
+        let hash = if ascii_fold {
+          brotli_hash4_dict_ascii_fold(brotli_dictionary_data, offset + skip)
+        } else {
+          brotli_hash4_dict(brotli_dictionary_data, offset + skip)
+        }
+        next.unsafe_set(entry, heads.unsafe_get(hash))
+        heads.unsafe_set(hash, entry)
+        lengths.unsafe_set(entry, length)
+        word_idxs.unsafe_set(entry, word_idx)
+        offsets.unsafe_set(entry, offset)
+        skip_fronts.unsafe_set(entry, skip)
+        entry += 1
+      }
+    }
+  }
+  { heads, next, lengths, word_idxs, offsets, skip_fronts }
 }
 
 ///|
@@ -689,9 +748,14 @@ fn build_brotli_transform_searches() -> Array[BrotliTransformSearch] {
   for transform_idx in 1..<121 {
     let base = transform_idx * 3
     let ttype = transforms_data.unsafe_get(base + 1)
-    if ttype != 0 &&
-      ttype != TRANSFORM_UPPERCASE_FIRST &&
-      ttype != TRANSFORM_UPPERCASE_ALL {
+    let (omit_first, omit_last, fold_ascii) = if ttype <= TRANSFORM_OMIT_LAST_9 {
+      (0, ttype, false)
+    } else if ttype == TRANSFORM_UPPERCASE_FIRST ||
+      ttype == TRANSFORM_UPPERCASE_ALL {
+      (0, 0, true)
+    } else if ttype >= TRANSFORM_OMIT_FIRST_1 && ttype <= TRANSFORM_OMIT_FIRST_9 {
+      (ttype - TRANSFORM_OMIT_FIRST_1 + 1, 0, false)
+    } else {
       continue
     }
     let prefix_offset = prefix_suffix_map.unsafe_get(
@@ -704,7 +768,9 @@ fn build_brotli_transform_searches() -> Array[BrotliTransformSearch] {
       transform_idx,
       prefix_len: prefix_suffix_data.unsafe_get(prefix_offset).to_int(),
       suffix_len: prefix_suffix_data.unsafe_get(suffix_offset).to_int(),
-      ttype,
+      omit_first,
+      omit_last,
+      fold_ascii,
     })
   }
   searches
@@ -718,6 +784,11 @@ let brotli_identity_dict_index : BrotliDictionaryIndex = build_brotli_dict_index
 ///|
 let brotli_folded_dict_index : BrotliDictionaryIndex = build_brotli_dict_index(
   true,
+)
+
+///|
+let brotli_omit_first_dict_index : BrotliDictionaryIndex = build_brotli_omit_first_dict_index(
+  false,
 )
 
 ///|
@@ -796,9 +867,7 @@ fn find_transformed_dictionary_match(
   let mut best_copy_len = 0
   let mut best_dist = 0
   for transform in brotli_transform_searches {
-    let min_out_len = transform.prefix_len +
-      dict_min_word_length +
-      transform.suffix_len
+    let min_out_len = transform.prefix_len + 4 + transform.suffix_len
     if pos + min_out_len > src_len {
       continue
     }
@@ -806,20 +875,31 @@ fn find_transformed_dictionary_match(
     if body_pos + 3 >= src_len {
       continue
     }
-    let index = if transform.ttype == 0 {
-      brotli_identity_dict_index
-    } else {
+    let index = if transform.omit_first > 0 {
+      brotli_omit_first_dict_index
+    } else if transform.fold_ascii {
       brotli_folded_dict_index
-    }
-    let hash = if transform.ttype == 0 {
-      brotli_hash4(src, body_pos)
     } else {
+      brotli_identity_dict_index
+    }
+    let hash = if transform.fold_ascii {
       brotli_hash4_ascii_fold(src, body_pos)
+    } else {
+      brotli_hash4(src, body_pos)
     }
     let mut entry = index.heads.unsafe_get(hash)
     while entry >= 0 {
+      if index.skip_fronts.unsafe_get(entry) != transform.omit_first {
+        entry = index.next.unsafe_get(entry)
+        continue
+      }
       let word_len = index.lengths.unsafe_get(entry)
-      let out_len = transform.prefix_len + word_len + transform.suffix_len
+      let body_len = word_len - transform.omit_first - transform.omit_last
+      if body_len < 4 {
+        entry = index.next.unsafe_get(entry)
+        continue
+      }
+      let out_len = transform.prefix_len + body_len + transform.suffix_len
       if out_len > best_len && pos + out_len <= src_len {
         let dict_offset = index.offsets.unsafe_get(entry)
         let tmp = FixedArray::make(out_len + 8, b'\x00')
