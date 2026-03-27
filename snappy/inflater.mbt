@@ -24,6 +24,26 @@ priv enum StepResult {
 }
 
 ///|
+fn snappy_read_u16_le(data : Bytes, pos : Int) -> Int {
+  (data[pos].to_uint() | (data[pos + 1].to_uint() << 8)).reinterpret_as_int()
+}
+
+///|
+fn snappy_read_u24_le(data : Bytes, pos : Int) -> Int {
+  (data[pos].to_uint() |
+  (data[pos + 1].to_uint() << 8) |
+  (data[pos + 2].to_uint() << 16)).reinterpret_as_int()
+}
+
+///|
+fn snappy_read_u32_le(data : Bytes, pos : Int) -> Int {
+  (data[pos].to_uint() |
+  (data[pos + 1].to_uint() << 8) |
+  (data[pos + 2].to_uint() << 16) |
+  (data[pos + 3].to_uint() << 24)).reinterpret_as_int()
+}
+
+///|
 priv struct InflaterState {
   mut input_buf : @blit.Buffer
   mut input_pos : Int
@@ -245,26 +265,21 @@ fn decode_snappy_step(
       if input_pos + 1 >= input.length() {
         return NeedMore
       }
-      lit_len = input[input_pos].to_int() | (input[input_pos + 1].to_int() << 8)
+      lit_len = snappy_read_u16_le(input, input_pos)
       lit_len += 1
       input_pos += 2
     } else if lit_len == 63 {
       if input_pos + 2 >= input.length() {
         return NeedMore
       }
-      lit_len = input[input_pos].to_int() |
-        (input[input_pos + 1].to_int() << 8) |
-        (input[input_pos + 2].to_int() << 16)
+      lit_len = snappy_read_u24_le(input, input_pos)
       lit_len += 1
       input_pos += 3
     } else if lit_len == 64 {
       if input_pos + 3 >= input.length() {
         return NeedMore
       }
-      lit_len = input[input_pos].to_int() |
-        (input[input_pos + 1].to_int() << 8) |
-        (input[input_pos + 2].to_int() << 16) |
-        (input[input_pos + 3].to_int() << 24)
+      lit_len = snappy_read_u32_le(input, input_pos)
       lit_len += 1
       input_pos += 4
     }
@@ -301,8 +316,7 @@ fn decode_snappy_step(
       return NeedMore
     }
     let length = (tag >> 2) + 1
-    let offset = input[input_pos + 1].to_int() |
-      (input[input_pos + 2].to_int() << 8)
+    let offset = snappy_read_u16_le(input, input_pos + 1)
     return apply_snappy_copy(
       output,
       dst_pos,
@@ -316,10 +330,7 @@ fn decode_snappy_step(
     return NeedMore
   }
   let length = (tag >> 2) + 1
-  let offset = input[input_pos + 1].to_int() |
-    (input[input_pos + 2].to_int() << 8) |
-    (input[input_pos + 3].to_int() << 16) |
-    (input[input_pos + 4].to_int() << 24)
+  let offset = snappy_read_u32_le(input, input_pos + 1)
   apply_snappy_copy(
     output,
     dst_pos,

@@ -2,11 +2,17 @@
 /// Compresses data using the LZ4 frame format.
 pub fn compress(
   data : Bytes,
+  dict? : Bytes = Bytes::default(),
   options? : FrameOptions = { ..FrameOptions::default() },
 ) -> Bytes {
   let src = data[:]
   let src_len = data.length()
   let block_max_size = block_max_size_bytes(options.block_max_size)
+  let initial_prefix = if dict.length() > 0 {
+    lz4_dictionary_prefix(dict)
+  } else {
+    b""
+  }
   let content_size = Some(src_len)
   let max_output = frame_header_length(content_size, options) +
     src_len +
@@ -21,6 +27,9 @@ pub fn compress(
   let mut src_pos = 0
   let block_buf = FixedArray::make(block_max_size, b'\x00')
   let history = @blit.Buffer::new(size_hint=65535)
+  if !options.block_independence && initial_prefix.length() > 0 {
+    history.write_bytes(initial_prefix)
+  }
   while src_pos < src_len {
     let block_end = if src_pos + block_max_size < src_len {
       src_pos + block_max_size
@@ -30,7 +39,11 @@ pub fn compress(
     let block_len = block_end - src_pos
     let block_data = src[src_pos:block_end]
     let compressed_size = if options.block_independence {
-      block_compress(block_data, block_buf)
+      if initial_prefix.length() == 0 {
+        block_compress(block_data, block_buf)
+      } else {
+        block_compress_with_history(initial_prefix[:], block_data, block_buf)
+      }
     } else {
       block_compress_with_history(history.to_bytes()[:], block_data, block_buf)
     }

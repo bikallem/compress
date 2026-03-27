@@ -172,9 +172,6 @@ fn block_compress_window(
 
 ///|
 fn lz4_hash(data : BytesView, pos : Int) -> Int {
-  let u = data.unsafe_get(pos).to_int() |
-    (data.unsafe_get(pos + 1).to_int() << 8) |
-    (data.unsafe_get(pos + 2).to_int() << 16) |
-    (data.unsafe_get(pos + 3).to_int() << 24)
-  ((u * 0x9E3779B1) >> 18) & LZ4_HASH_MASK
+  let u = lz4_read_u32_le(data, pos)
+  ((u * 0x9E3779B1U) >> 18).reinterpret_as_int() & LZ4_HASH_MASK
 }

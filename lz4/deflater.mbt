@@ -12,6 +12,7 @@ priv struct EncoderState {
   checksum : @checksum.XXH32
   content_size : Int?
   mut seen_len : Int
+  dict_prefix : Bytes
   history : @blit.Buffer
 }
 
@@ -20,9 +21,10 @@ struct Deflater(EncoderState)
 
 ///|
 pub fn Deflater::new(
+  dict? : Bytes = Bytes::default(),
   options? : FrameOptions = { ..FrameOptions::default() },
 ) -> Deflater {
-  Deflater::new_with_content_size(-1, options~)
+  Deflater::new_with_content_size(-1, dict~, options~)
 }
 
 ///|
@@ -30,9 +32,19 @@ pub fn Deflater::new(
 /// field when the caller knows the final uncompressed size up front.
 pub fn Deflater::new_with_content_size(
   content_size : Int,
+  dict? : Bytes = Bytes::default(),
   options? : FrameOptions = { ..FrameOptions::default() },
 ) -> Deflater {
   let known_size = if content_size >= 0 { Some(content_size) } else { None }
+  let dict_prefix = if dict.length() > 0 {
+    lz4_dictionary_prefix(dict)
+  } else {
+    b""
+  }
+  let history = @blit.Buffer::new(size_hint=65535)
+  if !options.block_independence && dict_prefix.length() > 0 {
+    history.write_bytes(dict_prefix)
+  }
   Deflater({
     header_written: false,
     finished: false,
@@ -40,7 +52,8 @@ pub fn Deflater::new_with_content_size(
     checksum: @checksum.XXH32::new(),
     content_size: known_size,
     seen_len: 0,
-    history: @blit.Buffer::new(size_hint=65535),
+    dict_prefix,
+    history,
   })
 }
 
@@ -88,7 +101,11 @@ pub fn Deflater::encode(self : Deflater, data : BytesView?) -> Encode {
         }
         let block = chunk[pos:block_end]
         let compressed_size = if s.options.block_independence {
-          block_compress(block, block_buf)
+          if s.dict_prefix.length() == 0 {
+            block_compress(block, block_buf)
+          } else {
+            block_compress_with_history(s.dict_prefix[:], block, block_buf)
+          }
         } else {
           block_compress_with_history(s.history.to_bytes()[:], block, block_buf)
         }

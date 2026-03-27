@@ -181,18 +181,18 @@ let d = @snappy.Deflater::new_known_length(data.length())
 let i = @snappy.Inflater::new()
 
 // LZ4 with configurable frame flags
-let d = @lz4.Deflater::new(options={
+let d = @lz4.Deflater::new(dict=my_lz4_dict, options={
   block_independence: false,
   block_checksum: true,
   block_max_size: Size256KB,
   dict_id: 0x12345678U,
   ..FrameOptions::default()
 })
-let d_with_size = @lz4.Deflater::new_with_content_size(data.length(), options={
+let d_with_size = @lz4.Deflater::new_with_content_size(data.length(), dict=my_lz4_dict, options={
   block_max_size: Size256KB,
   ..FrameOptions::default()
 })
-let i = @lz4.Inflater::new()
+let i = @lz4.Inflater::new(dict=my_lz4_dict)
 
 // Get remaining unprocessed input after decompression
 let leftover = inflater.remaining()

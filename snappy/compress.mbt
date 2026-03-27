@@ -122,13 +122,18 @@ fn Encoder::emit_copy(self : Encoder, offset : Int, length_ : Int) -> Unit {
 }
 
 ///|
+fn snappy_u32_le(data : BytesView, pos : Int) -> UInt {
+  data.unsafe_get(pos).to_uint() |
+  (data.unsafe_get(pos + 1).to_uint() << 8) |
+  (data.unsafe_get(pos + 2).to_uint() << 16) |
+  (data.unsafe_get(pos + 3).to_uint() << 24)
+}
+
+///|
 fn snappy_hash(data : BytesView, pos : Int) -> Int {
-  let u = data.unsafe_get(pos).to_int() |
-    (data.unsafe_get(pos + 1).to_int() << 8) |
-    (data.unsafe_get(pos + 2).to_int() << 16) |
-    (data.unsafe_get(pos + 3).to_int() << 24)
+  let u = snappy_u32_le(data, pos)
   // Knuth multiplicative hash
-  ((u * 0x1E35A7BD) >> 18) & HASH_TABLE_MASK
+  ((u * 0x1E35A7BDU) >> 18).reinterpret_as_int() & HASH_TABLE_MASK
 }
 
 ///|

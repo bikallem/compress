@@ -100,3 +100,17 @@ fn block_max_size_id(size : BlockMaxSize) -> Int {
 fn block_max_size_bytes(size : BlockMaxSize) -> Int {
   max_block_sizes[block_max_size_id(size)]
 }
+
+///|
+fn lz4_read_u32_le(data : BytesView, pos : Int) -> UInt {
+  data.unsafe_get(pos).to_uint() |
+  (data.unsafe_get(pos + 1).to_uint() << 8) |
+  (data.unsafe_get(pos + 2).to_uint() << 16) |
+  (data.unsafe_get(pos + 3).to_uint() << 24)
+}
+
+///|
+fn lz4_dictionary_prefix(dict : Bytes) -> Bytes {
+  let keep = if dict.length() > 65535 { 65535 } else { dict.length() }
+  Bytes::makei(keep, fn(i) { dict[dict.length() - keep + i] })
+}

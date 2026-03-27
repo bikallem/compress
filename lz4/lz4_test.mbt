@@ -102,7 +102,7 @@ fn lz4_write_u32_le(buf : @blit.Buffer, value : UInt) -> Unit {
 }
 
 ///|
-fn lz4_read_u32_le(data : Bytes, pos : Int) -> UInt {
+fn lz4_test_read_u32_le(data : Bytes, pos : Int) -> UInt {
   data[pos].to_uint() |
   (data[pos + 1].to_uint() << 8) |
   (data[pos + 2].to_uint() << 16) |
@@ -130,7 +130,7 @@ fn lz4_header_dict_id(data : Bytes) -> UInt {
   if (flg & 0x08) != 0 {
     pos += 8
   }
-  lz4_read_u32_le(data, pos)
+  lz4_test_read_u32_le(data, pos)
 }
 
 ///|
@@ -146,7 +146,7 @@ fn lz4_header_content_size(data : Bytes) -> Int? {
 
 ///|
 fn lz4_block_header(data : Bytes, pos : Int) -> (Bool, Int) {
-  let raw = lz4_read_u32_le(data, pos)
+  let raw = lz4_test_read_u32_le(data, pos)
   ((raw & 0x80000000U) != 0U, (raw & 0x7FFFFFFFU).reinterpret_as_int())
 }
 
@@ -250,6 +250,28 @@ test "lz4 rejects trailing bytes after last frame" {
   guard result is Err(_) else {
     fail("expected error for trailing bytes after last LZ4 frame")
   }
+}
+
+///|
+test "lz4 compress uses external dictionaries" {
+  let dict = b"shared dictionary block shared dictionary block shared dictionary block"
+  let data = b"shared dictionary block shared dictionary block frame payload"
+  let options : @lz4.FrameOptions = {
+    block_independence: true,
+    block_checksum: false,
+    content_checksum: true,
+    dict_id: 0x0BADF00DU,
+    block_max_size: Size64KB,
+  }
+  let compressed = @lz4.compress(data, dict~, options~)
+  let without_dict = @lz4.compress(data, options~)
+  let result = try? @lz4.decompress(compressed)
+  guard result is Err(_) else {
+    fail("expected dictionary-backed frame to require a dictionary")
+  }
+  let decompressed = @lz4.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() < without_dict.length())
 }
 
 ///|

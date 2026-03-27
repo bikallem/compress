@@ -165,3 +165,45 @@ test "signal protocol: inflater consumes concatenated frames" {
   }
   assert_eq(buf.to_bytes(), b"first framesecond frame")
 }
+
+///|
+test "signal protocol: deflater supports external dictionaries" {
+  let dict = b"shared dictionary block shared dictionary block shared dictionary block"
+  let data = b"shared dictionary block shared dictionary block frame payload"
+  let d = @lz4.Deflater::new_with_content_size(data.length(), dict~, options={
+    block_independence: true,
+    block_checksum: false,
+    content_checksum: true,
+    dict_id: 0x0BADF00DU,
+    block_max_size: Size64KB,
+  })
+  let out = @blit.Buffer::new()
+  match d.encode(Some(data[:24])) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok => fail("expected LZ4 streaming output after first chunk")
+    End => fail("lz4 deflater should not end before finish")
+    Error(e) => raise e
+  }
+  match d.encode(Some(data[24:])) {
+    Data(chunk) => out.write_bytesview(chunk)
+    Ok => fail("expected LZ4 streaming output after second chunk")
+    End => fail("lz4 deflater should not end before finish")
+    Error(e) => raise e
+  }
+  loop d.encode(None) {
+    Data(chunk) => {
+      out.write_bytesview(chunk)
+      continue d.encode(None)
+    }
+    End => break
+    Ok => break
+    Error(e) => raise e
+  }
+  let compressed = out.to_bytes()
+  let result = try? @lz4.decompress(compressed)
+  guard result is Err(_) else {
+    fail("expected dictionary-backed frame to require a dictionary")
+  }
+  let decompressed = @lz4.decompress(compressed, dict~)
+  assert_eq(decompressed, data)
+}

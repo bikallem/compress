@@ -34,17 +34,14 @@ fn decompress_frame(
   let mut saw_end_mark = false
   while !saw_end_mark {
     guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
-    let block_size_raw = data.unsafe_get(pos).to_int() |
-      (data.unsafe_get(pos + 1).to_int() << 8) |
-      (data.unsafe_get(pos + 2).to_int() << 16) |
-      (data.unsafe_get(pos + 3).to_int() << 24)
+    let block_size_raw = lz4_read_u32_le(src, pos)
     pos += 4
-    if block_size_raw == 0 {
+    if block_size_raw == 0U {
       saw_end_mark = true
       continue
     }
-    let is_uncompressed = (block_size_raw & 0x80000000) != 0
-    let block_size = block_size_raw & 0x7FFFFFFF
+    let is_uncompressed = (block_size_raw & 0x80000000U) != 0U
+    let block_size = (block_size_raw & 0x7FFFFFFFU).reinterpret_as_int()
     guard block_size <= header.block_max_size else {
       raise Lz4Error::CorruptData("block exceeds declared max size")
     }
@@ -56,10 +53,7 @@ fn decompress_frame(
       guard pos + block_size + 4 <= data.length() else {
         raise Lz4Error::UnexpectedEOF
       }
-      let expected_cs = data.unsafe_get(pos + block_size).to_uint() |
-        (data.unsafe_get(pos + block_size + 1).to_uint() << 8) |
-        (data.unsafe_get(pos + block_size + 2).to_uint() << 16) |
-        (data.unsafe_get(pos + block_size + 3).to_uint() << 24)
+      let expected_cs = lz4_read_u32_le(src, pos + block_size)
       let actual_cs = @checksum.xxh32(payload)
       guard expected_cs == actual_cs else {
         raise Lz4Error::ChecksumMismatch(expected=expected_cs, got=actual_cs)
@@ -93,10 +87,7 @@ fn decompress_frame(
   }
   if header.has_content_checksum {
     guard pos + 4 <= data.length() else { raise Lz4Error::UnexpectedEOF }
-    let expected_cs = data.unsafe_get(pos).to_uint() |
-      (data.unsafe_get(pos + 1).to_uint() << 8) |
-      (data.unsafe_get(pos + 2).to_uint() << 16) |
-      (data.unsafe_get(pos + 3).to_uint() << 24)
+    let expected_cs = lz4_read_u32_le(src, pos)
     let actual_cs = xxh.checksum()
     guard expected_cs == actual_cs else {
       raise Lz4Error::ChecksumMismatch(expected=expected_cs, got=actual_cs)
@@ -118,16 +109,15 @@ fn initial_lz4_prefix(
   header : Lz4FrameHeader,
   dict : Bytes,
 ) -> Bytes raise Lz4Error {
-  if header.dict_id == 0U {
+  if dict.length() == 0 {
+    guard header.dict_id == 0U else {
+      raise Lz4Error::InvalidHeader(
+        "dictionary id requires external dictionary bytes",
+      )
+    }
     return b""
   }
-  guard dict.length() > 0 else {
-    raise Lz4Error::InvalidHeader(
-      "dictionary id requires external dictionary bytes",
-    )
-  }
-  let keep = if dict.length() > 65535 { 65535 } else { dict.length() }
-  Bytes::makei(keep, fn(i) { dict[dict.length() - keep + i] })
+  lz4_dictionary_prefix(dict)
 }
 
 ///|

@@ -418,11 +418,12 @@ fn lz77_find_matches_with_prefix(
 
 ///|
 fn brotli_hash4(src : BytesView, pos : Int) -> Int {
-  let v = src.unsafe_get(pos).to_int() |
-    (src.unsafe_get(pos + 1).to_int() << 8) |
-    (src.unsafe_get(pos + 2).to_int() << 16) |
-    (src.unsafe_get(pos + 3).to_int() << 24)
-  ((v & 0xFFFFFF) ^ (((v >> 16) & 0xFF) * 0x1e35a7bd)) & (BROTLI_HASH_SIZE - 1)
+  let v = src.unsafe_get(pos).to_uint() |
+    (src.unsafe_get(pos + 1).to_uint() << 8) |
+    (src.unsafe_get(pos + 2).to_uint() << 16) |
+    (src.unsafe_get(pos + 3).to_uint() << 24)
+  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
+  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
 }
 
 ///|

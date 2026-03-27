@@ -152,18 +152,15 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
             Await
           }
         }
-        let block_size_raw = data.unsafe_get(s.input_pos).to_int() |
-          (data.unsafe_get(s.input_pos + 1).to_int() << 8) |
-          (data.unsafe_get(s.input_pos + 2).to_int() << 16) |
-          (data.unsafe_get(s.input_pos + 3).to_int() << 24)
+        let block_size_raw = lz4_read_u32_le(data[:], s.input_pos)
         s.input_pos += 4
-        if block_size_raw == 0 {
+        if block_size_raw == 0U {
           s.phase = ContentChecksum
           compact_lz4_input(s)
           continue
         }
-        let is_uncompressed = (block_size_raw & 0x80000000) != 0
-        let block_size = block_size_raw & 0x7FFFFFFF
+        let is_uncompressed = (block_size_raw & 0x80000000U) != 0U
+        let block_size = (block_size_raw & 0x7FFFFFFFU).reinterpret_as_int()
         if block_size > header.block_max_size {
           return fail_lz4(s, CorruptData("block exceeds declared max size"))
         }
@@ -187,10 +184,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
         }
         let payload = data[s.input_pos:s.input_pos + block_size]
         if header.has_block_checksum {
-          let expected_cs = data.unsafe_get(s.input_pos + block_size).to_uint() |
-            (data.unsafe_get(s.input_pos + block_size + 1).to_uint() << 8) |
-            (data.unsafe_get(s.input_pos + block_size + 2).to_uint() << 16) |
-            (data.unsafe_get(s.input_pos + block_size + 3).to_uint() << 24)
+          let expected_cs = lz4_read_u32_le(data[:], s.input_pos + block_size)
           let actual_cs = @checksum.xxh32(payload)
           if expected_cs != actual_cs {
             return fail_lz4(
@@ -249,10 +243,7 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
               Await
             }
           }
-          let expected_cs = data.unsafe_get(s.input_pos).to_uint() |
-            (data.unsafe_get(s.input_pos + 1).to_uint() << 8) |
-            (data.unsafe_get(s.input_pos + 2).to_uint() << 16) |
-            (data.unsafe_get(s.input_pos + 3).to_uint() << 24)
+          let expected_cs = lz4_read_u32_le(data[:], s.input_pos)
           let actual_cs = s.content_xxh.checksum()
           if expected_cs != actual_cs {
             return fail_lz4(
