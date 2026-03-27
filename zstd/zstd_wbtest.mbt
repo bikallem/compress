@@ -258,6 +258,41 @@ fn zstd_archive_fixture() -> Bytes {
 }
 
 ///|
+fn zstd_archive_lazy_fixture() -> (Bytes, Int, Array[Int]) {
+  let stem = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
+  let prefix = @blit.Buffer::new()
+  let starts : Array[Int] = [0]
+  let mut pos = 0
+  prefix.write_bytes(stem)
+  pos += stem.length()
+  for i in 0..<23 {
+    starts.push(pos)
+    prefix.write_bytes(b"ABCDzzzz")
+    prefix.write_byte((i * 17 % 251).to_byte())
+    prefix.write_bytes(b"|")
+    pos += 10
+  }
+  starts.push(pos)
+  prefix.write_bytesview(stem[1:stem.length() - 4])
+  prefix.write_bytes(b"QRSx")
+  pos += stem.length() - 1
+  starts.push(pos)
+  prefix.write_bytes(b"QRST")
+  pos += 4
+  let prefix_bytes = prefix.to_bytes()
+  let target_buf = @blit.Buffer::new(size_hint=stem.length())
+  target_buf.write_bytesview(stem[:stem.length() - 4])
+  target_buf.write_bytes(b"QRST")
+  let target = target_buf.to_bytes()
+  let combined = @blit.Buffer::new(
+    size_hint=prefix_bytes.length() + target.length(),
+  )
+  combined.write_bytes(prefix_bytes)
+  combined.write_bytes(target)
+  (combined.to_bytes(), prefix_bytes.length(), starts)
+}
+
+///|
 test "zstd archived search preserves older long anchors at shallow tiers" {
   let data = zstd_archive_fixture()
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
@@ -337,6 +372,77 @@ test "zstd archived search preserves older long anchors at shallow tiers" {
   assert_eq(medium_archive.length, long.length())
   assert_true(deep_archive.length >= shallow_archive.length)
   assert_eq(medium_archive.length, long.length())
+}
+
+///|
+test "zstd lazy matching keeps archive anchors over marginal next-byte gains" {
+  let (combined, base, starts) = zstd_archive_lazy_fixture()
+  let src = combined[:]
+  let hash_table = FixedArray::make(
+    ZSTD_HASH_SIZE * ZSTD_MAX_HASH_CANDIDATES,
+    -1,
+  )
+  let hash_archive = FixedArray::make(
+    ZSTD_HASH_SIZE * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES,
+    -1,
+  )
+  for i in starts {
+    insert_hash_candidate(
+      src,
+      combined.length(),
+      hash_table,
+      hash_archive,
+      zstd_hash(src, i),
+      i,
+    )
+  }
+  let config = {
+    lazy_steps: 5,
+    max_hash_candidates: 16,
+    nice_match: 192,
+    archive_candidates: 2,
+  }
+  let best = find_best_match(
+    src,
+    base,
+    combined.length(),
+    hash_table,
+    hash_archive,
+    zstd_hash(src, base),
+    [1, 4, 8],
+    config,
+  )
+  let next_best = find_best_match(
+    src,
+    base + 1,
+    combined.length(),
+    hash_table,
+    hash_archive,
+    zstd_hash(src, base + 1),
+    [1, 4, 8],
+    config,
+  )
+  let best_len = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--".length() -
+    4
+  assert_eq(best.length, best_len)
+  assert_true(best.archive_hit)
+  assert_eq(next_best.length, best_len + 2)
+  assert_true(!next_best.archive_hit)
+  assert_true(next_best.length > best.length + 1)
+  assert_true(!zstd_should_take_lazy_match(best, next_best, config))
+}
+
+///|
+test "zstd lazy matching still takes nice-match upgrades over archive hits" {
+  let config = {
+    lazy_steps: 5,
+    max_hash_candidates: 16,
+    nice_match: 192,
+    archive_candidates: 2,
+  }
+  let best = { length: 191, offset: 8192, rep_idx: -1, archive_hit: true }
+  let next_best = { length: 192, offset: 32, rep_idx: -1, archive_hit: false }
+  assert_true(zstd_should_take_lazy_match(best, next_best, config))
 }
 
 ///|

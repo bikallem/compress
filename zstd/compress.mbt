@@ -473,6 +473,29 @@ priv struct MatchCandidate {
   length : Int
   offset : Int
   rep_idx : Int
+  archive_hit : Bool
+}
+
+///|
+fn zstd_should_take_lazy_match(
+  best : MatchCandidate,
+  next_best : MatchCandidate,
+  config : ZstdSearchConfig,
+) -> Bool {
+  if next_best.length <= best.length {
+    return false
+  }
+  if next_best.length >= config.nice_match {
+    return true
+  }
+  // Archive hits are fragile: if we only beat them by a byte or two from the
+  // next position, keep the current anchor instead of discarding the older match.
+  let required_gain = if best.archive_hit && !next_best.archive_hit {
+    2
+  } else {
+    1
+  }
+  next_best.length > best.length + required_gain
 }
 
 ///|
@@ -584,7 +607,7 @@ fn find_sequences_combined(
         next_hash,
         next_ip,
       )
-      if next_best.length > best.length + 1 {
+      if zstd_should_take_lazy_match(best, next_best, config) {
         match_ip = next_ip
         best = next_best
         lazy_steps -= 1
@@ -672,7 +695,7 @@ fn find_best_match(
   rep : Array[Int],
   config : ZstdSearchConfig,
 ) -> MatchCandidate {
-  let mut best = { length: 0, offset: 0, rep_idx: -1 }
+  let mut best = { length: 0, offset: 0, rep_idx: -1, archive_hit: false }
   for r in 0..<3 {
     let rep_off = rep.unsafe_get(r)
     if ip >= rep_off &&
@@ -687,7 +710,7 @@ fn find_best_match(
         mlen += 1
       }
       if mlen > best.length {
-        best = { length: mlen, offset: rep_off, rep_idx: r }
+        best = { length: mlen, offset: rep_off, rep_idx: r, archive_hit: false }
         if mlen >= config.nice_match {
           return best
         }
@@ -715,7 +738,12 @@ fn find_best_match(
       }
       if match_len > best.length + 1 || best.rep_idx < 0 {
         if match_len > best.length || best.rep_idx < 0 {
-          best = { length: match_len, offset: hash_offset, rep_idx: -1 }
+          best = {
+            length: match_len,
+            offset: hash_offset,
+            rep_idx: -1,
+            archive_hit: false,
+          }
           if match_len >= config.nice_match {
             break
           }
@@ -747,7 +775,12 @@ fn find_best_match(
         match_len += 1
       }
       if match_len > best.length {
-        best = { length: match_len, offset: hash_offset, rep_idx: -1 }
+        best = {
+          length: match_len,
+          offset: hash_offset,
+          rep_idx: -1,
+          archive_hit: true,
+        }
       }
     }
   }
