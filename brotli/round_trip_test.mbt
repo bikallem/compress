@@ -78,6 +78,15 @@ test "round-trip: dictionary words compress well" {
 }
 
 ///|
+test "round-trip: transformed dictionary words compress well" {
+  let data = b" Function "
+  let compressed = @brotli.compress(data, level=Best)
+  let decompressed = @brotli.decompress(compressed)
+  assert_eq(decompressed, data)
+  assert_true(compressed.length() < 14)
+}
+
+///|
 fn brotli_search_depth_fixture() -> Bytes {
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789"
   let short = b"ABCDzzzz"

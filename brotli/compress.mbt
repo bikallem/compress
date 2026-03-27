@@ -1,8 +1,9 @@
 ///|
 /// Compresses data using the Brotli format.
 /// Uses uncompressed meta-blocks at level 0, LZ77+Huffman at higher levels.
-/// The encoder uses metablock splitting heuristics at higher levels but still
-/// does not yet implement full static-dictionary compression.
+/// The encoder uses metablock splitting heuristics at higher levels and a
+/// bounded subset of static-dictionary transforms, but still does not match
+/// the full transform/block-splitting space of upstream Brotli encoders.
 pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   let lvl = compression_level_to_int(level)
   let src = data[:]
@@ -388,6 +389,7 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
     let match_pos = hash_table.unsafe_get(h)
     hash_table.unsafe_set(h, pos)
     let mut best_len = 0
+    let mut best_copy_len = 0
     let mut best_dist = 0
     if match_pos >= 0 && pos - match_pos <= max_distance && pos - match_pos > 0 {
       let max_len = if src_len - pos < MAX_MATCH_LENGTH {
@@ -398,6 +400,7 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
       let mlen = count_match(src, pos, match_pos, max_len)
       if mlen >= MIN_MATCH_LENGTH {
         best_len = mlen
+        best_copy_len = mlen
         best_dist = pos - match_pos
       }
     }
@@ -406,14 +409,23 @@ fn lz77_find_matches(src : BytesView, src_len : Int) -> Array[BrotliCmd] {
     )
     if dict_len > best_len {
       best_len = dict_len
+      best_copy_len = dict_len
       best_dist = dict_dist
+    }
+    let (xform_len, xform_copy_len, xform_dist) = find_transformed_dictionary_match(
+      src, pos, src_len, pos, best_len,
+    )
+    if xform_len > best_len {
+      best_len = xform_len
+      best_copy_len = xform_copy_len
+      best_dist = xform_dist
     }
     if best_len >= MIN_MATCH_LENGTH {
       let insert_len = pos - insert_start
       cmds.push({
         insert_pos: insert_start,
         insert_len,
-        copy_len: best_len,
+        copy_len: best_copy_len,
         distance: best_dist,
       })
       let match_end = if pos + best_len < src_len - 3 {
@@ -488,6 +500,7 @@ fn lz77_find_matches_with_prefix(
     let match_pos = hash_table.unsafe_get(h)
     hash_table.unsafe_set(h, pos)
     let mut best_len = 0
+    let mut best_copy_len = 0
     let mut best_dist = 0
     if match_pos >= 0 &&
       pos - match_pos <= MAX_BACKWARD_DISTANCE &&
@@ -500,6 +513,7 @@ fn lz77_find_matches_with_prefix(
       let mlen = count_match(combined_view, pos, match_pos, max_len)
       if mlen >= MIN_MATCH_LENGTH {
         best_len = mlen
+        best_copy_len = mlen
         best_dist = pos - match_pos
       }
     }
@@ -508,14 +522,23 @@ fn lz77_find_matches_with_prefix(
     )
     if dict_len > best_len {
       best_len = dict_len
+      best_copy_len = dict_len
       best_dist = dict_dist
+    }
+    let (xform_len, xform_copy_len, xform_dist) = find_transformed_dictionary_match(
+      combined_view, pos, total_len, pos, best_len,
+    )
+    if xform_len > best_len {
+      best_len = xform_len
+      best_copy_len = xform_copy_len
+      best_dist = xform_dist
     }
     if best_len >= MIN_MATCH_LENGTH {
       let insert_len = pos - insert_start
       cmds.push({
         insert_pos: insert_start - base,
         insert_len,
-        copy_len: best_len,
+        copy_len: best_copy_len,
         distance: best_dist,
       })
       let match_end = if pos + best_len < total_len - 3 {
@@ -574,6 +597,34 @@ priv struct BrotliDictionaryIndex {
 }
 
 ///|
+priv struct BrotliTransformSearch {
+  transform_idx : Int
+  prefix_len : Int
+  suffix_len : Int
+  ttype : Int
+}
+
+///|
+fn ascii_fold_byte(b : Byte) -> Byte {
+  let v = b.to_int()
+  if v >= 0x41 && v <= 0x5A {
+    (v + 0x20).to_byte()
+  } else {
+    b
+  }
+}
+
+///|
+fn brotli_hash4_ascii_fold(src : BytesView, pos : Int) -> Int {
+  let v = ascii_fold_byte(src.unsafe_get(pos)).to_uint() |
+    (ascii_fold_byte(src.unsafe_get(pos + 1)).to_uint() << 8) |
+    (ascii_fold_byte(src.unsafe_get(pos + 2)).to_uint() << 16) |
+    (ascii_fold_byte(src.unsafe_get(pos + 3)).to_uint() << 24)
+  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
+  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
+}
+
+///|
 fn brotli_hash4_dict(src : FixedArray[Byte], pos : Int) -> Int {
   let v = src.unsafe_get(pos).to_uint() |
     (src.unsafe_get(pos + 1).to_uint() << 8) |
@@ -584,7 +635,17 @@ fn brotli_hash4_dict(src : FixedArray[Byte], pos : Int) -> Int {
 }
 
 ///|
-fn build_brotli_identity_dict_index() -> BrotliDictionaryIndex {
+fn brotli_hash4_dict_ascii_fold(src : FixedArray[Byte], pos : Int) -> Int {
+  let v = ascii_fold_byte(src.unsafe_get(pos)).to_uint() |
+    (ascii_fold_byte(src.unsafe_get(pos + 1)).to_uint() << 8) |
+    (ascii_fold_byte(src.unsafe_get(pos + 2)).to_uint() << 16) |
+    (ascii_fold_byte(src.unsafe_get(pos + 3)).to_uint() << 24)
+  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
+  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
+}
+
+///|
+fn build_brotli_dict_index(ascii_fold : Bool) -> BrotliDictionaryIndex {
   let mut total_entries = 0
   for length in dict_min_word_length..<=dict_max_word_length {
     let shift = dict_size_bits_by_length.unsafe_get(length)
@@ -606,7 +667,11 @@ fn build_brotli_identity_dict_index() -> BrotliDictionaryIndex {
     let count = 1 << shift
     for word_idx in 0..<count {
       let offset = dict_word_offset(length, word_idx)
-      let hash = brotli_hash4_dict(brotli_dictionary_data, offset)
+      let hash = if ascii_fold {
+        brotli_hash4_dict_ascii_fold(brotli_dictionary_data, offset)
+      } else {
+        brotli_hash4_dict(brotli_dictionary_data, offset)
+      }
       next.unsafe_set(entry, heads.unsafe_get(hash))
       heads.unsafe_set(hash, entry)
       lengths.unsafe_set(entry, length)
@@ -619,7 +684,55 @@ fn build_brotli_identity_dict_index() -> BrotliDictionaryIndex {
 }
 
 ///|
-let brotli_identity_dict_index : BrotliDictionaryIndex = build_brotli_identity_dict_index()
+fn build_brotli_transform_searches() -> Array[BrotliTransformSearch] {
+  let searches : Array[BrotliTransformSearch] = []
+  for transform_idx in 1..<121 {
+    let base = transform_idx * 3
+    let ttype = transforms_data.unsafe_get(base + 1)
+    if ttype != 0 &&
+      ttype != TRANSFORM_UPPERCASE_FIRST &&
+      ttype != TRANSFORM_UPPERCASE_ALL {
+      continue
+    }
+    let prefix_offset = prefix_suffix_map.unsafe_get(
+      transforms_data.unsafe_get(base),
+    )
+    let suffix_offset = prefix_suffix_map.unsafe_get(
+      transforms_data.unsafe_get(base + 2),
+    )
+    searches.push({
+      transform_idx,
+      prefix_len: prefix_suffix_data.unsafe_get(prefix_offset).to_int(),
+      suffix_len: prefix_suffix_data.unsafe_get(suffix_offset).to_int(),
+      ttype,
+    })
+  }
+  searches
+}
+
+///|
+let brotli_identity_dict_index : BrotliDictionaryIndex = build_brotli_dict_index(
+  false,
+)
+
+///|
+let brotli_folded_dict_index : BrotliDictionaryIndex = build_brotli_dict_index(
+  true,
+)
+
+///|
+let brotli_transform_searches : Array[BrotliTransformSearch] = build_brotli_transform_searches()
+
+///|
+fn brotli_dictionary_distance(
+  word_len : Int,
+  word_idx : Int,
+  transform_idx : Int,
+  max_dist : Int,
+) -> Int {
+  let shift = dict_size_bits_by_length.unsafe_get(word_len)
+  max_dist + 1 + word_idx + (transform_idx << shift)
+}
 
 ///|
 fn find_identity_dictionary_match(
@@ -661,6 +774,91 @@ fn find_identity_dictionary_match(
     entry = index.next.unsafe_get(entry)
   }
   (best_len, best_dist)
+}
+
+///|
+fn find_transformed_dictionary_match(
+  src : BytesView,
+  pos : Int,
+  src_len : Int,
+  absolute_pos : Int,
+  best_len_ : Int,
+) -> (Int, Int, Int) {
+  if pos + 3 >= src_len {
+    return (0, 0, 0)
+  }
+  let max_dist = if absolute_pos < MAX_BACKWARD_DISTANCE {
+    absolute_pos
+  } else {
+    MAX_BACKWARD_DISTANCE
+  }
+  let mut best_len = best_len_
+  let mut best_copy_len = 0
+  let mut best_dist = 0
+  for transform in brotli_transform_searches {
+    let min_out_len = transform.prefix_len +
+      dict_min_word_length +
+      transform.suffix_len
+    if pos + min_out_len > src_len {
+      continue
+    }
+    let body_pos = pos + transform.prefix_len
+    if body_pos + 3 >= src_len {
+      continue
+    }
+    let index = if transform.ttype == 0 {
+      brotli_identity_dict_index
+    } else {
+      brotli_folded_dict_index
+    }
+    let hash = if transform.ttype == 0 {
+      brotli_hash4(src, body_pos)
+    } else {
+      brotli_hash4_ascii_fold(src, body_pos)
+    }
+    let mut entry = index.heads.unsafe_get(hash)
+    while entry >= 0 {
+      let word_len = index.lengths.unsafe_get(entry)
+      let out_len = transform.prefix_len + word_len + transform.suffix_len
+      if out_len > best_len && pos + out_len <= src_len {
+        let dict_offset = index.offsets.unsafe_get(entry)
+        let tmp = FixedArray::make(out_len + 8, b'\x00')
+        let produced = transform_dictionary_word(
+          tmp,
+          0,
+          brotli_dictionary_data,
+          dict_offset,
+          word_len,
+          transform.transform_idx,
+        )
+        if produced == out_len {
+          let mut matches = true
+          for i in 0..<out_len {
+            if src.unsafe_get(pos + i) != tmp.unsafe_get(i) {
+              matches = false
+              break
+            }
+          }
+          if matches {
+            best_len = out_len
+            best_copy_len = word_len
+            best_dist = brotli_dictionary_distance(
+              word_len,
+              index.word_idxs.unsafe_get(entry),
+              transform.transform_idx,
+              max_dist,
+            )
+          }
+        }
+      }
+      entry = index.next.unsafe_get(entry)
+    }
+  }
+  if best_dist > 0 {
+    (best_len, best_copy_len, best_dist)
+  } else {
+    (0, 0, 0)
+  }
 }
 
 // ─── LZ77 hash-chain match finder (levels 2-9) ─────────────────────
@@ -725,13 +923,14 @@ fn lz77_find_matches_chain(
   }
 
   // Find best match at position p using hash chains
-  fn find_best(p : Int) -> (Int, Int) {
-    // returns (match_len, distance)
+  fn find_best(p : Int) -> (Int, Int, Int) {
+    // returns (output_len, copy_len, distance)
     if p + 3 >= src_len {
-      return (0, 0)
+      return (0, 0, 0)
     }
     let h = brotli_hash4(src, p) & hash_mask
     let mut best_len = 3 // minimum match is 4, so we need > 3
+    let mut best_copy_len = 0
     let mut best_dist = 0
     let mut candidate = head.unsafe_get(h)
     let mut chains = 0
@@ -748,6 +947,7 @@ fn lz77_find_matches_chain(
       let mlen = count_match(src, p, candidate, max_len)
       if mlen > best_len {
         best_len = mlen
+        best_copy_len = mlen
         best_dist = dist
         if mlen == max_len || mlen >= 32 {
           break
@@ -761,17 +961,26 @@ fn lz77_find_matches_chain(
     )
     if dict_len > best_len {
       best_len = dict_len
+      best_copy_len = dict_len
       best_dist = dict_dist
     }
+    let (xform_len, xform_copy_len, xform_dist) = find_transformed_dictionary_match(
+      src, p, src_len, p, best_len,
+    )
+    if xform_len > best_len {
+      best_len = xform_len
+      best_copy_len = xform_copy_len
+      best_dist = xform_dist
+    }
     if best_dist > 0 {
-      (best_len, best_dist)
+      (best_len, best_copy_len, best_dist)
     } else {
-      (0, 0)
+      (0, 0, 0)
     }
   }
 
   while pos + 3 < src_len {
-    let (mlen, mdist) = find_best(pos)
+    let (mlen, mcopy_len, mdist) = find_best(pos)
     if mlen < MIN_MATCH_LENGTH {
       insert_hash(pos)
       pos += 1
@@ -781,7 +990,7 @@ fn lz77_find_matches_chain(
     if use_lazy && pos + 4 < src_len {
       // Tentatively insert current pos so next position can chain through it
       insert_hash(pos)
-      let (mlen2, mdist2) = find_best(pos + 1)
+      let (mlen2, mcopy_len2, mdist2) = find_best(pos + 1)
       if mlen2 > mlen + 1 {
         // Skip current position, emit next match instead
         pos += 1
@@ -791,7 +1000,7 @@ fn lz77_find_matches_chain(
         cmds.push({
           insert_pos: insert_start,
           insert_len,
-          copy_len: mlen2,
+          copy_len: mcopy_len2,
           distance: mdist2,
         })
         // Insert positions near match boundaries into hash chains
@@ -822,7 +1031,7 @@ fn lz77_find_matches_chain(
       cmds.push({
         insert_pos: insert_start,
         insert_len,
-        copy_len: mlen,
+        copy_len: mcopy_len,
         distance: mdist,
       })
       let match_end_c = if pos + mlen < src_len - 3 {
@@ -852,7 +1061,7 @@ fn lz77_find_matches_chain(
     cmds.push({
       insert_pos: insert_start,
       insert_len,
-      copy_len: mlen,
+      copy_len: mcopy_len,
       distance: mdist,
     })
     let match_end_n = if pos + mlen < src_len - 3 {
@@ -939,12 +1148,13 @@ fn lz77_find_matches_chain_with_prefix(
     head.unsafe_set(h, p)
   }
 
-  fn find_best(p : Int) -> (Int, Int) {
+  fn find_best(p : Int) -> (Int, Int, Int) {
     if p + 3 >= total_len {
-      return (0, 0)
+      return (0, 0, 0)
     }
     let h = brotli_hash4(combined_view, p) & hash_mask
     let mut best_len = 3
+    let mut best_copy_len = 0
     let mut best_dist = 0
     let mut candidate = head.unsafe_get(h)
     let mut chains = 0
@@ -961,6 +1171,7 @@ fn lz77_find_matches_chain_with_prefix(
       let mlen = count_match(combined_view, p, candidate, max_len)
       if mlen > best_len {
         best_len = mlen
+        best_copy_len = mlen
         best_dist = dist
         if mlen == max_len || mlen >= 32 {
           break
@@ -974,12 +1185,21 @@ fn lz77_find_matches_chain_with_prefix(
     )
     if dict_len > best_len {
       best_len = dict_len
+      best_copy_len = dict_len
       best_dist = dict_dist
     }
+    let (xform_len, xform_copy_len, xform_dist) = find_transformed_dictionary_match(
+      combined_view, p, total_len, p, best_len,
+    )
+    if xform_len > best_len {
+      best_len = xform_len
+      best_copy_len = xform_copy_len
+      best_dist = xform_dist
+    }
     if best_dist > 0 {
-      (best_len, best_dist)
+      (best_len, best_copy_len, best_dist)
     } else {
-      (0, 0)
+      (0, 0, 0)
     }
   }
 
@@ -991,7 +1211,7 @@ fn lz77_find_matches_chain_with_prefix(
   }
 
   while pos + 3 < total_len {
-    let (mlen, mdist) = find_best(pos)
+    let (mlen, mcopy_len, mdist) = find_best(pos)
     if mlen < MIN_MATCH_LENGTH {
       insert_hash(pos)
       pos += 1
@@ -999,7 +1219,7 @@ fn lz77_find_matches_chain_with_prefix(
     }
     if use_lazy && pos + 1 + 3 < total_len {
       insert_hash(pos)
-      let (mlen2, _mdist2) = find_best(pos + 1)
+      let (mlen2, _mcopy_len2, _mdist2) = find_best(pos + 1)
       if mlen2 > mlen + 1 {
         pos += 1
         continue
@@ -1009,7 +1229,7 @@ fn lz77_find_matches_chain_with_prefix(
     cmds.push({
       insert_pos: insert_start - base,
       insert_len,
-      copy_len: mlen,
+      copy_len: mcopy_len,
       distance: mdist,
     })
     let mut rehash_end = pos + mlen

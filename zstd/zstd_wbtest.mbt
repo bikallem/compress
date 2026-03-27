@@ -239,9 +239,70 @@ test "zstd hash uses unsigned little-endian words" {
     (data[1].to_uint() << 8) |
     (data[2].to_uint() << 16) |
     (data[3].to_uint() << 24)
-  let expected = ((raw * 0x9E3779B1U) >> (32 - ZSTD_HASH_BITS))
-    .reinterpret_as_int()
+  let expected = ((raw * 0x9E3779B1U) >> (32 - ZSTD_HASH_BITS)).reinterpret_as_int()
   assert_eq(zstd_hash(data[:], 0), expected)
+}
+
+///|
+fn zstd_archive_fixture() -> Bytes {
+  let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
+  let buf = @blit.Buffer::new()
+  buf.write_bytes(long)
+  for i in 0..<16 {
+    buf.write_bytes(b"ABCDzzzz")
+    buf.write_byte((i % 251).to_byte())
+    buf.write_bytes(b"|")
+  }
+  buf.write_bytes(long)
+  buf.to_bytes()
+}
+
+///|
+test "zstd archive search can recover older hash candidates" {
+  let data = zstd_archive_fixture()
+  let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
+  let src = data[:]
+  let hash_table = FixedArray::make(
+    ZSTD_HASH_SIZE * ZSTD_MAX_HASH_CANDIDATES,
+    -1,
+  )
+  let hash_archive = FixedArray::make(ZSTD_HASH_SIZE, -1)
+  let ip = data.length() - long.length()
+  for i in 0..<ip {
+    insert_hash_candidate(hash_table, hash_archive, zstd_hash(src, i), i)
+  }
+  let hash = zstd_hash(src, ip)
+  let no_archive = find_best_match(
+    src,
+    ip,
+    data.length(),
+    hash_table,
+    hash_archive,
+    hash,
+    [1, 4, 8],
+    {
+      lazy_steps: 4,
+      max_hash_candidates: 12,
+      nice_match: 160,
+      use_hash_archive: false,
+    },
+  )
+  let with_archive = find_best_match(
+    src,
+    ip,
+    data.length(),
+    hash_table,
+    hash_archive,
+    hash,
+    [1, 4, 8],
+    {
+      lazy_steps: 5,
+      max_hash_candidates: 16,
+      nice_match: 192,
+      use_hash_archive: true,
+    },
+  )
+  assert_true(with_archive.length > no_archive.length)
 }
 
 ///|

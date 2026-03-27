@@ -23,6 +23,20 @@ test "brotli identity dictionary matches common words" {
 }
 
 ///|
+test "brotli transformed dictionary matches affixed and uppercased words" {
+  let (length, copy_len, distance) = find_transformed_dictionary_match(
+    b" Function "[:],
+    0,
+    10,
+    0,
+    0,
+  )
+  assert_eq(length, 10)
+  assert_eq(copy_len, 8)
+  assert_true(distance > 0)
+}
+
+///|
 fn brotli_split_fixture() -> Bytes {
   let buf = @blit.Buffer::new()
   for i in 0..<128 {
