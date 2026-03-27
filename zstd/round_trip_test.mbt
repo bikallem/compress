@@ -369,7 +369,7 @@ fn zstd_archive_depth_fixture() -> Bytes {
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let buf = @blit.Buffer::new()
   buf.write_bytes(long)
-  for i in 0..<19 {
+  for i in 0..<23 {
     buf.write_bytes(b"ABCDzzzz")
     buf.write_byte((i * 29 % 251).to_byte())
     buf.write_bytes(b"|")
@@ -451,10 +451,10 @@ test "higher explicit zstd levels use broader search tiers" {
 }
 
 ///|
-test "very high zstd levels retain deeper archived candidates" {
+test "deepest zstd levels retain a larger archived candidate set" {
   let data = zstd_archive_depth_fixture()
-  let shallower = @zstd.compress(data, level=Level(22))
-  let deeper = @zstd.compress(data, level=Level(26))
+  let shallower = @zstd.compress(data, level=Level(26))
+  let deeper = @zstd.compress(data, level=Level(30))
   assert_eq(@zstd.decompress(shallower), data)
   assert_eq(@zstd.decompress(deeper), data)
   assert_true(deeper.length() <= shallower.length())

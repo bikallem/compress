@@ -242,7 +242,7 @@ const ZSTD_HASH_SIZE : Int = 16384
 const ZSTD_MAX_HASH_CANDIDATES : Int = 16
 
 ///|
-const ZSTD_MAX_HASH_ARCHIVE_CANDIDATES : Int = 4
+const ZSTD_MAX_HASH_ARCHIVE_CANDIDATES : Int = 8
 
 ///|
 const ZSTD_MIN_MATCH : Int = 4
@@ -336,11 +336,18 @@ fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
           nice_match: 192,
           archive_candidates: 2,
         }
-      } else {
+      } else if n <= 27 {
         {
           lazy_steps: 5,
           max_hash_candidates: 16,
           nice_match: 192,
+          archive_candidates: 4,
+        }
+      } else {
+        {
+          lazy_steps: 6,
+          max_hash_candidates: 16,
+          nice_match: 224,
           archive_candidates: ZSTD_MAX_HASH_ARCHIVE_CANDIDATES,
         }
       }

@@ -248,7 +248,7 @@ fn zstd_archive_fixture() -> Bytes {
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let buf = @blit.Buffer::new()
   buf.write_bytes(long)
-  for i in 0..<19 {
+  for i in 0..<23 {
     buf.write_bytes(b"ABCDzzzz")
     buf.write_byte((i % 251).to_byte())
     buf.write_bytes(b"|")
@@ -258,7 +258,7 @@ fn zstd_archive_fixture() -> Bytes {
 }
 
 ///|
-test "zstd deeper archive search can recover candidates after multiple evictions" {
+test "zstd deepest archive tier can recover candidates after many evictions" {
   let data = zstd_archive_fixture()
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let src = data[:]
@@ -272,7 +272,7 @@ test "zstd deeper archive search can recover candidates after multiple evictions
   )
   let starts : Array[Int] = [0]
   let mut pos = long.length()
-  for _ in 0..<19 {
+  for _ in 0..<23 {
     starts.push(pos)
     pos += 10
   }
@@ -286,7 +286,7 @@ test "zstd deeper archive search can recover candidates after multiple evictions
     )
   }
   let hash = zstd_hash(src, ip)
-  let shallow_archive = find_best_match(
+  let medium_archive = find_best_match(
     src,
     ip,
     data.length(),
@@ -298,7 +298,7 @@ test "zstd deeper archive search can recover candidates after multiple evictions
       lazy_steps: 4,
       max_hash_candidates: 12,
       nice_match: 160,
-      archive_candidates: 1,
+      archive_candidates: 4,
     },
   )
   let deep_archive = find_best_match(
@@ -310,13 +310,13 @@ test "zstd deeper archive search can recover candidates after multiple evictions
     hash,
     [1, 4, 8],
     {
-      lazy_steps: 5,
+      lazy_steps: 6,
       max_hash_candidates: 16,
-      nice_match: 192,
-      archive_candidates: 4,
+      nice_match: 224,
+      archive_candidates: 8,
     },
   )
-  assert_true(deep_archive.length > shallow_archive.length)
+  assert_true(deep_archive.length > medium_archive.length)
 }
 
 ///|
