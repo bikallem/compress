@@ -198,7 +198,7 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   // For data larger than max metablock size, split into independent chunks.
   // Each chunk is compressed separately as its own metablock.
   if src_len > MAX_METABLOCK_SIZE {
-    return compress_lz77_chunked(src, src_len)
+    return compress_lz77_chunked(src, src_len, level)
   }
   let wbits = optimal_wbits(src_len)
   let cmds = if level <= 1 {
@@ -339,8 +339,9 @@ fn brotli_choose_split_end(
 }
 
 ///|
-/// Compress large data by splitting into independently-compressed metablocks.
-fn compress_lz77_chunked(src : BytesView, src_len : Int) -> Bytes {
+/// Compress large data by splitting into independently-compressed metablocks
+/// while preserving the requested tuning level across chunk boundaries.
+fn compress_lz77_chunked(src : BytesView, src_len : Int, level : Int) -> Bytes {
   let wbits = optimal_wbits(src_len)
   let bw = BitWriter::new(1048576)
   encode_wbits(bw, wbits)
@@ -356,8 +357,15 @@ fn compress_lz77_chunked(src : BytesView, src_len : Int) -> Bytes {
     let is_last = offset + chunk_size >= src_len
     let chunk = src[offset:offset + chunk_size]
     let prefix = history.to_bytes()
-    let cmds = lz77_find_matches_with_prefix(chunk, chunk_size, prefix[:])
-    encode_metablock_into(bw, chunk, chunk_size, cmds, 1, is_last, prev_byte)
+    encode_stream_chunk_into(
+      bw,
+      chunk,
+      chunk_size,
+      level,
+      is_last,
+      prefix[:],
+      prev_byte,
+    )
     history = append_brotli_history(history, chunk)
     prev_byte = chunk.unsafe_get(chunk.length() - 1).to_int()
     offset += chunk_size

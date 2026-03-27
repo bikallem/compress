@@ -144,3 +144,47 @@ test "brotli split candidate can beat a single metablock" {
   assert_eq(decompress(single), data)
   assert_true(split.length() <= single.length())
 }
+
+///|
+fn brotli_chunked_tuning_fixture() -> Bytes {
+  let buf = @blit.Buffer::new()
+  for i in 0..<150 {
+    buf.write_bytes(
+      b"function return value status code request header response payload authorization accept-language cache-control x-request-id content-type transfer-encoding if-none-match\n",
+    )
+    buf.write_byte((i % 251).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  for i in 0..<150 {
+    buf.write_bytes(
+      b"<div class=\"content\"><span class=\"title\">render component layout container flex justify-center items-start border rounded shadow-sm bg-slate-100</span><a href=\"https://example.com/docs/index.html\">docs</a></div>\n",
+    )
+    buf.write_byte((i * 17 % 251).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  for i in 0..<150 {
+    buf.write_bytes(
+      b"{\"status\":\"ok\",\"message\":\"stream update applied\",\"request_id\":\"abc123\",\"payload\":{\"items\":[1,2,3,4],\"feature\":\"brotli\",\"retry_after\":0,\"accepted\":true}}\n",
+    )
+    buf.write_byte((i * 31 % 251).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  for i in 0..<150 {
+    buf.write_bytes(
+      b".layout-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:1rem;padding:1.5rem;background:linear-gradient(90deg,#eee,#ddd);font-weight:600;letter-spacing:.02em}\n",
+    )
+    buf.write_byte((i * 47 % 251).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  buf.to_bytes()
+}
+
+///|
+test "brotli chunked encoder preserves higher-level tuning" {
+  let data = brotli_chunked_tuning_fixture()
+  let level1 = compress_lz77_chunked(data[:], data.length(), 1)
+  let level11 = compress_lz77_chunked(data[:], data.length(), 11)
+  assert_eq(decompress(level1), data)
+  assert_eq(decompress(level11), data)
+  assert_true(level11.length() < level1.length())
+}
