@@ -62,6 +62,55 @@ test "brotli transformed dictionary matches omitted prefixes and suffixes" {
 }
 
 ///|
+priv struct BrotliTransformFixture {
+  out : Bytes
+}
+
+///|
+fn brotli_transform_fixture(transform_idx : Int) -> BrotliTransformFixture? {
+  for length in dict_min_word_length..<=dict_max_word_length {
+    let shift = dict_size_bits_by_length[length]
+    if shift <= 0 {
+      continue
+    }
+    let count = 1 << shift
+    for word_idx in 0..<count {
+      let offset = dict_word_offset(length, word_idx)
+      let tmp = FixedArray::make(length + 16, b'\x00')
+      let out_len = transform_dictionary_word(
+        tmp, 0, brotli_dictionary_data, offset, length, transform_idx,
+      )
+      if out_len >= 4 {
+        let out = Bytes::makei(out_len, fn(i) { tmp[i] })
+        return Some({ out, })
+      }
+    }
+  }
+  None
+}
+
+///|
+test "brotli transformed dictionary search covers all transform ids" {
+  for transform_idx in 1..<121 {
+    match brotli_transform_fixture(transform_idx) {
+      Some(fixture) => {
+        let (length, copy_len, distance) = find_transformed_dictionary_match(
+          fixture.out[:],
+          0,
+          fixture.out.length(),
+          0,
+          0,
+        )
+        assert_eq(length, fixture.out.length())
+        assert_true(copy_len >= 4)
+        assert_true(distance > 0)
+      }
+      None => fail("expected Brotli transform fixture")
+    }
+  }
+}
+
+///|
 fn brotli_split_fixture() -> Bytes {
   let buf = @blit.Buffer::new()
   for i in 0..<128 {

@@ -1,9 +1,9 @@
 ///|
 /// Compresses data using the Brotli format.
 /// Uses uncompressed meta-blocks at level 0, LZ77+Huffman at higher levels.
-/// The encoder uses metablock splitting heuristics at higher levels and a
-/// bounded subset of static-dictionary transforms, but still does not match
-/// the full transform/block-splitting space of upstream Brotli encoders.
+/// The encoder uses metablock splitting heuristics at higher levels and
+/// searches the RFC Brotli static-dictionary transform space, but it still
+/// does not match upstream encoder block-splitting/tuning heuristics.
 pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   let lvl = compression_level_to_int(level)
   let src = data[:]
@@ -608,23 +608,71 @@ priv struct BrotliTransformSearch {
 }
 
 ///|
-fn ascii_fold_byte(b : Byte) -> Byte {
-  let v = b.to_int()
-  if v >= 0x41 && v <= 0x5A {
-    (v + 0x20).to_byte()
-  } else {
-    b
+priv struct BrotliShortTransformIndex {
+  heads : FixedArray[Int]
+  next : Array[Int]
+  outputs : Array[Bytes]
+  word_lens : Array[Int]
+  word_idxs : Array[Int]
+  transform_idxs : Array[Int]
+}
+
+///|
+fn brotli_casefold_char(buf : FixedArray[Byte], pos : Int) -> Int {
+  let b = buf.unsafe_get(pos).to_int()
+  if b < 0x80 {
+    if b >= 0x41 && b <= 0x5A {
+      buf.unsafe_set(pos, (b + 0x20).to_byte())
+    }
+    return 1
   }
+  if b < 0xC0 {
+    return 1
+  }
+  if b < 0xE0 {
+    buf.unsafe_set(pos + 1, (buf.unsafe_get(pos + 1).to_int() & 0xDF).to_byte())
+    return 2
+  }
+  buf.unsafe_set(pos + 2, (buf.unsafe_get(pos + 2).to_int() & 0xFA).to_byte())
+  3
+}
+
+///|
+fn brotli_hash4_casefold_bytes(
+  b0 : Byte,
+  b1 : Byte,
+  b2 : Byte,
+  b3 : Byte,
+) -> Int {
+  let tmp = FixedArray::make(4, b'\x00')
+  tmp.unsafe_set(0, b0)
+  tmp.unsafe_set(1, b1)
+  tmp.unsafe_set(2, b2)
+  tmp.unsafe_set(3, b3)
+  let mut pos = 0
+  while pos < 4 {
+    let step = brotli_casefold_char(tmp, pos)
+    if step <= 0 {
+      break
+    }
+    pos += step
+  }
+  let v = tmp.unsafe_get(0).to_uint() |
+    (tmp.unsafe_get(1).to_uint() << 8) |
+    (tmp.unsafe_get(2).to_uint() << 16) |
+    (tmp.unsafe_get(3).to_uint() << 24)
+  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
+  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
 }
 
 ///|
 fn brotli_hash4_ascii_fold(src : BytesView, pos : Int) -> Int {
-  let v = ascii_fold_byte(src.unsafe_get(pos)).to_uint() |
-    (ascii_fold_byte(src.unsafe_get(pos + 1)).to_uint() << 8) |
-    (ascii_fold_byte(src.unsafe_get(pos + 2)).to_uint() << 16) |
-    (ascii_fold_byte(src.unsafe_get(pos + 3)).to_uint() << 24)
-  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
-  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
+  brotli_hash4_casefold_bytes(
+    src.unsafe_get(pos),
+    src.unsafe_get(pos + 1),
+    src.unsafe_get(pos + 2),
+    src.unsafe_get(pos + 3),
+  )
 }
 
 ///|
@@ -639,12 +687,12 @@ fn brotli_hash4_dict(src : FixedArray[Byte], pos : Int) -> Int {
 
 ///|
 fn brotli_hash4_dict_ascii_fold(src : FixedArray[Byte], pos : Int) -> Int {
-  let v = ascii_fold_byte(src.unsafe_get(pos)).to_uint() |
-    (ascii_fold_byte(src.unsafe_get(pos + 1)).to_uint() << 8) |
-    (ascii_fold_byte(src.unsafe_get(pos + 2)).to_uint() << 16) |
-    (ascii_fold_byte(src.unsafe_get(pos + 3)).to_uint() << 24)
-  let mixed = (v & 0xFFFFFFU) ^ (((v >> 16) & 0xFFU) * 0x1e35a7bdU)
-  mixed.reinterpret_as_int() & (BROTLI_HASH_SIZE - 1)
+  brotli_hash4_casefold_bytes(
+    src.unsafe_get(pos),
+    src.unsafe_get(pos + 1),
+    src.unsafe_get(pos + 2),
+    src.unsafe_get(pos + 3),
+  )
 }
 
 ///|
@@ -795,6 +843,61 @@ let brotli_omit_first_dict_index : BrotliDictionaryIndex = build_brotli_omit_fir
 let brotli_transform_searches : Array[BrotliTransformSearch] = build_brotli_transform_searches()
 
 ///|
+fn build_brotli_short_transform_index() -> BrotliShortTransformIndex {
+  let heads = FixedArray::make(BROTLI_HASH_SIZE, -1)
+  let next : Array[Int] = []
+  let outputs : Array[Bytes] = []
+  let word_lens : Array[Int] = []
+  let word_idxs : Array[Int] = []
+  let transform_idxs : Array[Int] = []
+  for transform in brotli_transform_searches {
+    if transform.omit_first == 0 && transform.omit_last == 0 {
+      continue
+    }
+    for word_len in dict_min_word_length..<=dict_max_word_length {
+      let shift = dict_size_bits_by_length.unsafe_get(word_len)
+      if shift <= 0 {
+        continue
+      }
+      let body_len = word_len - transform.omit_first - transform.omit_last
+      if body_len >= 4 {
+        continue
+      }
+      let out_len = transform.prefix_len + body_len + transform.suffix_len
+      if out_len < 4 {
+        continue
+      }
+      let count = 1 << shift
+      for word_idx in 0..<count {
+        let dict_offset = dict_word_offset(word_len, word_idx)
+        let temp = FixedArray::make(out_len + 8, b'\x00')
+        let produced = transform_dictionary_word(
+          temp,
+          0,
+          brotli_dictionary_data,
+          dict_offset,
+          word_len,
+          transform.transform_idx,
+        )
+        if produced != out_len {
+          continue
+        }
+        let output = Bytes::makei(out_len, fn(i) { temp[i] })
+        let hash = brotli_hash4(output[:], 0)
+        let entry = outputs.length()
+        next.push(heads.unsafe_get(hash))
+        heads.unsafe_set(hash, entry)
+        outputs.push(output)
+        word_lens.push(word_len)
+        word_idxs.push(word_idx)
+        transform_idxs.push(transform.transform_idx)
+      }
+    }
+  }
+  { heads, next, outputs, word_lens, word_idxs, transform_idxs }
+}
+
+///|
 fn brotli_dictionary_distance(
   word_len : Int,
   word_idx : Int,
@@ -804,6 +907,9 @@ fn brotli_dictionary_distance(
   let shift = dict_size_bits_by_length.unsafe_get(word_len)
   max_dist + 1 + word_idx + (transform_idx << shift)
 }
+
+///|
+let brotli_short_transform_index : BrotliShortTransformIndex = build_brotli_short_transform_index()
 
 ///|
 fn find_identity_dictionary_match(
@@ -933,6 +1039,35 @@ fn find_transformed_dictionary_match(
       }
       entry = index.next.unsafe_get(entry)
     }
+  }
+  let hash = brotli_hash4(src, pos)
+  let mut short_entry = brotli_short_transform_index.heads.unsafe_get(hash)
+  while short_entry >= 0 {
+    let output = brotli_short_transform_index.outputs.unsafe_get(short_entry)
+    let out_len = output.length()
+    if out_len > best_len && pos + out_len <= src_len {
+      let mut matches = true
+      for i in 0..<out_len {
+        if src.unsafe_get(pos + i) != output.unsafe_get(i) {
+          matches = false
+          break
+        }
+      }
+      if matches {
+        let word_len = brotli_short_transform_index.word_lens.unsafe_get(
+          short_entry,
+        )
+        best_len = out_len
+        best_copy_len = word_len
+        best_dist = brotli_dictionary_distance(
+          word_len,
+          brotli_short_transform_index.word_idxs.unsafe_get(short_entry),
+          brotli_short_transform_index.transform_idxs.unsafe_get(short_entry),
+          max_dist,
+        )
+      }
+    }
+    short_entry = brotli_short_transform_index.next.unsafe_get(short_entry)
   }
   if best_dist > 0 {
     (best_len, best_copy_len, best_dist)
