@@ -185,7 +185,9 @@ fn build_dictionary_set(
     }
     formatted.push(parsed)
   }
-  { raws, reuse_single_raw: raws.length() <= 1, formatted }
+  let reuse_single_raw = raws.length() == 1 &&
+    raws.unsafe_get(0).content.length() > 0
+  { raws, reuse_single_raw, formatted }
 }
 
 ///|

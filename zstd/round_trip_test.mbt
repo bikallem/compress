@@ -419,6 +419,19 @@ test "zstd concatenated raw-dictionary decode fails when a later slot is missing
 }
 
 ///|
+test "zstd lone empty raw placeholder fails selection for later raw frame" {
+  let dict = raw_dict_fixture()
+  let plain = b"plain frame before raw dictionary frame"
+  let raw = dict + b" raw payload that requires the dictionary"
+  let combined = @zstd.compress(plain) + @zstd.compress(raw, dict~)
+  let result = try? @zstd.decompress_with_dictionaries(combined, [b""])
+  match result {
+    Err(ZstdError::InvalidHeader(_)) => ()
+    _ => fail("expected lone empty raw placeholder to exhaust before raw frame")
+  }
+}
+
+///|
 test "streaming zstd inflater can select raw dictionaries per concatenated frame order" {
   let dict1 = raw_dict_fixture()
   let dict2 = Bytes::makei(dict1.length(), fn(i) {
@@ -447,6 +460,28 @@ test "streaming zstd inflater can select raw dictionaries per concatenated frame
     Error(e) => raise e
   }
   assert_eq(buf.to_bytes(), data1 + plain + data2)
+}
+
+///|
+test "streaming zstd lone empty raw placeholder fails before later raw frame decode" {
+  let dict = raw_dict_fixture()
+  let plain = b"plain frame before raw dictionary frame"
+  let raw = dict + b" streaming raw payload that requires the dictionary"
+  let combined = @zstd.compress(plain) + @zstd.compress(raw, dict~)
+  let d = @zstd.Inflater::new_with_dictionaries([b""])
+  let buf = @blit.Buffer::new()
+  d.src(combined[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with full input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => fail("expected raw-dictionary slot exhaustion")
+    Error(ZstdError::InvalidHeader(_)) => break
+    Error(e) => fail("expected InvalidHeader for raw slot exhaustion, got \{e}")
+  }
+  assert_eq(buf.to_bytes(), plain)
 }
 
 ///|

@@ -33,8 +33,9 @@ pub fn decompress(
 ///|
 /// Decompresses concatenated Zstandard frames using a registry of candidate
 /// dictionaries. Formatted dictionaries are selected per frame by dictionary
-/// id; `dict_id = 0` frames consume raw dictionary slots in order, and empty
-/// byte slices can be used as explicit plain-frame placeholders in that order.
+/// id; `dict_id = 0` frames consume raw dictionary slots in order, except that
+/// a single non-empty raw dictionary is reused for every such frame. Empty
+/// byte slices act as one-shot plain-frame placeholders in the ordered slots.
 pub fn decompress_with_dictionaries(
   data : Bytes,
   dicts : Array[Bytes],
