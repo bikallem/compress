@@ -286,6 +286,28 @@ test "zstd formatted frame rejects malformed fallback dictionary" {
 }
 
 ///|
+test "plain zstd frame rejects malformed formatted dictionary on one-shot decode" {
+  let valid = formatted_dict_fixture()
+  let malformed = Bytes::makei(32, fn(i) { valid[i] })
+  let compressed = @zstd.compress(b"plain frame with no dictionary", level=Best)
+  let result = try? @zstd.decompress(compressed, dict=malformed)
+  guard result is Err(_) else {
+    fail("expected malformed formatted dictionary to fail closed on decode")
+  }
+}
+
+///|
+test "streaming zstd inflater rejects malformed formatted dictionary before decode" {
+  let valid = formatted_dict_fixture()
+  let malformed = Bytes::makei(32, fn(i) { valid[i] })
+  let d = @zstd.Inflater::new(dict=malformed)
+  match d.decode() {
+    Error(_) => ()
+    _ => fail("expected malformed formatted dictionary to fail before decode")
+  }
+}
+
+///|
 test "plain zstd frame ignores unrelated formatted dictionary" {
   let data = Bytes::makei(8192, fn(i) {
     if i % 29 < 7 {
@@ -354,6 +376,77 @@ test "streaming zstd inflater can select dictionaries per concatenated frame" {
     Error(e) => raise e
   }
   assert_eq(buf.to_bytes(), data1 + data2 + data3)
+}
+
+///|
+test "zstd can select raw dictionaries per concatenated frame order" {
+  let dict1 = raw_dict_fixture()
+  let dict2 = Bytes::makei(dict1.length(), fn(i) {
+    if i % 17 < 9 {
+      b'R'
+    } else {
+      (97 + i * 13 % 26).to_byte()
+    }
+  })
+  let data1 = dict1 + b" first raw dictionary payload"
+  let plain = b"plain frame between raw dictionary frames"
+  let data2 = dict2 + b" second raw dictionary payload"
+  let combined = @zstd.compress(data1, dict=dict1) +
+    @zstd.compress(plain) +
+    @zstd.compress(data2, dict=dict2)
+  let decoded = @zstd.decompress_with_dictionaries(combined, [dict1, b"", dict2])
+  assert_eq(decoded, data1 + plain + data2)
+}
+
+///|
+test "zstd concatenated raw-dictionary decode fails when a later slot is missing" {
+  let dict1 = raw_dict_fixture()
+  let dict2 = Bytes::makei(dict1.length(), fn(i) {
+    if i % 19 < 8 {
+      b'S'
+    } else {
+      (65 + i * 11 % 26).to_byte()
+    }
+  })
+  let combined = @zstd.compress(dict1 + b" first raw payload", dict=dict1) +
+    @zstd.compress(b"plain middle frame") +
+    @zstd.compress(dict2 + b" second raw payload", dict=dict2)
+  let result = try? @zstd.decompress_with_dictionaries(combined, [dict1, b""])
+  match result {
+    Err(ZstdError::InvalidHeader(_)) => ()
+    _ => fail("expected later raw-dictionary slot exhaustion to fail")
+  }
+}
+
+///|
+test "streaming zstd inflater can select raw dictionaries per concatenated frame order" {
+  let dict1 = raw_dict_fixture()
+  let dict2 = Bytes::makei(dict1.length(), fn(i) {
+    if i % 23 < 11 {
+      b'T'
+    } else {
+      (48 + i * 7 % 10).to_byte()
+    }
+  })
+  let data1 = dict1 + b" streaming raw payload one"
+  let plain = b"plain frame between streaming raw frames"
+  let data2 = dict2 + b" streaming raw payload two"
+  let combined = @zstd.compress(data1, dict=dict1) +
+    @zstd.compress(plain) +
+    @zstd.compress(data2, dict=dict2)
+  let d = @zstd.Inflater::new_with_dictionaries([dict1, b"", dict2])
+  let buf = @blit.Buffer::new()
+  d.src(combined[:])
+  loop d.decode() {
+    Await => fail("unexpected Await with full input")
+    Data(chunk) => {
+      buf.write_bytesview(chunk)
+      continue d.decode()
+    }
+    End => break
+    Error(e) => raise e
+  }
+  assert_eq(buf.to_bytes(), data1 + plain + data2)
 }
 
 ///|

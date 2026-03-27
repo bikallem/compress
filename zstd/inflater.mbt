@@ -17,6 +17,7 @@ priv struct InflaterState {
   mut sink : @blit.Buffer?
   mut pending_output : Bytes?
   dicts : ZstdDictionarySet
+  mut next_raw_dict : Int
   mut frame_dict : ZstdDictionary
   mut header : ZstdFrameHeader?
   mut prev_lit_table : ZstdHuffmanTable?
@@ -32,25 +33,33 @@ struct Inflater(InflaterState)
 
 ///|
 pub fn Inflater::new(dict? : Bytes = Bytes::default()) -> Inflater {
-  inflate_with_dictionary_set(single_dictionary_set(dict))
+  let parsed = try? single_dictionary_set(dict)
+  match parsed {
+    Ok(dicts) => inflate_with_dictionary_set(dicts, None)
+    Err(e) => inflate_with_dictionary_set(empty_dictionary_set(), Some(e))
+  }
 }
 
 ///|
 pub fn Inflater::new_with_dictionaries(
   dicts : Array[Bytes],
 ) -> Inflater raise ZstdError {
-  inflate_with_dictionary_set(build_dictionary_set(dicts))
+  inflate_with_dictionary_set(build_dictionary_set(dicts), None)
 }
 
 ///|
-fn inflate_with_dictionary_set(dicts : ZstdDictionarySet) -> Inflater {
+fn inflate_with_dictionary_set(
+  dicts : ZstdDictionarySet,
+  failed : ZstdError?,
+) -> Inflater {
   Inflater({
     input_buf: @blit.Buffer::new(),
     input_pos: 0,
     phase: FrameHeader,
-    failed: None,
+    failed,
     sink: None,
     pending_output: None,
+    next_raw_dict: 0,
     frame_dict: empty_dictionary(),
     dicts,
     header: None,
@@ -120,10 +129,15 @@ pub fn Inflater::decode(self : Inflater) -> Decode {
           Error(e) => return fail_inflater(s, e)
           Parsed(header, consumed) => {
             s.xxh.reset()
-            let frame_dict = select_frame_dictionary(s.dicts, header.dict_id) catch {
+            let (frame_dict, next_raw_dict) = select_frame_dictionary(
+              s.dicts,
+              header.dict_id,
+              s.next_raw_dict,
+            ) catch {
               e => return fail_inflater(s, e)
             }
             s.input_pos += consumed
+            s.next_raw_dict = next_raw_dict
             s.frame_dict = frame_dict
             s.header = Some(header)
             s.prev_lit_table = frame_dict.lit_table

@@ -13,6 +13,8 @@ priv struct SeqTables {
 
 ///|
 /// Decompresses Zstandard-encoded data.
+/// Malformed formatted dictionaries are rejected instead of being treated as
+/// raw-content dictionaries.
 pub fn decompress(
   data : Bytes,
   dict? : Bytes = Bytes::default(),
@@ -30,8 +32,9 @@ pub fn decompress(
 
 ///|
 /// Decompresses concatenated Zstandard frames using a registry of candidate
-/// dictionaries. At most one raw dictionary may be supplied; formatted
-/// dictionaries are selected per frame by dictionary id.
+/// dictionaries. Formatted dictionaries are selected per frame by dictionary
+/// id; `dict_id = 0` frames consume raw dictionary slots in order, and empty
+/// byte slices can be used as explicit plain-frame placeholders in that order.
 pub fn decompress_with_dictionaries(
   data : Bytes,
   dicts : Array[Bytes],

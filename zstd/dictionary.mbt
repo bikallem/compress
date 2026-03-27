@@ -9,7 +9,8 @@ priv struct ZstdDictionary {
 
 ///|
 priv struct ZstdDictionarySet {
-  raw : ZstdDictionary
+  raws : Array[ZstdDictionary]
+  reuse_single_raw : Bool
   formatted : Array[ZstdDictionary]
 }
 
@@ -46,7 +47,9 @@ fn copy_rep_offsets(rep : Array[Int]) -> Array[Int] {
 }
 
 ///|
-fn parse_dictionary_bytes(dict : Bytes) -> ZstdDictionary {
+fn parse_dictionary_for_single_decode(
+  dict : Bytes,
+) -> ZstdDictionary raise ZstdError {
   if dict.length() == 0 {
     return empty_dictionary()
   }
@@ -58,11 +61,12 @@ fn parse_dictionary_bytes(dict : Bytes) -> ZstdDictionary {
   if magic != 0xEC30A437_U {
     return raw_dictionary(dict)
   }
-  let parsed = try? parse_formatted_dictionary_bytes(dict)
-  match parsed {
-    Ok(formatted) => formatted
-    Err(_) => raw_dictionary(dict)
-  }
+  parse_formatted_dictionary_bytes(dict)
+}
+
+///|
+fn empty_dictionary_set() -> ZstdDictionarySet {
+  { raws: [], reuse_single_raw: true, formatted: [] }
 }
 
 ///|
@@ -132,15 +136,15 @@ fn parse_dictionary_for_encoder(dict : Bytes) -> ZstdDictionary raise ZstdError 
 }
 
 ///|
-fn single_dictionary_set(dict : Bytes) -> ZstdDictionarySet {
+fn single_dictionary_set(dict : Bytes) -> ZstdDictionarySet raise ZstdError {
   if dict.length() == 0 {
-    return { raw: empty_dictionary(), formatted: [] }
+    return empty_dictionary_set()
   }
-  let parsed = parse_dictionary_bytes(dict)
+  let parsed = parse_dictionary_for_single_decode(dict)
   if parsed.dict_id == 0U {
-    { raw: parsed, formatted: [] }
+    { raws: [parsed], reuse_single_raw: true, formatted: [] }
   } else {
-    { raw: empty_dictionary(), formatted: [parsed] }
+    { raws: [], reuse_single_raw: true, formatted: [parsed] }
   }
 }
 
@@ -166,20 +170,12 @@ fn parse_dictionary_for_registry(
 fn build_dictionary_set(
   dicts : Array[Bytes],
 ) -> ZstdDictionarySet raise ZstdError {
-  let mut raw = empty_dictionary()
+  let raws : Array[ZstdDictionary] = []
   let formatted : Array[ZstdDictionary] = []
   for dict in dicts {
-    if dict.length() == 0 {
-      continue
-    }
     let parsed = parse_dictionary_for_registry(dict)
     if parsed.dict_id == 0U {
-      if raw.content.length() > 0 {
-        raise ZstdError::InvalidHeader(
-          "multiple raw dictionaries are not supported",
-        )
-      }
-      raw = parsed
+      raws.push(parsed)
       continue
     }
     for existing in formatted {
@@ -189,20 +185,30 @@ fn build_dictionary_set(
     }
     formatted.push(parsed)
   }
-  { raw, formatted }
+  { raws, reuse_single_raw: raws.length() <= 1, formatted }
 }
 
 ///|
 fn select_frame_dictionary(
   dicts : ZstdDictionarySet,
   dict_id : UInt,
-) -> ZstdDictionary raise ZstdError {
+  raw_idx : Int,
+) -> (ZstdDictionary, Int) raise ZstdError {
   if dict_id == 0U {
-    return dicts.raw
+    if dicts.raws.length() == 0 {
+      return (empty_dictionary(), raw_idx)
+    }
+    if dicts.reuse_single_raw {
+      return (dicts.raws.unsafe_get(0), raw_idx)
+    }
+    if raw_idx < dicts.raws.length() {
+      return (dicts.raws.unsafe_get(raw_idx), raw_idx + 1)
+    }
+    raise ZstdError::InvalidHeader("raw dictionary registry exhausted")
   }
   for dict in dicts.formatted {
     if dict.dict_id == dict_id {
-      return dict
+      return (dict, raw_idx)
     }
   }
   raise ZstdError::InvalidHeader(
