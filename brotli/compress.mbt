@@ -933,10 +933,20 @@ fn brotli_casefold_char(buf : FixedArray[Byte], pos : Int) -> Int {
     return 1
   }
   if b < 0xE0 {
-    buf.unsafe_set(pos + 1, (buf.unsafe_get(pos + 1).to_int() & 0xDF).to_byte())
+    if pos + 1 < buf.length() {
+      buf.unsafe_set(
+        pos + 1,
+        (buf.unsafe_get(pos + 1).to_int() & 0xDF).to_byte(),
+      )
+    }
     return 2
   }
-  buf.unsafe_set(pos + 2, (buf.unsafe_get(pos + 2).to_int() & 0xFA).to_byte())
+  if pos + 2 < buf.length() {
+    buf.unsafe_set(
+      pos + 2,
+      (buf.unsafe_get(pos + 2).to_int() & 0xFA).to_byte(),
+    )
+  }
   3
 }
 
