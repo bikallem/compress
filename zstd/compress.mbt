@@ -23,14 +23,8 @@ pub fn compress(
   xxh.update(src)
   if src_len == 0 {
     pos = write_block_header_fixed(out, pos, true, BLOCK_TYPE_RAW, 0)
-  } else if parsed_dict.dict_id == 0U && is_all_same(src) {
-    let block_header = 1 | (BLOCK_TYPE_RLE << 1) | (src_len << 3)
-    out.unsafe_set(pos, (block_header & 0xFF).to_byte())
-    out.unsafe_set(pos + 1, ((block_header >> 8) & 0xFF).to_byte())
-    out.unsafe_set(pos + 2, ((block_header >> 16) & 0xFF).to_byte())
-    pos += 3
-    out.unsafe_set(pos, src.unsafe_get(0))
-    pos += 1
+  } else if is_all_same(src) {
+    pos = write_rle_blocks_fixed(out, pos, src_len, src.unsafe_get(0))
   } else {
     let (sequences, literals, lit_count) = find_sequences_with_prefix(
       src,
@@ -38,64 +32,20 @@ pub fn compress(
       copy_rep_offsets(parsed_dict.rep),
       level,
     )
-    if sequences.length() == 0 {
-      let mut src_pos = 0
-      while src_pos < src_len {
-        let block_end = if src_pos + MAX_BLOCK_SIZE < src_len {
-          src_pos + MAX_BLOCK_SIZE
-        } else {
-          src_len
-        }
-        let block_len = block_end - src_pos
-        let is_last = block_end == src_len
-        let block_bytes = src[src_pos:block_end]
-        if is_all_same(block_bytes) {
-          pos = write_block_header_fixed(
-            out,
-            pos,
-            is_last,
-            BLOCK_TYPE_RLE,
-            block_len,
-          )
-          out.unsafe_set(pos, block_bytes.unsafe_get(0))
-          pos += 1
-          src_pos = block_end
-          continue
-        }
-        let block_literals = fixed_array_from_bytesview(block_bytes)
-        let comp_buf = FixedArray::make(block_len * 2 + 64, b'\x00')
-        let (comp_size, next_lit, next_seq) = compress_literal_only_block(
-          block_literals, 0, block_len, comp_buf, prev_lit_table, prev_seq_tables,
-        )
-        if comp_size > 0 && comp_size < block_len {
-          pos = write_block_header_fixed(
-            out,
-            pos,
-            is_last,
-            BLOCK_TYPE_COMPRESSED,
-            comp_size,
-          )
-          for i in 0..<comp_size {
-            out.unsafe_set(pos + i, comp_buf.unsafe_get(i))
-          }
-          pos += comp_size
-          prev_lit_table = next_lit
-          prev_seq_tables = next_seq
-        } else {
-          pos = write_block_header_fixed(
-            out,
-            pos,
-            is_last,
-            BLOCK_TYPE_RAW,
-            block_len,
-          )
-          for i in 0..<block_len {
-            out.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
-          }
-          pos += block_len
-        }
-        src_pos = block_end
+    if zstd_should_prefer_literal_only_body(sequences, src_len) {
+      let body = encode_literal_only_frame_body(
+        src,
+        src_len,
+        zstd_best_literal_only_block_target(
+          src, src_len, level, prev_lit_table, prev_seq_tables,
+        ),
+        prev_lit_table,
+        prev_seq_tables,
+      )
+      for i in 0..<body.length() {
+        out.unsafe_set(pos + i, body[i])
       }
+      pos += body.length()
     } else {
       let split_seqs : Array[ZstdSequence] = []
       for i in 0..<sequences.length() {
@@ -209,6 +159,174 @@ pub fn compress(
 }
 
 ///|
+fn zstd_should_prefer_literal_only_body(
+  sequences : Array[ZstdSequence],
+  src_len : Int,
+) -> Bool {
+  if sequences.length() == 0 {
+    return true
+  }
+  if sequences.length() > 16 {
+    return false
+  }
+  let mut matched = 0
+  for seq in sequences {
+    matched += seq.match_len
+  }
+  matched <= src_len / 32
+}
+
+///|
+fn zstd_best_literal_only_block_target(
+  src : BytesView,
+  src_len : Int,
+  level : CompressionLevel,
+  prev_lit_table : ZstdHuffmanTable?,
+  prev_seq_tables : SeqTables?,
+) -> Int {
+  let targets = zstd_literal_only_block_targets(src_len, level)
+  let mut best_target = MAX_BLOCK_SIZE
+  let mut best_size = 1 << 30
+  for target in targets {
+    let size = encode_literal_only_frame_body(
+      src, src_len, target, prev_lit_table, prev_seq_tables,
+    ).length()
+    if size < best_size {
+      best_size = size
+      best_target = target
+    }
+  }
+  best_target
+}
+
+///|
+fn zstd_literal_only_block_targets(
+  src_len : Int,
+  level : CompressionLevel,
+) -> Array[Int] {
+  let targets : Array[Int] = [MAX_BLOCK_SIZE]
+  if src_len >= 65536 {
+    targets.push(65536)
+  }
+  match level {
+    Best => if src_len >= 32768 { targets.push(32768) }
+    Level(n) => {
+      if n >= 16 && src_len >= 32768 {
+        targets.push(32768)
+      }
+      if n >= 24 && src_len >= 16384 {
+        targets.push(16384)
+      }
+    }
+    _ => ()
+  }
+  targets
+}
+
+///|
+fn encode_literal_only_frame_body(
+  src : BytesView,
+  src_len : Int,
+  block_target : Int,
+  prev_lit_table : ZstdHuffmanTable?,
+  prev_seq_tables : SeqTables?,
+) -> Bytes {
+  let block_target = if block_target > MAX_BLOCK_SIZE {
+    MAX_BLOCK_SIZE
+  } else {
+    block_target
+  }
+  let buf = FixedArray::make(src_len * 2 + 256, b'\x00')
+  let mut pos = 0
+  let mut src_pos = 0
+  let mut lit_table = prev_lit_table
+  let mut seq_tables = prev_seq_tables
+  while src_pos < src_len {
+    let block_end = if src_pos + block_target < src_len {
+      src_pos + block_target
+    } else {
+      src_len
+    }
+    let block_len = block_end - src_pos
+    let is_last = block_end == src_len
+    let block_bytes = src[src_pos:block_end]
+    if is_all_same(block_bytes) {
+      pos = write_block_header_fixed(
+        buf,
+        pos,
+        is_last,
+        BLOCK_TYPE_RLE,
+        block_len,
+      )
+      buf.unsafe_set(pos, block_bytes.unsafe_get(0))
+      pos += 1
+      src_pos = block_end
+      continue
+    }
+    let block_literals = fixed_array_from_bytesview(block_bytes)
+    let comp_buf = FixedArray::make(block_len * 2 + 64, b'\x00')
+    let (comp_size, next_lit, next_seq) = compress_literal_only_block(
+      block_literals, 0, block_len, comp_buf, lit_table, seq_tables,
+    )
+    if comp_size > 0 && comp_size < block_len {
+      pos = write_block_header_fixed(
+        buf,
+        pos,
+        is_last,
+        BLOCK_TYPE_COMPRESSED,
+        comp_size,
+      )
+      for i in 0..<comp_size {
+        buf.unsafe_set(pos + i, comp_buf.unsafe_get(i))
+      }
+      pos += comp_size
+      lit_table = next_lit
+      seq_tables = next_seq
+    } else {
+      pos = write_block_header_fixed(
+        buf,
+        pos,
+        is_last,
+        BLOCK_TYPE_RAW,
+        block_len,
+      )
+      for i in 0..<block_len {
+        buf.unsafe_set(pos + i, src.unsafe_get(src_pos + i))
+      }
+      pos += block_len
+    }
+    src_pos = block_end
+  }
+  let out = @blit.make_uninit(pos)
+  @blit.blit_fixed_array(out, 0, buf, 0, pos)
+  out.unsafe_reinterpret_as_bytes()
+}
+
+///|
+fn write_rle_blocks_fixed(
+  out : FixedArray[Byte],
+  pos_ : Int,
+  total_len : Int,
+  value : Byte,
+) -> Int {
+  let mut pos = pos_
+  let mut remaining = total_len
+  while remaining > 0 {
+    let block_len = if remaining > MAX_BLOCK_SIZE {
+      MAX_BLOCK_SIZE
+    } else {
+      remaining
+    }
+    let is_last = remaining == block_len
+    pos = write_block_header_fixed(out, pos, is_last, BLOCK_TYPE_RLE, block_len)
+    out.unsafe_set(pos, value)
+    pos += 1
+    remaining -= block_len
+  }
+  pos
+}
+
+///|
 fn fixed_array_from_bytesview(data : BytesView) -> FixedArray[Byte] {
   FixedArray::makei(data.length(), fn(i) { data.unsafe_get(i) })
 }
@@ -290,10 +408,10 @@ fn zstd_search_config(level : CompressionLevel) -> ZstdSearchConfig {
       }
     Best =>
       {
-        lazy_steps: 4,
-        max_hash_candidates: 12,
-        nice_match: 160,
-        archive_candidates: 0,
+        lazy_steps: 5,
+        max_hash_candidates: 16,
+        nice_match: 192,
+        archive_candidates: 2,
       }
     Level(n) =>
       if n <= 1 {

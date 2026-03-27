@@ -222,6 +222,113 @@ test "brotli adaptive split candidates improve mid-sized heterogeneous input" {
 }
 
 ///|
+fn brotli_fifth_split_fixture() -> Bytes {
+  fn append_section(
+    buf : @blit.Buffer,
+    pattern : Bytes,
+    total_len : Int,
+  ) -> Unit {
+    let mut written = 0
+    while written < total_len {
+      let chunk_len = if written + pattern.length() <= total_len {
+        pattern.length()
+      } else {
+        total_len - written
+      }
+      buf.write_bytesview(pattern[:chunk_len])
+      written += chunk_len
+    }
+  }
+  let buf = @blit.Buffer::new()
+  append_section(
+    buf, b"function return value status code request header response payload\n",
+    32768,
+  )
+  append_section(
+    buf, b"<section class=\"panel\">layout grid container hero card shadow text</section>\n",
+    32768,
+  )
+  append_section(
+    buf, b"{\"service\":\"brotli\",\"route\":\"/v1/items\",\"status\":200,\"region\":\"eu-west-1\"}\n",
+    32768,
+  )
+  append_section(
+    buf, b".layout-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:1rem}\n",
+    32768,
+  )
+  append_section(
+    buf, b"TRACE shard=4 region=eu-west-1 path=/v1/items/42 elapsed_ms=17 cache=hit\n",
+    32768,
+  )
+  buf.to_bytes()
+}
+
+///|
+test "brotli fifth split candidates improve five-section heterogeneous input" {
+  let data = brotli_fifth_split_fixture()
+  let compressed = compress(data, level=Best)
+  let candidates = brotli_split_candidates(data.length())
+  let split40 = compress_lz77_split(data[:], data.length(), 11, 40960)
+  let split32 = compress_lz77_split(data[:], data.length(), 11, 32768)
+  assert_eq(decompress(compressed), data)
+  let mut has_32k = false
+  for candidate in candidates {
+    if candidate == 32768 {
+      has_32k = true
+    }
+  }
+  assert_true(has_32k)
+  assert_true(split32.length() < split40.length())
+  assert_true(compressed.length() <= split32.length())
+}
+
+///|
+fn brotli_schedule_fixture() -> Bytes {
+  fn append_section(
+    buf : @blit.Buffer,
+    pattern : Bytes,
+    total_len : Int,
+  ) -> Unit {
+    let mut written = 0
+    while written < total_len {
+      let chunk_len = if written + pattern.length() <= total_len {
+        pattern.length()
+      } else {
+        total_len - written
+      }
+      buf.write_bytesview(pattern[:chunk_len])
+      written += chunk_len
+    }
+  }
+  let buf = @blit.Buffer::new()
+  append_section(buf, b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}\n", 34816)
+  append_section(
+    buf, b"<section class=\"panel\">layout grid container hero card shadow text</section>\n",
+    30720,
+  )
+  append_section(
+    buf, b"{\"service\":\"brotli\",\"route\":\"/v1/items\",\"status\":200,\"region\":\"eu-west-1\"}\n",
+    32768,
+  )
+  append_section(
+    buf, b"TRACE shard=4 region=eu-west-1 path=/v1/items/42 elapsed_ms=17 cache=hit\n",
+    32768,
+  )
+  buf.to_bytes()
+}
+
+///|
+test "brotli fraction schedules can beat repeated split drift" {
+  let data = brotli_schedule_fixture()
+  let compressed = compress(data, level=Best)
+  let split32 = compress_lz77_split(data[:], data.length(), 11, 32768)
+  let schedule4 = compress_lz77_fraction_schedule(data[:], data.length(), 11, 4)
+  assert_eq(decompress(compressed), data)
+  assert_true(schedule4.length() < split32.length())
+  assert_true(compressed.length() <= schedule4.length())
+}
+
+///|
 fn brotli_large_split_fixture() -> Bytes {
   let buf = @blit.Buffer::new()
   for i in 0..<4096 {
@@ -267,4 +374,11 @@ test "brotli split chooser recognizes structured punctuation boundaries" {
   let target = 36
   let chosen = brotli_choose_split_end(data[:], data.length(), 0, target)
   assert_eq(chosen, 68)
+}
+
+///|
+test "brotli split chooser prefers blank-line section boundaries" {
+  let data = b"AAAAAAAAAAAAAAAA}\n\n<section>BBBBBBBBBBBBBBBB"
+  let chosen = brotli_choose_split_end(data[:], data.length(), 0, 16)
+  assert_eq(chosen, 18)
 }

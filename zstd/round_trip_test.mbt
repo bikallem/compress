@@ -560,6 +560,16 @@ test "higher explicit zstd levels use broader search tiers" {
 }
 
 ///|
+test "best zstd level now uses a shallow archive tier" {
+  let data = zstd_archive_repeat_fixture()
+  let best = @zstd.compress(data, level=Best)
+  let no_archive = @zstd.compress(data, level=Level(19))
+  assert_eq(@zstd.decompress(best), data)
+  assert_eq(@zstd.decompress(no_archive), data)
+  assert_true(best.length() < no_archive.length())
+}
+
+///|
 test "mid-deep zstd archive tiers beat the no-archive tier on repeated anchors" {
   let data = zstd_archive_repeat_fixture()
   let no_archive = @zstd.compress(data, level=Level(19))

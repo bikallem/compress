@@ -244,7 +244,7 @@ test "zstd hash uses unsigned little-endian words" {
 }
 
 ///|
-test "zstd one-shot encoder emits RLE blocks for repeated data with raw dictionaries" {
+test "zstd one-shot encoder chunks repeated data into valid RLE blocks" {
   let data = Bytes::make(200000, b'Q')
   let compressed = compress(data, dict=b"raw dictionary prefix")
   let parsed = try_parse_frame_header(compressed[:])
@@ -256,7 +256,82 @@ test "zstd one-shot encoder emits RLE blocks for repeated data with raw dictiona
     (compressed[header_len + 1].to_int() << 8) |
     (compressed[header_len + 2].to_int() << 16)
   let block_type = (block_header >> 1) & 0x03
+  let block_size = block_header >> 3
   assert_eq(block_type, BLOCK_TYPE_RLE)
+  assert_eq(block_size, MAX_BLOCK_SIZE)
+  assert_eq(block_header & 1, 0)
+  assert_eq(compressed[header_len + 3], b'Q')
+  let second_pos = header_len + 4
+  let second_header = compressed[second_pos].to_int() |
+    (compressed[second_pos + 1].to_int() << 8) |
+    (compressed[second_pos + 2].to_int() << 16)
+  let second_type = (second_header >> 1) & 0x03
+  let second_size = second_header >> 3
+  assert_eq(second_type, BLOCK_TYPE_RLE)
+  assert_eq(second_size, data.length() - MAX_BLOCK_SIZE)
+  assert_eq(second_header & 1, 1)
+  assert_eq(compressed[second_pos + 3], b'Q')
+}
+
+///|
+fn zstd_literal_only_tuning_fixture() -> Bytes {
+  let buf = @blit.Buffer::new(size_hint=131072)
+  let mut state = 0x12345678U
+  for _ in 0..<65536 {
+    state = state * 1664525U + 1013904223U
+    buf.write_byte(((state >> 25) & 0x7FU).to_byte())
+  }
+  for _ in 0..<65536 {
+    state = state * 22695477U + 1U
+    buf.write_byte(
+      (128 + ((state >> 25) & 0x7FU).reinterpret_as_int()).to_byte(),
+    )
+  }
+  buf.to_bytes()
+}
+
+///|
+test "zstd literal-only block tuning can beat a single max-size block" {
+  let data = zstd_literal_only_tuning_fixture()
+  let (seqs, _, _) = find_sequences_with_prefix(
+    data[:],
+    b""[:],
+    [1, 4, 8],
+    Best,
+  )
+  assert_true(seqs.length() > 0)
+  assert_true(zstd_should_prefer_literal_only_body(seqs, data.length()))
+  let full_body = encode_literal_only_frame_body(
+    data[:],
+    data.length(),
+    MAX_BLOCK_SIZE,
+    None,
+    None,
+  )
+  let best_target = zstd_best_literal_only_block_target(
+    data[:],
+    data.length(),
+    Best,
+    None,
+    None,
+  )
+  let tuned_body = encode_literal_only_frame_body(
+    data[:],
+    data.length(),
+    best_target,
+    None,
+    None,
+  )
+  assert_true(best_target < MAX_BLOCK_SIZE)
+  assert_true(tuned_body.length() < full_body.length())
+  let compressed = compress(data, level=Best)
+  let parsed = try_parse_frame_header(compressed[:])
+  let header_len = match parsed {
+    Parsed(_, consumed) => consumed
+    _ => fail("expected a parsed zstd frame header")
+  }
+  let body_len = compressed.length() - header_len - 4
+  assert_eq(body_len, tuned_body.length())
 }
 
 ///|

@@ -241,6 +241,28 @@ fn brotli_split_candidates(src_len : Int) -> Array[Int] {
       src_len,
     )
   }
+  if src_len >= 163840 {
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len / 5),
+      src_len,
+    )
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len * 2 / 5),
+      src_len,
+    )
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len * 3 / 5),
+      src_len,
+    )
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len * 4 / 5),
+      src_len,
+    )
+  }
   if src_len >= 131072 {
     candidates.push(65536)
     push_brotli_split_candidate(
@@ -293,6 +315,16 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
         best = split
       }
     }
+    if src_len >= 98304 {
+      for denom in 3..<=5 {
+        let scheduled = compress_lz77_fraction_schedule(
+          src, src_len, level, denom,
+        )
+        if scheduled.length() < best.length() {
+          best = scheduled
+        }
+      }
+    }
     best
   } else {
     compressed
@@ -314,12 +346,8 @@ fn compress_lz77_split(
   level : Int,
   split_size : Int,
 ) -> Bytes {
-  let wbits = optimal_wbits(src_len)
-  let bw = BitWriter::new(src_len + 4096)
-  encode_wbits(bw, wbits)
+  let boundaries : Array[Int] = []
   let mut offset = 0
-  let mut prev_byte = 0
-  let mut history = @blit.Buffer::new()
   while offset < src_len {
     let target_end = if offset + split_size < src_len {
       offset + split_size
@@ -327,6 +355,26 @@ fn compress_lz77_split(
       src_len
     }
     let chunk_end = brotli_choose_split_end(src, src_len, offset, target_end)
+    boundaries.push(chunk_end)
+    offset = chunk_end
+  }
+  compress_lz77_boundaries(src, src_len, level, boundaries)
+}
+
+///|
+fn compress_lz77_boundaries(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+  boundaries : Array[Int],
+) -> Bytes {
+  let wbits = optimal_wbits(src_len)
+  let bw = BitWriter::new(src_len + 4096)
+  encode_wbits(bw, wbits)
+  let mut offset = 0
+  let mut prev_byte = 0
+  let mut history = @blit.Buffer::new()
+  for chunk_end in boundaries {
     let is_last = chunk_end >= src_len
     let chunk = src[offset:chunk_end]
     let prefix = history.to_bytes()
@@ -344,6 +392,30 @@ fn compress_lz77_split(
     offset = chunk_end
   }
   bw.to_bytes()
+}
+
+///|
+fn compress_lz77_fraction_schedule(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+  denom : Int,
+) -> Bytes {
+  let boundaries : Array[Int] = []
+  let mut offset = 0
+  for part in 1..<denom {
+    let target_end = src_len * part / denom
+    if target_end <= offset + 4096 || target_end >= src_len {
+      continue
+    }
+    let chunk_end = brotli_choose_split_end(src, src_len, offset, target_end)
+    if chunk_end > offset && chunk_end < src_len {
+      boundaries.push(chunk_end)
+      offset = chunk_end
+    }
+  }
+  boundaries.push(src_len)
+  compress_lz77_boundaries(src, src_len, level, boundaries)
 }
 
 ///|
@@ -374,7 +446,7 @@ fn brotli_choose_split_end(
     if i <= min_end || i >= src_len {
       continue
     }
-    let score = brotli_split_boundary_score(src.unsafe_get(i).to_int())
+    let score = brotli_split_boundary_score_at(src, src_len, i)
     if score == 0 {
       continue
     }
@@ -390,6 +462,41 @@ fn brotli_choose_split_end(
   } else {
     best
   }
+}
+
+///|
+fn brotli_split_boundary_score_at(
+  src : BytesView,
+  src_len : Int,
+  i : Int,
+) -> Int {
+  let c = src.unsafe_get(i).to_int()
+  let prev = if i > 0 { src.unsafe_get(i - 1).to_int() } else { -1 }
+  let next = if i + 1 < src_len { src.unsafe_get(i + 1).to_int() } else { -1 }
+  let mut score = brotli_split_boundary_score(c)
+  if c == 0x0A || c == 0x0D {
+    if prev == 0x0A || prev == 0x0D {
+      score += 2
+    }
+    if prev == 0x7D || prev == 0x5D || prev == 0x3E || prev == 0x3B {
+      score += 2
+    }
+    if next == 0x7B || next == 0x5B || next == 0x3C {
+      score += 2
+    }
+  }
+  if c == 0x7D || c == 0x5D || c == 0x3E {
+    if next == 0x0A || next == 0x0D {
+      score += 2
+    }
+  }
+  if (c == 0x20 || c == 0x09) && (next == 0x7B || next == 0x3C) {
+    score += 1
+  }
+  if (c == 0x2C || c == 0x3B) && (next == 0x20 || next == 0x0A || next == 0x0D) {
+    score += 1
+  }
+  score
 }
 
 ///|
