@@ -188,3 +188,35 @@ test "brotli chunked encoder preserves higher-level tuning" {
   assert_eq(decompress(level11), data)
   assert_true(level11.length() < level1.length())
 }
+
+///|
+fn brotli_mid_split_fixture() -> Bytes {
+  let buf = @blit.Buffer::new()
+  let alpha1 = b"abcdef"
+  let alpha2 = b"UVWXYZ"
+  let alpha3 = b"012345{}[],:;"
+  for i in 0..<32768 {
+    let idx = (i * 17 + i / 7) % alpha1.length()
+    buf.write_byte(alpha1[idx])
+  }
+  for i in 0..<32768 {
+    let idx = (i * 19 + i / 11) % alpha2.length()
+    buf.write_byte(alpha2[idx])
+  }
+  for i in 0..<32768 {
+    let idx = (i * 23 + i / 13) % alpha3.length()
+    buf.write_byte(alpha3[idx])
+  }
+  buf.to_bytes()
+}
+
+///|
+test "brotli adaptive split candidates improve mid-sized heterogeneous input" {
+  let data = brotli_mid_split_fixture()
+  let compressed = compress(data, level=Best)
+  let split16 = compress_lz77_split(data[:], data.length(), 11, 16384)
+  let split48 = compress_lz77_split(data[:], data.length(), 11, 49152)
+  assert_eq(decompress(compressed), data)
+  assert_true(split48.length() < split16.length())
+  assert_true(compressed.length() <= split48.length())
+}

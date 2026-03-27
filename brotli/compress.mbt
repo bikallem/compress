@@ -194,6 +194,58 @@ priv struct BrotliCmd {
 const MAX_METABLOCK_SIZE : Int = 1 << 24
 
 ///|
+const BROTLI_SPLIT_ROUNDING : Int = 4096
+
+///|
+fn brotli_round_split_size(size : Int) -> Int {
+  (size + BROTLI_SPLIT_ROUNDING / 2) /
+  BROTLI_SPLIT_ROUNDING *
+  BROTLI_SPLIT_ROUNDING
+}
+
+///|
+fn push_brotli_split_candidate(
+  candidates : Array[Int],
+  candidate : Int,
+  src_len : Int,
+) -> Unit {
+  if candidate <= 16384 || candidate >= src_len {
+    return
+  }
+  for existing in candidates {
+    if existing == candidate {
+      return
+    }
+  }
+  candidates.push(candidate)
+}
+
+///|
+fn brotli_split_candidates(src_len : Int) -> Array[Int] {
+  let candidates : Array[Int] = [16384]
+  if src_len >= 65536 && src_len < 131072 {
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len / 2),
+      src_len,
+    )
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len / 3),
+      src_len,
+    )
+    push_brotli_split_candidate(
+      candidates,
+      brotli_round_split_size(src_len * 2 / 3),
+      src_len,
+    )
+  } else if src_len >= 131072 {
+    candidates.push(65536)
+  }
+  candidates
+}
+
+///|
 fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   // For data larger than max metablock size, split into independent chunks.
   // Each chunk is compressed separately as its own metablock.
@@ -223,14 +275,10 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
   }
   let compressed = if level >= 6 && src_len >= 32768 {
     let mut best = compressed
-    let split_small = compress_lz77_split(src, src_len, level, 16384)
-    if split_small.length() < best.length() {
-      best = split_small
-    }
-    if src_len >= 131072 {
-      let split_large = compress_lz77_split(src, src_len, level, 65536)
-      if split_large.length() < best.length() {
-        best = split_large
+    for split_size in brotli_split_candidates(src_len) {
+      let split = compress_lz77_split(src, src_len, level, split_size)
+      if split.length() < best.length() {
+        best = split
       }
     }
     best
