@@ -324,6 +324,14 @@ fn compress_lz77(src : BytesView, src_len : Int, level : Int) -> Bytes {
           best = scheduled
         }
       }
+      for boundary_count in 2..<=4 {
+        let scheduled = compress_lz77_scored_schedule(
+          src, src_len, level, boundary_count,
+        )
+        if scheduled.length() < best.length() {
+          best = scheduled
+        }
+      }
     }
     best
   } else {
@@ -413,6 +421,106 @@ fn compress_lz77_fraction_schedule(
       boundaries.push(chunk_end)
       offset = chunk_end
     }
+  }
+  boundaries.push(src_len)
+  compress_lz77_boundaries(src, src_len, level, boundaries)
+}
+
+///|
+fn insert_brotli_boundary_sorted(
+  boundaries : Array[Int],
+  boundary : Int,
+) -> Unit {
+  let mut idx = 0
+  while idx < boundaries.length() && boundaries[idx] < boundary {
+    idx += 1
+  }
+  boundaries.insert(idx, boundary)
+}
+
+///|
+fn brotli_scored_schedule_target_distance(
+  pos : Int,
+  src_len : Int,
+  boundary_count : Int,
+) -> Int {
+  let mut best = 1 << 30
+  for part in 1..<=boundary_count {
+    let target = src_len * part / (boundary_count + 1)
+    let distance = if pos > target { pos - target } else { target - pos }
+    if distance < best {
+      best = distance
+    }
+  }
+  best
+}
+
+///|
+fn brotli_scored_schedule_boundaries(
+  src : BytesView,
+  src_len : Int,
+  boundary_count : Int,
+) -> Array[Int] {
+  let boundaries : Array[Int] = []
+  let min_gap = if src_len / ((boundary_count + 1) * 6) > 4096 {
+    src_len / ((boundary_count + 1) * 6)
+  } else {
+    4096
+  }
+  while boundaries.length() < boundary_count {
+    let mut best = -1
+    let mut best_score = 0
+    let mut best_distance = 1 << 30
+    for i in min_gap..<(src_len - min_gap) {
+      let mut too_close = false
+      for existing in boundaries {
+        let distance = if i > existing { i - existing } else { existing - i }
+        if distance < min_gap {
+          too_close = true
+          break
+        }
+      }
+      if too_close {
+        continue
+      }
+      let score = brotli_split_boundary_score_at(src, src_len, i)
+      if score == 0 {
+        continue
+      }
+      let distance = brotli_scored_schedule_target_distance(
+        i, src_len, boundary_count,
+      )
+      if score > best_score || (score == best_score && distance < best_distance) {
+        best = i
+        best_score = score
+        best_distance = distance
+      }
+    }
+    if best < 0 {
+      break
+    }
+    insert_brotli_boundary_sorted(boundaries, best)
+  }
+  boundaries
+}
+
+///|
+fn compress_lz77_scored_schedule(
+  src : BytesView,
+  src_len : Int,
+  level : Int,
+  boundary_count : Int,
+) -> Bytes {
+  let boundaries = brotli_scored_schedule_boundaries(
+    src, src_len, boundary_count,
+  )
+  if boundaries.length() == 0 {
+    return compress_lz77_split(
+      src,
+      src_len,
+      level,
+      brotli_round_split_size(src_len / (boundary_count + 1)),
+    )
   }
   boundaries.push(src_len)
   compress_lz77_boundaries(src, src_len, level, boundaries)

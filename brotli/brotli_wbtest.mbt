@@ -329,6 +329,67 @@ test "brotli fraction schedules can beat repeated split drift" {
 }
 
 ///|
+fn brotli_irregular_schedule_fixture() -> Bytes {
+  fn append_exact_section(
+    buf : @blit.Buffer,
+    body : Bytes,
+    total_len : Int,
+    add_delim : Bool,
+  ) -> Unit {
+    let delim = b"\n\n"
+    let body_target = if add_delim {
+      total_len - delim.length()
+    } else {
+      total_len
+    }
+    let mut written = 0
+    while written < body_target {
+      let chunk_len = if written + body.length() <= body_target {
+        body.length()
+      } else {
+        body_target - written
+      }
+      buf.write_bytesview(body[:chunk_len])
+      written += chunk_len
+    }
+    if add_delim {
+      buf.write_bytes(delim)
+    }
+  }
+  let buf = @blit.Buffer::new()
+  append_exact_section(
+    buf, b"aaaaabbbbccccddddeeeeffffgggghhhhiiiijjjjkkkkllllmmmmnnnnoooopppp", 16384,
+    true,
+  )
+  append_exact_section(
+    buf, b"UVWXYZUVWXYZUVWXYZUVWXYZUVWXYZUVWXYZUVWXYZUVWXYZUVWXYZUVWXYZUVWXYZ", 57344,
+    true,
+  )
+  append_exact_section(
+    buf, b"0123456789{}[],:;0123456789{}[],:;0123456789{}[],:;0123456789{}[],:;",
+    16384, true,
+  )
+  append_exact_section(
+    buf, b".layout-grid{display:grid;gap:1rem;padding:1.5rem;background:#eee}", 49152,
+    false,
+  )
+  buf.to_bytes()
+}
+
+///|
+test "brotli scored schedules can beat fixed fraction schedules on irregular sections" {
+  let data = brotli_irregular_schedule_fixture()
+  let compressed = compress(data, level=Best)
+  let fraction4 = compress_lz77_fraction_schedule(data[:], data.length(), 11, 4)
+  let scored = compress_lz77_scored_schedule(data[:], data.length(), 11, 3)
+  let boundaries = brotli_scored_schedule_boundaries(data[:], data.length(), 3)
+  assert_eq(decompress(compressed), data)
+  assert_eq(boundaries.length(), 3)
+  assert_true(scored.length() < fraction4.length())
+  assert_true(compressed.length() <= scored.length())
+}
+
+///|
 fn brotli_large_split_fixture() -> Bytes {
   let buf = @blit.Buffer::new()
   for i in 0..<4096 {
