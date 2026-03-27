@@ -43,7 +43,7 @@ A pure MoonBit compression library supporting DEFLATE, gzip, zlib, LZW, bzip2, B
 | `bikallem/compress/lzw` | Lempel-Ziv-Welch (GIF/TIFF/PDF) |
 | `bikallem/compress/brotli` | Brotli compression/decompression (RFC 7932) |
 | `bikallem/compress/bzip2` | bzip2 compression/decompression |
-| `bikallem/compress/zstd` | Experimental Zstandard frame compression/decompression with dictionary support |
+| `bikallem/compress/zstd` | Zstandard frame compression/decompression with dictionary support (subset encoder) |
 | `bikallem/compress/lz4` | LZ4 frame compression/decompression |
 | `bikallem/compress/snappy` | Snappy raw block compression/decompression |
 | `bikallem/compress/checksum` | CRC-32 and Adler-32 checksums |
@@ -199,6 +199,8 @@ let leftover = inflater.remaining()
 ```
 
 For `gzip`, `bzip2`, and `lz4` streaming inflaters, call `finish()` once the upstream source reaches EOF. That lets the wrapper distinguish a true end-of-input from an exact boundary between concatenated members/streams.
+
+For LZ4, dictionary bytes and `dict_id` metadata move together: if you pass dictionary bytes and leave `dict_id = 0`, the encoder derives a deterministic nonzero id from the dictionary prefix; if you do not pass dictionary bytes, any configured `dict_id` is suppressed.
 
 ### Async Streaming
 

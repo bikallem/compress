@@ -200,6 +200,7 @@ test "signal protocol: deflater supports external dictionaries" {
     Error(e) => raise e
   }
   let compressed = out.to_bytes()
+  assert_true((compressed[4].to_int() & 0x01) != 0)
   let result = try? @lz4.decompress(compressed)
   guard result is Err(_) else {
     fail("expected dictionary-backed frame to require a dictionary")

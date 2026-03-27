@@ -41,6 +41,7 @@ pub fn Deflater::new_with_content_size(
   } else {
     b""
   }
+  let options = normalize_lz4_frame_options(dict_prefix, options)
   let history = @blit.Buffer::new(size_hint=65535)
   if !options.block_independence && dict_prefix.length() > 0 {
     history.write_bytes(dict_prefix)

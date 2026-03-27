@@ -7,12 +7,13 @@ pub fn compress(
 ) -> Bytes {
   let src = data[:]
   let src_len = data.length()
-  let block_max_size = block_max_size_bytes(options.block_max_size)
   let initial_prefix = if dict.length() > 0 {
     lz4_dictionary_prefix(dict)
   } else {
     b""
   }
+  let options = normalize_lz4_frame_options(initial_prefix, options)
+  let block_max_size = block_max_size_bytes(options.block_max_size)
   let content_size = Some(src_len)
   let max_output = frame_header_length(content_size, options) +
     src_len +

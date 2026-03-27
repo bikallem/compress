@@ -1,6 +1,8 @@
 ///|
 /// Compresses data using the Zstandard format.
 /// Uses LZ77 match finding and zstd compressed blocks.
+/// The current encoder is interoperable but still a subset implementation of
+/// upstream zstd's broader strategy and entropy-tuning matrix.
 pub fn compress(
   data : Bytes,
   level? : CompressionLevel = Default,

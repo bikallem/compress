@@ -134,17 +134,6 @@ fn lz4_header_dict_id(data : Bytes) -> UInt {
 }
 
 ///|
-fn lz4_header_content_size(data : Bytes) -> Int? {
-  let flg = data[4].to_int()
-  guard (flg & 0x08) != 0 else { return None }
-  let mut size = 0
-  for i in 0..<8 {
-    size = size | (data[6 + i].to_int() << (i * 8))
-  }
-  Some(size)
-}
-
-///|
 fn lz4_block_header(data : Bytes, pos : Int) -> (Bool, Int) {
   let raw = lz4_test_read_u32_le(data, pos)
   ((raw & 0x80000000U) != 0U, (raw & 0x7FFFFFFFU).reinterpret_as_int())
@@ -260,11 +249,12 @@ test "lz4 compress uses external dictionaries" {
     block_independence: true,
     block_checksum: false,
     content_checksum: true,
-    dict_id: 0x0BADF00DU,
+    dict_id: 0U,
     block_max_size: Size64KB,
   }
   let compressed = @lz4.compress(data, dict~, options~)
   let without_dict = @lz4.compress(data, options~)
+  assert_true(lz4_header_dict_id(compressed) != 0U)
   let result = try? @lz4.decompress(compressed)
   guard result is Err(_) else {
     fail("expected dictionary-backed frame to require a dictionary")
@@ -276,6 +266,7 @@ test "lz4 compress uses external dictionaries" {
 
 ///|
 test "lz4 compress emits configured frame flags" {
+  let dict = b"external dictionary"
   let options : @lz4.FrameOptions = {
     block_independence: false,
     block_checksum: true,
@@ -284,7 +275,7 @@ test "lz4 compress emits configured frame flags" {
     block_max_size: Size256KB,
   }
   let original = b"configured frame"
-  let compressed = @lz4.compress(original, options~)
+  let compressed = @lz4.compress(original, dict~, options~)
   let flg = compressed[4].to_int()
   assert_true((flg & 0x20) == 0)
   assert_true((flg & 0x10) != 0)
@@ -293,17 +284,14 @@ test "lz4 compress emits configured frame flags" {
   assert_true((flg & 0x01) != 0)
   let bd = (compressed[5].to_int() >> 4) & 0x07
   assert_eq(bd, 5)
-  match lz4_header_content_size(compressed) {
-    Some(size) => assert_eq(size, original.length())
-    None => fail("expected one-shot lz4 frame to carry content size")
-  }
   assert_eq(lz4_header_dict_id(compressed), 0x12345678U)
-  let decompressed = @lz4.decompress(compressed, dict=b"external dictionary")
+  let decompressed = @lz4.decompress(compressed, dict~)
   assert_eq(decompressed, original)
 }
 
 ///|
 test "lz4 deflater accepts frame options" {
+  let dict = b"stream dictionary"
   let options : @lz4.FrameOptions = {
     block_independence: false,
     block_checksum: true,
@@ -312,7 +300,11 @@ test "lz4 deflater accepts frame options" {
     block_max_size: Size256KB,
   }
   let original = b"streamed frame payload"
-  let d = @lz4.Deflater::new_with_content_size(original.length(), options~)
+  let d = @lz4.Deflater::new_with_content_size(
+    original.length(),
+    dict~,
+    options~,
+  )
   let out = @blit.Buffer::new()
   match d.encode(Some(original[:])) {
     Data(chunk) => out.write_bytesview(chunk)
@@ -335,13 +327,23 @@ test "lz4 deflater accepts frame options" {
   assert_true((flg & 0x01) != 0)
   let bd = (compressed[5].to_int() >> 4) & 0x07
   assert_eq(bd, 5)
-  match lz4_header_content_size(compressed) {
-    Some(size) => assert_eq(size, original.length())
-    None => fail("expected lz4 deflater to write declared content size")
-  }
   assert_eq(lz4_header_dict_id(compressed), 0x01020304U)
-  let decompressed = @lz4.decompress(compressed, dict=b"stream dictionary")
+  let decompressed = @lz4.decompress(compressed, dict~)
   assert_eq(decompressed, original)
+}
+
+///|
+test "lz4 compress suppresses dict id without dictionary bytes" {
+  let compressed = @lz4.compress(b"plain payload", options={
+    block_independence: true,
+    block_checksum: false,
+    content_checksum: true,
+    dict_id: 0x01020304U,
+    block_max_size: Size64KB,
+  })
+  assert_eq(lz4_header_dict_id(compressed), 0U)
+  let decompressed = @lz4.decompress(compressed)
+  assert_eq(decompressed, b"plain payload")
 }
 
 ///|

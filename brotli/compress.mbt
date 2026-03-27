@@ -1,6 +1,8 @@
 ///|
 /// Compresses data using the Brotli format.
 /// Uses uncompressed meta-blocks at level 0, LZ77+Huffman at higher levels.
+/// The encoder does not yet implement block splitting or static-dictionary
+/// compression, and levels 10-11 currently reuse the level-9 hash-chain path.
 pub fn compress(data : Bytes, level? : CompressionLevel = Default) -> Bytes {
   let lvl = compression_level_to_int(level)
   let src = data[:]

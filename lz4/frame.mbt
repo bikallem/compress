@@ -10,6 +10,18 @@ priv struct Lz4FrameHeader {
 }
 
 ///|
+fn write_u64_le(dst : FixedArray[Byte], pos : Int, value : UInt64) -> Unit {
+  dst.unsafe_set(pos, (value & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 1, ((value >> 8) & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 2, ((value >> 16) & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 3, ((value >> 24) & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 4, ((value >> 32) & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 5, ((value >> 40) & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 6, ((value >> 48) & 0xFFUL).to_uint().to_byte())
+  dst.unsafe_set(pos + 7, ((value >> 56) & 0xFFUL).to_uint().to_byte())
+}
+
+///|
 /// Writes an LZ4 frame header to the output buffer.
 /// Returns the number of bytes written.
 fn write_frame_header(
@@ -41,9 +53,7 @@ fn write_frame_header(
   // Optional content size (8 bytes, little-endian)
   match content_size {
     Some(size) => {
-      for i in 0..<8 {
-        dst.unsafe_set(pos + i, ((size >> (i * 8)) & 0xFF).to_byte())
-      }
+      write_u64_le(dst, pos, size.reinterpret_as_uint().to_uint64())
       pos += 8
     }
     None => ()
@@ -143,10 +153,7 @@ fn parse_frame_header(data : BytesView) -> Lz4FrameHeader raise Lz4Error {
   let mut pos = 6
   let content_size : Int? = if has_content_size {
     guard pos + 8 <= data.length() else { raise Lz4Error::UnexpectedEOF }
-    let mut size = 0
-    for i in 0..<8 {
-      size = size | (data.unsafe_get(pos + i).to_int() << (i * 8))
-    }
+    let size = lz4_read_content_size(data, pos)
     pos += 8
     Some(size)
   } else {

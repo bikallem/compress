@@ -110,7 +110,55 @@ fn lz4_read_u32_le(data : BytesView, pos : Int) -> UInt {
 }
 
 ///|
+fn lz4_read_u64_le(data : BytesView, pos : Int) -> UInt64 {
+  data.unsafe_get(pos).to_uint().to_uint64() |
+  (data.unsafe_get(pos + 1).to_uint().to_uint64() << 8) |
+  (data.unsafe_get(pos + 2).to_uint().to_uint64() << 16) |
+  (data.unsafe_get(pos + 3).to_uint().to_uint64() << 24) |
+  (data.unsafe_get(pos + 4).to_uint().to_uint64() << 32) |
+  (data.unsafe_get(pos + 5).to_uint().to_uint64() << 40) |
+  (data.unsafe_get(pos + 6).to_uint().to_uint64() << 48) |
+  (data.unsafe_get(pos + 7).to_uint().to_uint64() << 56)
+}
+
+///|
+fn lz4_read_content_size(data : BytesView, pos : Int) -> Int raise Lz4Error {
+  let raw = lz4_read_u64_le(data, pos)
+  let size = raw.to_int()
+  guard size >= 0 && size.reinterpret_as_uint().to_uint64() == raw else {
+    raise Lz4Error::InvalidHeader("content size exceeds supported range")
+  }
+  size
+}
+
+///|
 fn lz4_dictionary_prefix(dict : Bytes) -> Bytes {
   let keep = if dict.length() > 65535 { 65535 } else { dict.length() }
   Bytes::makei(keep, fn(i) { dict[dict.length() - keep + i] })
+}
+
+///|
+fn normalize_lz4_frame_options(
+  dict_prefix : Bytes,
+  options : FrameOptions,
+) -> FrameOptions {
+  let dict_id = if dict_prefix.length() == 0 {
+    0U
+  } else if options.dict_id != 0U {
+    options.dict_id
+  } else {
+    let derived = @checksum.xxh32(dict_prefix[:])
+    if derived == 0U {
+      1U
+    } else {
+      derived
+    }
+  }
+  {
+    block_independence: options.block_independence,
+    block_checksum: options.block_checksum,
+    content_checksum: options.content_checksum,
+    dict_id,
+    block_max_size: options.block_max_size,
+  }
 }
