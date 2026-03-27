@@ -187,7 +187,19 @@ fn fail(s : Decoder, e : Bzip2Error) -> Decode {
 }
 
 ///|
+/// Iterative phase dispatcher. Loops until a step function produces a
+/// concrete result (Await/Data/End/Error) rather than a phase transition.
 fn step(s : Decoder) -> Decode {
+  loop step_once(s) {
+    Some(result) => result
+    None => continue step_once(s)
+  }
+}
+
+///|
+/// Execute one phase step. Returns None when the phase changed and the
+/// dispatcher should loop, or Some(result) for a concrete decoder signal.
+fn step_once(s : Decoder) -> Decode? {
   match s.phase {
     StreamHeader => step_stream_header(s)
     BlockMagic => step_block_magic(s)
@@ -203,63 +215,65 @@ fn step(s : Decoder) -> Decode {
     DecodeRunSymbols => step_decode_run_symbols(s)
     EmitRun => step_emit_run(s)
     EndOfStream => step_end_of_stream(s)
-    AwaitNextStream => Await
-    Done => End
-    Failed(e) => Error(e)
+    AwaitNextStream => Some(Await)
+    Done => Some(End)
+    Failed(e) => Some(Error(e))
   }
 }
 
 ///|
-fn step_stream_header(s : Decoder) -> Decode {
+fn step_stream_header(s : Decoder) -> Decode? {
   // Need 32 bits: 'B' 'Z' 'h' level — ensure all before consuming any
   if !s.bb.ensure(32) {
-    return Await
+    return Some(Await)
   }
   let m1 = s.bb.read_unchecked(8)
   let m2 = s.bb.read_unchecked(8)
   if m1 != BZIP2_MAGIC1.to_uint() || m2 != BZIP2_MAGIC2.to_uint() {
-    return fail(s, Bzip2Error::InvalidHeader("invalid bzip2 magic"))
+    return Some(fail(s, Bzip2Error::InvalidHeader("invalid bzip2 magic")))
   }
   let version = s.bb.read_unchecked(8)
   if version != b'h'.to_uint() {
-    return fail(s, Bzip2Error::InvalidHeader("unsupported bzip2 version"))
+    return Some(
+      fail(s, Bzip2Error::InvalidHeader("unsupported bzip2 version")),
+    )
   }
   let level_char = s.bb.read_unchecked(8)
   if level_char < b'1'.to_uint() || level_char > b'9'.to_uint() {
-    return fail(s, Bzip2Error::InvalidHeader("invalid block size"))
+    return Some(fail(s, Bzip2Error::InvalidHeader("invalid block size")))
   }
   s.block_size_100k = (level_char - b'0'.to_uint()).reinterpret_as_int()
   s.max_block_bytes = s.block_size_100k * 100000
   s.tt = FixedArray::make(s.max_block_bytes, 0)
   s.phase = BlockMagic
-  step(s)
+  None
 }
 
 ///|
-fn step_block_magic(s : Decoder) -> Decode {
+fn step_block_magic(s : Decoder) -> Decode? {
   // Need 48 bits: two 24-bit values
   if !s.bb.ensure(48) {
-    return Await
+    return Some(Await)
   }
   let magic_hi = s.bb.read_unchecked(24)
   let magic_lo = s.bb.read_unchecked(24)
   if magic_hi == 0x177245U && magic_lo == 0x385090U {
     s.phase = EndOfStream
-    return step(s)
+    return None
   }
   if magic_hi != 0x314159U || magic_lo != 0x265359U {
-    return fail(s, Bzip2Error::CorruptData("invalid block magic"))
+    return Some(fail(s, Bzip2Error::CorruptData("invalid block magic")))
   }
   s.phase = BlockHeader
-  step(s)
+  None
 }
 
 ///|
-fn step_block_header(s : Decoder) -> Decode {
+fn step_block_header(s : Decoder) -> Decode? {
   // CRC (32) + randomized (1) + orig_ptr (24) = 57 bits
   // Ensure 57 bits — BitBuf accumulates up to 64 bits so this works
   if !s.bb.ensure(57) {
-    return Await
+    return Some(Await)
   }
   let crc_hi = s.bb.read_unchecked(16)
   let crc_lo = s.bb.read_unchecked(16)
@@ -268,13 +282,13 @@ fn step_block_header(s : Decoder) -> Decode {
   s.block_randomized = randomized != 0U
   s.orig_ptr = s.bb.read_unchecked(24).reinterpret_as_int()
   s.phase = ReadSymbolMap
-  step(s)
+  None
 }
 
 ///|
-fn step_read_symbol_map(s : Decoder) -> Decode {
+fn step_read_symbol_map(s : Decoder) -> Decode? {
   // Read 16-bit group bitmap
-  guard s.bb.read(16) is Some(used_groups) else { return Await }
+  guard s.bb.read(16) is Some(used_groups) else { return Some(Await) }
   s.symmap_bitmap = used_groups
   s.symmap_group = 0
   s.num_in_use = 0
@@ -282,15 +296,15 @@ fn step_read_symbol_map(s : Decoder) -> Decode {
     s.in_use.unsafe_set(i, false)
   }
   s.phase = ReadSymbolMapGroups
-  step(s)
+  None
 }
 
 ///|
-fn step_read_symbol_map_groups(s : Decoder) -> Decode {
+fn step_read_symbol_map_groups(s : Decoder) -> Decode? {
   while s.symmap_group < 16 {
     let g = s.symmap_group
     if (s.symmap_bitmap & (1U << (15 - g))) != 0U {
-      guard s.bb.read(16) is Some(group_bits) else { return Await }
+      guard s.bb.read(16) is Some(group_bits) else { return Some(Await) }
       for j in 0..<16 {
         if (group_bits & (1U << (15 - j))) != 0U {
           s.in_use.unsafe_set(g * 16 + j, true)
@@ -301,39 +315,43 @@ fn step_read_symbol_map_groups(s : Decoder) -> Decode {
     s.symmap_group += 1
   }
   if s.num_in_use == 0 {
-    return fail(s, Bzip2Error::CorruptData("no symbols in use"))
+    return Some(fail(s, Bzip2Error::CorruptData("no symbols in use")))
   }
   s.alpha_size = s.num_in_use + 2
   s.phase = ReadTreeParams
-  step(s)
+  None
 }
 
 ///|
-fn step_read_tree_params(s : Decoder) -> Decode {
+fn step_read_tree_params(s : Decoder) -> Decode? {
   // 3 bits: num_trees + 15 bits: num_selectors = 18 bits
   if !s.bb.ensure(18) {
-    return Await
+    return Some(Await)
   }
   s.num_trees = s.bb.read_unchecked(3).reinterpret_as_int()
   if s.num_trees < 2 || s.num_trees > 6 {
-    return fail(s, Bzip2Error::CorruptData("invalid number of Huffman trees"))
+    return Some(
+      fail(s, Bzip2Error::CorruptData("invalid number of Huffman trees")),
+    )
   }
   s.num_selectors = s.bb.read_unchecked(15).reinterpret_as_int()
   if s.num_selectors < 1 {
-    return fail(s, Bzip2Error::CorruptData("invalid number of selectors"))
+    return Some(
+      fail(s, Bzip2Error::CorruptData("invalid number of selectors")),
+    )
   }
   s.selectors = Array::make(s.num_selectors, 0)
   s.selector_idx = 0
   s.phase = ReadSelectors
-  step(s)
+  None
 }
 
 ///|
-fn step_read_selectors(s : Decoder) -> Decode {
-  while s.selector_idx < s.num_selectors {
+fn step_read_selectors(s : Decoder) -> Decode? {
+  if s.selector_idx < s.num_selectors {
     s.selector_j = 0
     s.phase = ReadSelectorUnary
-    return step(s)
+    return None
   }
   // Undo MTF on selectors
   let sel_mtf = FixedArray::make(s.num_trees, 0)
@@ -353,37 +371,37 @@ fn step_read_selectors(s : Decoder) -> Decode {
   s.trees = []
   s.tree_idx = 0
   s.phase = ReadTreeLengths
-  step(s)
+  None
 }
 
 ///|
-fn step_read_selector_unary(s : Decoder) -> Decode {
+fn step_read_selector_unary(s : Decoder) -> Decode? {
   // Read unary-coded selector: count 1-bits, terminated by 0
   while true {
-    guard s.bb.read_bit() is Some(bit) else { return Await }
+    guard s.bb.read_bit() is Some(bit) else { return Some(Await) }
     if !bit {
       break
     }
     s.selector_j += 1
     if s.selector_j >= s.num_trees {
-      return fail(s, Bzip2Error::CorruptData("invalid selector"))
+      return Some(fail(s, Bzip2Error::CorruptData("invalid selector")))
     }
   }
   s.selectors[s.selector_idx] = s.selector_j
   s.selector_idx += 1
   s.phase = ReadSelectors
-  step(s)
+  None
 }
 
 ///|
-fn step_read_tree_lengths(s : Decoder) -> Decode {
+fn step_read_tree_lengths(s : Decoder) -> Decode? {
   if s.tree_idx >= s.num_trees {
     // All trees read, start symbol decode
     s.decoded_len = 0
     s.group_pos = 0
     s.group_no = -1
     s.current_tree_idx = 0
-    // Initialize MTF list    
+    // Initialize MTF list
     for i = 0, k = 0; i < 256; {
       if s.in_use.unsafe_get(i) {
         s.mtf_list.unsafe_set(k, i.to_byte())
@@ -392,31 +410,31 @@ fn step_read_tree_lengths(s : Decoder) -> Decode {
       continue i + 1, k
     }
     s.phase = DecodeSymbols
-    return step(s)
+    return None
   }
   // Read initial length (5 bits) for this tree
-  guard s.bb.read(5) is Some(initial_len) else { return Await }
+  guard s.bb.read(5) is Some(initial_len) else { return Some(Await) }
   s.current_length = initial_len.reinterpret_as_int()
   s.length_idx = 0
   for i in 0..<s.alpha_size {
     s.lengths.unsafe_set(i, 0)
   }
   s.phase = ReadTreeLengthDelta
-  step(s)
+  None
 }
 
 ///|
-fn step_read_tree_length_delta(s : Decoder) -> Decode {
+fn step_read_tree_length_delta(s : Decoder) -> Decode? {
   while s.length_idx < s.alpha_size {
     // Each iteration reads 1-2 bits: ensure 2 so we never suspend mid-step
     if !s.bb.ensure(2) {
-      return Await
+      return Some(Await)
     }
     let cont = s.bb.read_unchecked(1) != 0U
     if !cont {
       // Accept current length for this symbol
       if s.current_length < 1 || s.current_length > BZIP2_MAX_CODE_LEN {
-        return fail(s, Bzip2Error::CorruptData("invalid code length"))
+        return Some(fail(s, Bzip2Error::CorruptData("invalid code length")))
       }
       s.lengths.unsafe_set(s.length_idx, s.current_length)
       s.length_idx += 1
@@ -437,31 +455,31 @@ fn step_read_tree_length_delta(s : Decoder) -> Decode {
       s.trees.push(tree)
       s.tree_idx += 1
       s.phase = ReadTreeLengths
-      step(s)
+      None
     }
-    Err(e) => fail(s, e)
+    Err(e) => Some(fail(s, e))
   }
 }
 
 ///|
-fn step_decode_symbols(s : Decoder) -> Decode {
+fn step_decode_symbols(s : Decoder) -> Decode? {
   let eob = s.num_in_use + 1
   while true {
     // Update selector group
     if s.group_pos == 0 {
       s.group_no += 1
       if s.group_no >= s.num_selectors {
-        return fail(s, Bzip2Error::CorruptData("ran out of selectors"))
+        return Some(fail(s, Bzip2Error::CorruptData("ran out of selectors")))
       }
       s.current_tree_idx = s.selectors[s.group_no]
       s.group_pos = 50
     }
     let tree = s.trees[s.current_tree_idx]
-    guard tree.try_decode(s.bb) is Some(sym) else { return Await }
+    guard tree.try_decode(s.bb) is Some(sym) else { return Some(Await) }
     s.group_pos -= 1
     if sym == eob {
       // Block complete — finalize
-      return finish_block(s)
+      return Some(finish_block(s))
     }
     if sym == 0 || sym == 1 {
       // RUNA/RUNB: start run-length decoding
@@ -471,12 +489,12 @@ fn step_decode_symbols(s : Decoder) -> Decode {
       s.run_len += (sym + 1) * s.run_power
       s.run_power *= 2
       s.phase = DecodeRunSymbols
-      return step(s)
+      return None
     }
     // Regular symbol: MTF decode
     let mtf_idx = sym - 1
     if mtf_idx >= s.num_in_use {
-      return fail(s, Bzip2Error::CorruptData("MTF index out of range"))
+      return Some(fail(s, Bzip2Error::CorruptData("MTF index out of range")))
     }
     let byte_val = s.mtf_list.unsafe_get(mtf_idx)
     for j = mtf_idx; j > 0; j = j - 1 {
@@ -484,28 +502,28 @@ fn step_decode_symbols(s : Decoder) -> Decode {
     }
     s.mtf_list.unsafe_set(0, byte_val)
     if s.decoded_len >= s.max_block_bytes {
-      return fail(s, Bzip2Error::CorruptData("block too large"))
+      return Some(fail(s, Bzip2Error::CorruptData("block too large")))
     }
     s.tt.unsafe_set(s.decoded_len, byte_val.to_int())
     s.decoded_len += 1
   }
-  End // unreachable
+  Some(End) // unreachable
 }
 
 ///|
-fn step_decode_run_symbols(s : Decoder) -> Decode {
+fn step_decode_run_symbols(s : Decoder) -> Decode? {
   // Continue reading RUNA/RUNB symbols
   while true {
     if s.group_pos == 0 {
       s.group_no += 1
       if s.group_no >= s.num_selectors {
-        return fail(s, Bzip2Error::CorruptData("ran out of selectors"))
+        return Some(fail(s, Bzip2Error::CorruptData("ran out of selectors")))
       }
       s.current_tree_idx = s.selectors[s.group_no]
       s.group_pos = 50
     }
     let tree = s.trees[s.current_tree_idx]
-    guard tree.try_decode(s.bb) is Some(sym) else { return Await }
+    guard tree.try_decode(s.bb) is Some(sym) else { return Some(Await) }
     s.group_pos -= 1
     if sym == 0 || sym == 1 {
       s.run_len += (sym + 1) * s.run_power
@@ -515,17 +533,17 @@ fn step_decode_run_symbols(s : Decoder) -> Decode {
     // Non-run symbol: emit the run, then process this symbol
     s.pending_sym = sym
     s.phase = EmitRun
-    return step(s)
+    return None
   }
-  End // unreachable
+  Some(End) // unreachable
 }
 
 ///|
-fn step_emit_run(s : Decoder) -> Decode {
+fn step_emit_run(s : Decoder) -> Decode? {
   // Emit run_len copies of run_byte
   for _ in 0..<s.run_len {
     if s.decoded_len >= s.max_block_bytes {
-      return fail(s, Bzip2Error::CorruptData("block too large"))
+      return Some(fail(s, Bzip2Error::CorruptData("block too large")))
     }
     s.tt.unsafe_set(s.decoded_len, s.run_byte.to_int())
     s.decoded_len += 1
@@ -533,12 +551,12 @@ fn step_emit_run(s : Decoder) -> Decode {
   s.run_len = 0
   let sym = s.pending_sym
   if sym == s.num_in_use + 1 {
-    return finish_block(s)
+    return Some(finish_block(s))
   }
   // Regular symbol: MTF decode
   let mtf_idx = sym - 1
   if mtf_idx >= s.num_in_use {
-    return fail(s, Bzip2Error::CorruptData("MTF index out of range"))
+    return Some(fail(s, Bzip2Error::CorruptData("MTF index out of range")))
   }
   let byte_val = s.mtf_list.unsafe_get(mtf_idx)
   for j = mtf_idx; j > 0; j = j - 1 {
@@ -546,12 +564,12 @@ fn step_emit_run(s : Decoder) -> Decode {
   }
   s.mtf_list.unsafe_set(0, byte_val)
   if s.decoded_len >= s.max_block_bytes {
-    return fail(s, Bzip2Error::CorruptData("block too large"))
+    return Some(fail(s, Bzip2Error::CorruptData("block too large")))
   }
   s.tt.unsafe_set(s.decoded_len, byte_val.to_int())
   s.decoded_len += 1
   s.phase = DecodeSymbols
-  step(s)
+  None
 }
 
 ///|
@@ -588,30 +606,32 @@ fn finish_block(s : Decoder) -> Decode {
 }
 
 ///|
-fn step_end_of_stream(s : Decoder) -> Decode {
+fn step_end_of_stream(s : Decoder) -> Decode? {
   // Read 32-bit stream CRC
   if !s.bb.ensure(32) {
-    return Await
+    return Some(Await)
   }
   let stored_crc = (s.bb.read_unchecked(16) << 16) | s.bb.read_unchecked(16)
   if stored_crc != s.stream_crc {
-    return fail(
-      s,
-      Bzip2Error::ChecksumMismatch(expected=stored_crc, got=s.stream_crc),
+    return Some(
+      fail(
+        s,
+        Bzip2Error::ChecksumMismatch(expected=stored_crc, got=s.stream_crc),
+      ),
     )
   }
   let remaining = s.bb.remaining()
   if remaining.length() > 0 {
     reset_stream(s, remaining)
-    return step(s)
+    return None
   }
   if s.input_finished {
     s.phase = Done
-    return End
+    return Some(End)
   }
   reset_stream(s, Bytes::default())
   s.phase = AwaitNextStream
-  Await
+  Some(Await)
 }
 
 ///|
