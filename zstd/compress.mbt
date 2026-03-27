@@ -248,6 +248,9 @@ const ZSTD_MAX_HASH_ARCHIVE_CANDIDATES : Int = 8
 const ZSTD_MIN_MATCH : Int = 4
 
 ///|
+const ZSTD_ARCHIVE_DEDUP_BYTES : Int = 8
+
+///|
 priv struct ZstdSearchConfig {
   lazy_steps : Int
   max_hash_candidates : Int
@@ -366,6 +369,8 @@ fn zstd_hash(data : BytesView, pos : Int) -> Int {
 
 ///|
 fn insert_hash_candidate(
+  src : BytesView,
+  src_end : Int,
   hash_table : FixedArray[Int],
   hash_archive : FixedArray[Int],
   hash : Int,
@@ -375,13 +380,24 @@ fn insert_hash_candidate(
   let evicted = hash_table.unsafe_get(base + ZSTD_MAX_HASH_CANDIDATES - 1)
   if evicted >= 0 {
     let archive_base = hash * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES
-    for slot = ZSTD_MAX_HASH_ARCHIVE_CANDIDATES - 1; slot > 0; slot = slot - 1 {
-      hash_archive.unsafe_set(
-        archive_base + slot,
-        hash_archive.unsafe_get(archive_base + slot - 1),
-      )
+    let mut duplicate = false
+    for slot in 0..<ZSTD_MAX_HASH_ARCHIVE_CANDIDATES {
+      let archived = hash_archive.unsafe_get(archive_base + slot)
+      if archived >= 0 &&
+        zstd_archive_prefix_eq(src, evicted, archived, src_end) {
+        duplicate = true
+        break
+      }
     }
-    hash_archive.unsafe_set(archive_base, evicted)
+    if !duplicate {
+      for slot = ZSTD_MAX_HASH_ARCHIVE_CANDIDATES - 1; slot > 0; slot = slot - 1 {
+        hash_archive.unsafe_set(
+          archive_base + slot,
+          hash_archive.unsafe_get(archive_base + slot - 1),
+        )
+      }
+      hash_archive.unsafe_set(archive_base, evicted)
+    }
   }
   for slot = ZSTD_MAX_HASH_CANDIDATES - 1; slot > 0; slot = slot - 1 {
     hash_table.unsafe_set(base + slot, hash_table.unsafe_get(base + slot - 1))
@@ -405,6 +421,32 @@ fn get_hash_archive_candidate(
   slot : Int,
 ) -> Int {
   hash_archive.unsafe_get(hash * ZSTD_MAX_HASH_ARCHIVE_CANDIDATES + slot)
+}
+
+///|
+fn zstd_archive_prefix_eq(
+  src : BytesView,
+  a : Int,
+  b : Int,
+  src_end : Int,
+) -> Bool {
+  let remain_a = src_end - a
+  let remain_b = src_end - b
+  let limit = if remain_a < remain_b { remain_a } else { remain_b }
+  let prefix_len = if limit < ZSTD_ARCHIVE_DEDUP_BYTES {
+    limit
+  } else {
+    ZSTD_ARCHIVE_DEDUP_BYTES
+  }
+  if prefix_len <= 0 {
+    return false
+  }
+  for i in 0..<prefix_len {
+    if src.unsafe_get(a + i) != src.unsafe_get(b + i) {
+      return false
+    }
+  }
+  true
 }
 
 ///|
@@ -486,7 +528,14 @@ fn find_sequences_combined(
   let mf_limit = combined.length() - ZSTD_MIN_MATCH
   if base >= ZSTD_MIN_MATCH {
     for i in 0..<(base - ZSTD_MIN_MATCH + 1) {
-      insert_hash_candidate(hash_table, hash_archive, zstd_hash(src, i), i)
+      insert_hash_candidate(
+        src,
+        combined.length(),
+        hash_table,
+        hash_archive,
+        zstd_hash(src, i),
+        i,
+      )
     }
   }
   while ip < mf_limit {
@@ -502,7 +551,14 @@ fn find_sequences_combined(
       rep,
       config,
     )
-    insert_hash_candidate(hash_table, hash_archive, hash, ip)
+    insert_hash_candidate(
+      src,
+      combined.length(),
+      hash_table,
+      hash_archive,
+      hash,
+      ip,
+    )
     let mut lazy_steps = config.lazy_steps
     while lazy_steps > 0 &&
           best.length >= ZSTD_MIN_MATCH &&
@@ -520,7 +576,14 @@ fn find_sequences_combined(
         rep,
         config,
       )
-      insert_hash_candidate(hash_table, hash_archive, next_hash, next_ip)
+      insert_hash_candidate(
+        src,
+        combined.length(),
+        hash_table,
+        hash_archive,
+        next_hash,
+        next_ip,
+      )
       if next_best.length > best.length + 1 {
         match_ip = next_ip
         best = next_best
@@ -575,7 +638,14 @@ fn find_sequences_combined(
       }
       for j = match_ip + 1; j < hash_end; j = j + 1 {
         let h = zstd_hash(src, j)
-        insert_hash_candidate(hash_table, hash_archive, h, j)
+        insert_hash_candidate(
+          src,
+          combined.length(),
+          hash_table,
+          hash_archive,
+          h,
+          j,
+        )
       }
       ip = match_ip + best.length
       anchor = ip

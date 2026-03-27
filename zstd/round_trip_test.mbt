@@ -379,6 +379,17 @@ fn zstd_archive_depth_fixture() -> Bytes {
 }
 
 ///|
+fn zstd_archive_repeat_fixture() -> Bytes {
+  let buf = @blit.Buffer::new()
+  for i in 0..<16 {
+    buf.write_bytes(zstd_archive_depth_fixture())
+    buf.write_byte((i * 17 % 251).to_byte())
+    buf.write_bytes(b"\n")
+  }
+  buf.to_bytes()
+}
+
+///|
 test "compression levels change zstd one-shot output" {
   let data = zstd_level_fixture()
   let fast = @zstd.compress(data, level=Fast)
@@ -451,14 +462,14 @@ test "higher explicit zstd levels use broader search tiers" {
 }
 
 ///|
-test "mid-deep zstd levels can surface older archived candidates" {
-  let data = zstd_archive_depth_fixture()
-  let shallow = @zstd.compress(data, level=Level(22))
-  let medium = @zstd.compress(data, level=Level(24))
-  let deep = @zstd.compress(data, level=Level(30))
-  assert_eq(@zstd.decompress(shallow), data)
-  assert_eq(@zstd.decompress(medium), data)
-  assert_eq(@zstd.decompress(deep), data)
-  assert_true(medium.length() <= shallow.length())
-  assert_true(deep.length() <= medium.length())
+test "mid-deep zstd archive tiers beat the no-archive tier on repeated anchors" {
+  let data = zstd_archive_repeat_fixture()
+  let no_archive = @zstd.compress(data, level=Level(19))
+  let shallow_archive = @zstd.compress(data, level=Level(22))
+  let medium_archive = @zstd.compress(data, level=Level(24))
+  assert_eq(@zstd.decompress(no_archive), data)
+  assert_eq(@zstd.decompress(shallow_archive), data)
+  assert_eq(@zstd.decompress(medium_archive), data)
+  assert_true(shallow_archive.length() < no_archive.length())
+  assert_true(medium_archive.length() <= shallow_archive.length())
 }

@@ -258,7 +258,7 @@ fn zstd_archive_fixture() -> Bytes {
 }
 
 ///|
-test "zstd interleaved archive search surfaces older candidates before deepest tier" {
+test "zstd archived search preserves older long anchors at shallow tiers" {
   let data = zstd_archive_fixture()
   let long = b"ABCDabcdefghijklmnopqrstuvwxyz0123456789--long-match-anchor--"
   let src = data[:]
@@ -279,6 +279,8 @@ test "zstd interleaved archive search surfaces older candidates before deepest t
   let ip = data.length() - long.length()
   for start in starts {
     insert_hash_candidate(
+      src,
+      data.length(),
       hash_table,
       hash_archive,
       zstd_hash(src, start),
@@ -331,8 +333,9 @@ test "zstd interleaved archive search surfaces older candidates before deepest t
       archive_candidates: 8,
     },
   )
-  assert_true(medium_archive.length > shallow_archive.length)
-  assert_true(deep_archive.length >= medium_archive.length)
+  assert_eq(shallow_archive.length, long.length())
+  assert_eq(medium_archive.length, long.length())
+  assert_true(deep_archive.length >= shallow_archive.length)
   assert_eq(medium_archive.length, long.length())
 }
 
